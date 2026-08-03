@@ -1,0 +1,124 @@
+export interface IconPathData {
+  paths: string[];
+}
+
+export interface IconEntry {
+  name: string;
+  pathData: IconPathData;
+}
+
+/**
+ * 97 个应用使用的 Tabler 图标（从 4938 个中筛选）。
+ * 使用数组 + 遍历查找替代 ArkTS 禁用的 Record<string, IconPathData>。
+ */
+export const TABLER_ICONS: IconEntry[] = [
+  { name: 'arrow-right', pathData: { paths: ['M5 12l14 0', 'M13 18l6 -6', 'M13 6l6 6'] } },
+  { name: 'arrow-left', pathData: { paths: ['M19 12l-14 0', 'M11 18l-6 -6', 'M11 6l-6 6'] } },
+  { name: 'arrow-up', pathData: { paths: ['M12 5l0 14', 'M18 11l-6 -6', 'M6 11l6 -6'] } },
+  { name: 'arrow-down', pathData: { paths: ['M12 5l0 14', 'M18 13l-6 6', 'M6 13l6 6'] } },
+  { name: 'arrow-narrow-right', pathData: { paths: ['M5 12l14 0', 'M15 16l4 -4', 'M15 8l4 4'] } },
+  { name: 'chevron-right', pathData: { paths: ['M9 6l6 6l-6 6'] } },
+  { name: 'chevron-left', pathData: { paths: ['M15 6l-6 6l6 6'] } },
+  { name: 'chevron-down', pathData: { paths: ['M6 9l6 6l6 -6'] } },
+  { name: 'chevron-up', pathData: { paths: ['M6 15l6 -6l6 6'] } },
+  { name: 'caret-right', pathData: { paths: ['M9 6l6 6l-6 6'] } },
+  { name: 'caret-down', pathData: { paths: ['M6 9l6 6l6 -6'] } },
+  { name: 'plus', pathData: { paths: ['M12 5l0 14', 'M5 12l14 0'] } },
+  { name: 'check', pathData: { paths: ['M5 12l5 5l10 -10'] } },
+  { name: 'x', pathData: { paths: ['M18 6l-12 12', 'M6 6l12 12'] } },
+  { name: 'search', pathData: { paths: ['M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0', 'M21 21l-6 -6'] } },
+  { name: 'home', pathData: { paths: ['M5 12l-2 0l9 -9l9 9l-2 0', 'M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7', 'M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6'] } },
+  { name: 'settings', pathData: { paths: ['M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z', 'M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0'] } },
+  { name: 'file', pathData: { paths: ['M14 3v4a1 1 0 0 0 1 1h4', 'M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z'] } },
+  { name: 'file-code', pathData: { paths: ['M14 3v4a1 1 0 0 0 1 1h4', 'M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z', 'M10 13l-1 1l1 1', 'M14 13l1 1l-1 1'] } },
+  { name: 'file-description', pathData: { paths: ['M14 3v4a1 1 0 0 0 1 1h4', 'M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z', 'M9 9h1', 'M9 13h6', 'M9 17h6'] } },
+  { name: 'file-symlink', pathData: { paths: ['M14 3v4a1 1 0 0 0 1 1h4', 'M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z', 'M10 18l3 -3l-3 -3', 'M13 15l6 0'] } },
+  { name: 'file-upload', pathData: { paths: ['M14 3v4a1 1 0 0 0 1 1h4', 'M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z', 'M12 11v6', 'M9 14l3 -3l3 3'] } },
+  { name: 'folder', pathData: { paths: ['M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2'] } },
+  { name: 'folder-pin', pathData: { paths: ['M5 4h4l3 3h7a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2', 'M12 10v6', 'M9 12l3 -2l3 2'] } },
+  { name: 'hash', pathData: { paths: ['M5 9l14 0', 'M5 15l14 0', 'M11 4l-4 16', 'M17 4l-4 16'] } },
+  { name: 'edit', pathData: { paths: ['M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1', 'M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415z', 'M16 5l3 3'] } },
+  { name: 'trash', pathData: { paths: ['M4 7l16 0', 'M10 11l0 6', 'M14 11l0 6', 'M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12', 'M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3'] } },
+  { name: 'trash-x', pathData: { paths: ['M4 7l16 0', 'M10 11l0 6', 'M14 11l0 6', 'M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12', 'M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3', 'M10 11l4 6', 'M14 11l-4 6'] } },
+  { name: 'copy', pathData: { paths: ['M8 8m0 2a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2z', 'M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2'] } },
+  { name: 'download', pathData: { paths: ['M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2', 'M7 11l5 5l5 -5', 'M12 4l0 12'] } },
+  { name: 'upload', pathData: { paths: ['M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2', 'M7 9l5 -5l5 5', 'M12 4l0 12'] } },
+  { name: 'refresh', pathData: { paths: ['M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4', 'M4 13c.468 3.6 3.384 6.546 7 7m.5 -4v4h-4'] } },
+  { name: 'rotate', pathData: { paths: ['M19.95 11a8 8 0 1 0 -.5 4m.5 -4v-4m0 4h-4'] } },
+  { name: 'repeat', pathData: { paths: ['M4 12v-3a3 3 0 0 1 3 -3h13m-3 -3l3 3l-3 3', 'M20 12v3a3 3 0 0 1 -3 3h-13m3 3l-3 -3l3 -3'] } },
+  { name: 'filter', pathData: { paths: ['M5 5h14l-4.5 6.5a4 4 0 0 0 -0.5 2v5l-4 2v-7a4 4 0 0 0 -0.5 -2z'] } },
+  { name: 'filter-cog', pathData: { paths: ['M5 5h14l-4.5 6.5a4 4 0 0 0 -0.5 2v5l-4 2v-7a4 4 0 0 0 -0.5 -2z', 'M17 15a2 2 0 1 0 4 0a2 2 0 1 0 -4 0', 'M19 12v3m0 6v-3m3 -3h-3m-6 0h3'] } },
+  { name: 'bolt', pathData: { paths: ['M13 2l-10 12h7l-1 8l10 -12h-7z'] } },
+  { name: 'bulb', pathData: { paths: ['M9 18h6', 'M10 22h4', 'M15.098 14.418a4 4 0 1 0 -6.196 0c.628 .763 1.098 1.582 1.098 2.582v1h4v-1c0 -1 .47 -1.819 1.098 -2.582z'] } },
+  { name: 'calendar', pathData: { paths: ['M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z', 'M16 3v4', 'M8 3v4', 'M4 11h16'] } },
+  { name: 'calendar-plus', pathData: { paths: ['M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z', 'M16 3v4', 'M8 3v4', 'M4 11h16', 'M12 15l0 4', 'M10 17l4 0'] } },
+  { name: 'cloud', pathData: { paths: ['M7 18a4 4 0 1 1 0 -8a5 5 0 0 1 9.58 1.5a4 4 0 0 1 0.42 6.5z'] } },
+  { name: 'lock', pathData: { paths: ['M5 13a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v6a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z', 'M11 16l1 -1l1 1', 'M8 11v-4a4 4 0 1 1 8 0v4'] } },
+  { name: 'user', pathData: { paths: ['M8 7a4 4 0 1 1 8 0a4 4 0 0 1 -8 0', 'M6 21v-1a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v1'] } },
+  { name: 'user-circle', pathData: { paths: ['M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0', 'M12 10m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0', 'M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.832 2.849'] } },
+  { name: 'users', pathData: { paths: ['M9 7m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0', 'M3 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2', 'M16 3.13a4 4 0 0 1 0 7.75', 'M21 21v-2a4 4 0 0 0 -3 -3.85'] } },
+  { name: 'logout', pathData: { paths: ['M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2', 'M9 12h12l-3 -3', 'M18 15l3 -3'] } },
+  { name: 'world', pathData: { paths: ['M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0', 'M3.6 9h16.8', 'M3.6 15h16.8', 'M11.5 3a17 17 0 0 0 0 18', 'M12.5 3a17 17 0 0 1 0 18'] } },
+  { name: 'world-download', pathData: { paths: ['M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0', 'M3.6 9h16.8', 'M3.6 15h16.8', 'M11.5 3a17 17 0 0 0 0 18', 'M12.5 3a17 17 0 0 1 0 18', 'M12 16v-6', 'M9 13l3 3l3 -3'] } },
+  { name: 'external-link', pathData: { paths: ['M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6', 'M11 13l9 -9', 'M15 4h5v5'] } },
+  { name: 'palette', pathData: { paths: ['M12 21a9 9 0 0 1 0 -18c4.97 0 9 3.582 9 8a5 5 0 0 1 -5 5h-2.5a2.5 2.5 0 0 0 -2.5 2.5', 'M12 13m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0', 'M9.5 9.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0', 'M14.5 7.5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0'] } },
+  { name: 'layout-sidebar-right', pathData: { paths: ['M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z', 'M15 4l0 16'] } },
+  { name: 'layout-align-left', pathData: { paths: ['M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z', 'M9 10l6 0', 'M9 14l8 0'] } },
+  { name: 'layout-align-center', pathData: { paths: ['M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z', 'M9 10h6', 'M8 14h8'] } },
+  { name: 'layout-align-right', pathData: { paths: ['M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z', 'M9 10h6', 'M7 14h10'] } },
+  { name: 'maximize', pathData: { paths: ['M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z'] } },
+  { name: 'fold', pathData: { paths: ['M12 3v18', 'M8 7l4 -4l4 4', 'M8 17l4 4l4 -4'] } },
+  { name: 'menu-2', pathData: { paths: ['M4 6l16 0', 'M4 12l16 0', 'M4 18l16 0'] } },
+  { name: 'dots', pathData: { paths: ['M5 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0', 'M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0', 'M19 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0'] } },
+  { name: 'dots-vertical', pathData: { paths: ['M12 5m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0', 'M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0', 'M12 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0'] } },
+  { name: 'clipboard', pathData: { paths: ['M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2', 'M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v0a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z'] } },
+  { name: 'command', pathData: { paths: ['M7 9a2 2 0 1 0 -2 -2', 'M15 9a2 2 0 0 0 2 -2a2 2 0 0 0 -2 -2', 'M9 9h6', 'M7 11v4', 'M15 11v4', 'M9 15h6', 'M7 17a2 2 0 1 0 2 2', 'M15 17a2 2 0 0 0 -2 2a2 2 0 0 0 2 2'] } },
+  { name: 'hierarchy', pathData: { paths: ['M12 5m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0', 'M5 19m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0', 'M19 19m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0', 'M12 7l0 3l-5 0l0 5', 'M12 7l0 3l5 0l0 5'] } },
+  { name: 'info-circle', pathData: { paths: ['M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0', 'M12 8l0 .01', 'M11 12l1 0l0 4l1 0'] } },
+  { name: 'key', pathData: { paths: ['M14.52 17.991a5 5 0 1 0 -4.986 -7.99a5 5 0 1 0 4.986 7.99', 'M14.52 17.991l3.01 3.01', 'M20 22l-1.5 -1.5', 'M18.5 20.5l-1.5 -1.5'] } },
+  { name: 'keyboard', pathData: { paths: ['M2 6m0 2a2 2 0 0 1 2 -2h16a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2z', 'M6 10l0 .01', 'M10 10l0 .01', 'M14 10l0 .01', 'M18 10l0 .01', 'M6 14l0 .01', 'M18 14l0 .01', 'M10 14h4'] } },
+  { name: 'pin', pathData: { paths: ['M15 4.5l-4 4l-7 7l-1 6l6 -1l7 -7l4 -4', 'M11.5 8.5l7 7', 'M16 4l4 4'] } },
+  { name: 'puzzle', pathData: { paths: ['M4 7h3a1 1 0 0 0 1 -1v-1a2 2 0 0 1 4 0v1a1 1 0 0 0 1 1h3a1 1 0 0 1 1 1v3a1 1 0 0 0 1 1h1a2 2 0 0 1 0 4h-1a1 1 0 0 0 -1 1v3a1 1 0 0 1 -1 1h-3a1 1 0 0 0 -1 1v1a2 2 0 0 1 -4 0v-1a1 1 0 0 0 -1 -1h-3a1 1 0 0 1 -1 -1v-3a1 1 0 0 0 -1 -1h-1a2 2 0 0 1 0 -4h1a1 1 0 0 0 1 -1v-3a1 1 0 0 1 1 -1'] } },
+  { name: 'wand', pathData: { paths: ['M6 21l15 -15l-3 -3l-15 15l3 3', 'M15 6l3 3', 'M9 3a2 2 0 0 0 2 2a2 2 0 0 0 -2 2a2 2 0 0 0 -2 -2a2 2 0 0 0 2 -2', 'M19 13a2 2 0 0 0 2 2a2 2 0 0 0 -2 2a2 2 0 0 0 -2 -2a2 2 0 0 0 2 -2'] } },
+  { name: 'writing', pathData: { paths: ['M20 17v-12c0 -1.121 -.89 -2 -2 -2s-2 .879 -2 2v12l2 2l2 -2z', 'M8 17v-12c0 -1.121 -.89 -2 -2 -2s-2 .879 -2 2v12l2 2l2 -2z', 'M16 7h4', 'M4 7h4', 'M12 7v10', 'M12 15h4', 'M8 15h4'] } },
+  { name: 'circle-minus', pathData: { paths: ['M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0', 'M9 12h6'] } },
+  { name: 'alert-triangle', pathData: { paths: ['M10.29 3.86l-8.48 14.83a2 2 0 0 0 1.71 3h16.96a2 2 0 0 0 1.71 -3l-8.48 -14.83a2 2 0 0 0 -3.42 0z', 'M12 9v4', 'M12 17l.01 0'] } },
+  { name: 'player-play', pathData: { paths: ['M7 4v16l13 -8z'] } },
+  { name: 'player-stop', pathData: { paths: ['M5 5m0 2a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z'] } },
+  { name: 'server-cog', pathData: { paths: ['M3 4m0 2a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z', 'M3 12m0 2a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z', 'M7 8l2 0', 'M7 16l2 0', 'M20 12l-1 0', 'M20 18l-1 0', 'M20 6l-1 0'] } },
+  { name: 'database-export', pathData: { paths: ['M12 6m-8 0a8 3 0 1 0 16 0a8 3 0 1 0 -16 0', 'M4 6v6a8 3 0 0 0 13.005 2.1', 'M20 12v-6', 'M4 12v6a8 3 0 0 0 8 3', 'M18 21l-3 -3', 'M21 18l-3 3'] } },
+  { name: 'source-code', pathData: { paths: ['M14.5 4h-5l-1 1h-3a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-10a2 2 0 0 0 -2 -2h-3l-1 -1z', 'M10 15l-3 -3l3 -3', 'M14 9l3 3l-3 3'] } },
+  { name: 'plug', pathData: { paths: ['M9.8 20.4l-1.4 1.4', 'M15.6 8.4a2 2 0 1 0 -2.8 -2.8', 'M12 12l-8.6 8.6', 'M18.6 3.4l-2.7 2.7', 'M21.4 6.2l-2.7 -2.7', 'M17 7l-3.1 3.1a2 2 0 0 0 0 2.8l.3 .3a2 2 0 0 0 2.8 0l3.1 -3.1'] } },
+  { name: 'bug', pathData: { paths: ['M9 9v-1a3 3 0 0 1 6 0v1', 'M8 9h8v6a3 3 0 0 1 -3 3h-2a3 3 0 0 1 -3 -3v-6z', 'M3 13h5', 'M16 13h5', 'M12 12v.01', 'M3 7l3 3', 'M18 10l3 -3', 'M3 17l3 -2', 'M18 15l3 2'] } },
+  { name: 'adjustments', pathData: { paths: ['M6 10m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0', 'M18 10m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0', 'M8 10h8', 'M6 14m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0', 'M18 14m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0', 'M8 14h8'] } },
+  { name: 'apps', pathData: { paths: ['M4 4m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z', 'M14 4m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z', 'M4 14m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z', 'M14 14m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z'] } },
+  { name: 'arrows-minimize', pathData: { paths: ['M5 9l4 0l0 -4', 'M9 9l-5 -5', 'M5 15l4 0l0 4', 'M9 15l-5 5', 'M19 9l-4 0l0 -4', 'M15 9l5 -5', 'M19 15l-4 0l0 4', 'M15 15l5 5'] } },
+  { name: 'arrows-sort', pathData: { paths: ['M3 9l4 -4l4 4', 'M7 5v14', 'M17 19l4 -4l-4 -4', 'M21 15h-14'] } },
+  { name: 'arrows-up-down', pathData: { paths: ['M7 16v-9', 'M11 7l-4 -4l-4 4', 'M17 16v-9', 'M13 15l4 4l4 -4'] } },
+  { name: 'color-swatch', pathData: { paths: ['M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-10z', 'M9 7l-3 3', 'M13 7l-7 7', 'M17 7l-7 7', 'M17 11l-3 3'] } },
+  { name: 'letter-case', pathData: { paths: ['M17.5 15.5l2.5 -9l2.5 9', 'M18.9 12h3.2', 'M3 19l5 -13l5 13', 'M6 12h4', 'M3 19h10'] } },
+  { name: 'letter-r', pathData: { paths: ['M7 4h5.5a4 4 0 0 1 0 9h-2.5', 'M7 4v16', 'M13 13l5 7'] } },
+  { name: 'line-dashed', pathData: { paths: ['M5 12h2', 'M17 12h2', 'M11 12h2'] } },
+  { name: 'list-details', pathData: { paths: ['M9 5h10', 'M9 12h10', 'M9 19h10', 'M5 5l0 .01', 'M5 12l0 .01', 'M5 19l0 .01'] } },
+  { name: 'list-search', pathData: { paths: ['M15 8h6', 'M15 12h6', 'M15 16h6', 'M3 8h2a1 1 0 0 0 0 -2h-2a1 1 0 0 0 0 2z', 'M3 14a1 1 0 0 0 1 1h2a1 1 0 0 0 0 -2h-2a1 1 0 0 0 -1 1z', 'M3 20a1 1 0 0 0 1 1h2a1 1 0 0 0 0 -2h-2a1 1 0 0 0 -1 1z', 'M6 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0'] } },
+  { name: 'movie', pathData: { paths: ['M4 6m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z', 'M8 6l2 3l2 -3', 'M8 18l2 -3l2 3', 'M16 12l-3 -2l3 -2', 'M16 12l-3 2l3 2'] } },
+  { name: 'square-toggle-horizontal', pathData: { paths: ['M2 6a2 2 0 0 1 2 -2h16a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-16a2 2 0 0 1 -2 -2v-12z', 'M10 6v12', 'M14 10l-4 0', 'M14 14l-4 0'] } },
+  { name: 'point-filled', pathData: { paths: ['M12 12m-5 0a5 5 0 1 0 10 0a5 5 0 1 0 -10 0'] } },
+  { name: 'book', pathData: { paths: ['M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0', 'M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0', 'M3 6l0 13', 'M21 6l0 13'] } },
+  { name: 'brand-discord', pathData: { paths: ['M8 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0', 'M14 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0', 'M15.5 17c0 1 1.5 3 1.5 3h-11c0 0 1.5 -2 1.5 -3c0 -3 -1.5 -4 -2.5 -5c-2 -2 -1 -4 1 -4c2 0 3.5 1.5 5 3c1.5 -1.5 3 -3 5 -3c2 0 3 2 1 4c-1 1 -2.5 2 -2.5 5z'] } },
+  { name: 'message-circle', pathData: { paths: ['M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0', 'M3.6 15l3.7 -1l1.7 1.4'] } },
+  { name: 'message-dots', pathData: { paths: ['M3 20l1.3 -3.9a9 8 0 1 1 3.4 2.9l-4.7 1z', 'M8 12l0 .01', 'M12 12l0 .01', 'M16 12l0 .01'] } }
+];
+
+/**
+ * 按名称查找图标路径数据。
+ * @returns IconPathData 或 undefined（未找到时）
+ */
+export function findIconPath(name: string): IconPathData | undefined {
+  for (let i = 0; i < TABLER_ICONS.length; i++) {
+    if (TABLER_ICONS[i].name === name) {
+      return TABLER_ICONS[i].pathData;
+    }
+  }
+  return undefined;
+}

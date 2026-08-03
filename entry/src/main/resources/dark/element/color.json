@@ -3,6 +3,66 @@
     {
       "name": "start_window_background",
       "value": "#000000"
+    },
+    {
+      "name": "primary",
+      "value": "#4FC3F7"
+    },
+    {
+      "name": "bg",
+      "value": "#121212"
+    },
+    {
+      "name": "text",
+      "value": "#E5E5E5"
+    },
+    {
+      "name": "surface0",
+      "value": "#121212"
+    },
+    {
+      "name": "surface1",
+      "value": "#1E1E1E"
+    },
+    {
+      "name": "surface2",
+      "value": "#2A2A2A"
+    },
+    {
+      "name": "bullet",
+      "value": "#6B7280"
+    },
+    {
+      "name": "link",
+      "value": "#4FC3F7"
+    },
+    {
+      "name": "highlight",
+      "value": "#5C4B1E"
+    },
+    {
+      "name": "search_highlight",
+      "value": "#B5A72A"
+    },
+    {
+      "name": "border",
+      "value": "#374151"
+    },
+    {
+      "name": "toolbar",
+      "value": "#1A1A1A"
+    },
+    {
+      "name": "muted_text",
+      "value": "#9CA3AF"
+    },
+    {
+      "name": "danger",
+      "value": "#F87171"
+    },
+    {
+      "name": "success",
+      "value": "#34D399"
     }
   ]
 }
