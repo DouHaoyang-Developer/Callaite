@@ -1,6 +1,7 @@
 import { Header } from '../layout/Header';
 import { PageView } from './PageView';
 import { CommandPalette } from '../commandpalette/CommandPalette';
+import { Toolbar } from '../outliner/Toolbar';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { EditorService } from '../../services/EditorService';
 
@@ -14,6 +15,8 @@ export struct ContentArea {
       Column() {
         Header()
 
+        Toolbar()
+
         Scroll() {
           PageView()
         }
@@ -23,7 +26,35 @@ export struct ContentArea {
         .backgroundColor($r('app.color.surface0'))
         .focusable(true)
         .onKeyEvent((event: KeyEvent) => {
-          this.handleKeyEvent(event);
+          const editor = EditorService.getInstance();
+          const ws = WorkspaceService.getInstance();
+          const page = ws.getPageByName(ContentArea.resolvePageName(this.currentPage));
+          if (!page) return;
+
+          // Enter (2054) — 创建新 Block
+          if (event.type === KeyType.Down && event.keyCode === 2054) {
+            editor.createBlockBelow(page.uuid);
+          }
+
+          // Backspace (2053) on empty — 删除空 Block
+          if (event.type === KeyType.Down && event.keyCode === 2053) {
+            editor.deleteEmptyBlock();
+          }
+
+          // Tab (2055) — 缩进
+          if (event.type === KeyType.Down && event.keyCode === 2055) {
+            editor.indentBlock();
+          }
+
+          // Alt+↑ (2019) — 上移
+          if (event.type === KeyType.Down && event.keyCode === 2019) {
+            editor.moveBlockUp();
+          }
+
+          // Alt+↓ (2020) — 下移
+          if (event.type === KeyType.Down && event.keyCode === 2020) {
+            editor.moveBlockDown();
+          }
         })
       }
       .width('100%')
@@ -43,40 +74,14 @@ export struct ContentArea {
     .height('100%')
   }
 
-  handleKeyEvent(event: KeyEvent): void {
-    const editor = EditorService.getInstance();
-    const ws = WorkspaceService.getInstance();
-    const page = ws.getPageByName(this.currentPage);
-    if (!page) return;
-
-    // Enter (keyCode 2054) — 创建新 Block
-    if (event.type === KeyType.Down && event.keyCode === 2054) {
-      editor.createBlockBelow(page.uuid);
-      return;
+  static resolvePageName(pageName: string): string {
+    if (pageName === 'Journal') {
+      const now = new Date();
+      const y = now.getFullYear().toString();
+      const m = (now.getMonth() + 1).toString().padStart(2, '0');
+      const d = now.getDate().toString().padStart(2, '0');
+      return y + '-' + m + '-' + d;
     }
-
-    // Tab (keyCode 2055) — 缩进
-    if (event.type === KeyType.Down && event.keyCode === 2055) {
-      editor.indentBlock();
-      return;
-    }
-
-    // Backspace (keyCode 2053) on empty — 删除空 Block
-    if (event.type === KeyType.Down && event.keyCode === 2053) {
-      editor.deleteEmptyBlock();
-      return;
-    }
-
-    // Alt+↑ (keyCode 2019) — 上移
-    if (event.type === KeyType.Down && event.keyCode === 2019) {
-      editor.moveBlockUp();
-      return;
-    }
-
-    // Alt+↓ (keyCode 2020) — 下移
-    if (event.type === KeyType.Down && event.keyCode === 2020) {
-      editor.moveBlockDown();
-      return;
-    }
+    return pageName;
   }
 }

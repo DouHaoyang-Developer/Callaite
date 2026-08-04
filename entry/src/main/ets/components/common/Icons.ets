@@ -49,7 +49,8 @@ struct IconRenderer {
  * 用法：TablerIcon('search', 20, $r('app.color.text'))
  */
 @Builder
-export function TablerIcon(name: string, size: number = 18, color: ResourceColor = $r('app.color.muted_text')) {
+// Logseq 默认图标尺寸: 16px (Logseq 实际使用 16-18px 范围的图标)
+export function TablerIcon(name: string, size: number = 16, color: ResourceColor = $r('app.color.muted_text')) {
   IconRenderer({ name: name, iconSize: size, iconColor: color })
 }
 

@@ -1,5 +1,6 @@
 import { TablerIcon } from '../common/Icons';
 import { AppState } from '../../state/AppState';
+import { JournalService } from '../../services/JournalService';
 
 @Component
 export struct Header {
@@ -7,9 +8,15 @@ export struct Header {
   @StorageLink('callaite_leftSidebarOpen') leftSidebarOpen: boolean = true;
   @StorageLink('callaite_rightSidebarOpen') rightSidebarOpen: boolean = false;
 
+  get displayTitle(): string {
+    if (this.currentPage === 'Journal') {
+      return JournalService.getTodayDateString();
+    }
+    return this.currentPage;
+  }
+
   build() {
     Row() {
-      // 左侧: 汉堡菜单 + 导航
       Row({ space: 4 }) {
         Row() {
           TablerIcon('menu-2', 18, $r('app.color.text'))
@@ -18,19 +25,28 @@ export struct Header {
         .onClick(() => { AppState.toggleLeftSidebar(); })
 
         Row() {
-          TablerIcon('arrow-left', 16, '#D1D5DB')
+          TablerIcon('arrow-left', 16, '#9CA3AF')
         }
         .width(28).height(28)
+        .onClick(() => {
+          if (this.currentPage === 'Journal') {
+            AppState.setCurrentPage(JournalService.getYesterdayDateString());
+          }
+        })
 
         Row() {
-          TablerIcon('arrow-right', 16, '#D1D5DB')
+          TablerIcon('arrow-right', 16, '#9CA3AF')
         }
         .width(28).height(28)
+        .onClick(() => {
+          if (this.currentPage === 'Journal') {
+            AppState.setCurrentPage(JournalService.getTomorrowDateString());
+          }
+        })
       }
 
       Blank()
 
-      // 右侧: 搜索 + 右侧栏 + 设置
       Row({ space: 2 }) {
         Row() {
           TablerIcon('search', 18, $r('app.color.text'))
@@ -39,7 +55,7 @@ export struct Header {
         .onClick(() => { AppState.setSearchPanelOpen(true); })
 
         Row() {
-          TablerIcon(this.rightSidebarOpen ? 'layout-sidebar-right' : 'layout-sidebar-right', 18,
+          TablerIcon('layout-sidebar-right', 18,
             this.rightSidebarOpen ? $r('app.color.primary') : $r('app.color.text'))
         }
         .width(32).height(32).borderRadius(4)

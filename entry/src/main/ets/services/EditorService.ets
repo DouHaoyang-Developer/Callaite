@@ -124,6 +124,26 @@ export class EditorService {
     }
   }
 
+  canUndo(): boolean {
+    const ws = WorkspaceService.getInstance();
+    return ws.getOutlinerEngine().canUndo();
+  }
+
+  canRedo(): boolean {
+    const ws = WorkspaceService.getInstance();
+    return ws.getOutlinerEngine().canRedo();
+  }
+
+  undo(): void {
+    const ws = WorkspaceService.getInstance();
+    ws.getOutlinerEngine().undo();
+  }
+
+  redo(): void {
+    const ws = WorkspaceService.getInstance();
+    ws.getOutlinerEngine().redo();
+  }
+
   // ─── 粘贴处理 ───
 
   pasteMarkdownAsBlocks(markdown: string, pageId: string): void {

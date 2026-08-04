@@ -39,7 +39,7 @@ export struct BlockList {
       if (this.blocks.length === 0) {
         // 空页面 — 显示创建提示
         Column({ space: 12 }) {
-          TablerIcon('edit', 48, $r('app.color.muted_text'))
+          TablerIcon('edit', 40, $r('app.color.muted_text'))
           Text(t('empty_page'))
             .fontSize(16)
             .fontColor($r('app.color.muted_text'))

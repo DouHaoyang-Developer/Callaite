@@ -4,12 +4,13 @@ import { t } from '../../utils/i18n';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { BlockData } from '../../core/models/Block';
 import { BacklinkInfo } from '../../core/db/DataStore';
+import { JournalService } from '../../services/JournalService';
 
 @Component
 export struct RightSidebar {
   @StorageLink('callaite_currentPage') currentPage: string = 'Journal';
   @State backlinks: BacklinkInfo[] = [];
-  @State backlinksFilter: string = 'all'; // 'all' | 'page' | 'block'
+  @State backlinksFilter: string = 'all';
   @State headings: BlockData[] = [];
   @State propEntries: string[][] = [];
 
@@ -17,15 +18,23 @@ export struct RightSidebar {
     this.refresh();
   }
 
+  /** 解析当前页面的实际名称（Journal → 日期字符串） */
+  get currentPageName(): string {
+    if (this.currentPage === 'Journal') {
+      return JournalService.getTodayDateString();
+    }
+    return this.currentPage;
+  }
+
   refresh(): void {
     const ws = WorkspaceService.getInstance();
-    this.backlinks = ws.getDataStore().getBacklinks(this.currentPage);
+    this.backlinks = ws.getDataStore().getBacklinks(this.currentPageName);
     this.headings = this.collectHeadings(ws);
     this.propEntries = this.collectProps(ws);
   }
 
   collectHeadings(ws: WorkspaceService): BlockData[] {
-    const page = ws.getPageByName(this.currentPage);
+    const page = ws.getPageByName(this.currentPageName);
     if (!page) return [];
     const allBlocks = ws.getPageBlocks(page.uuid);
     const result: BlockData[] = [];
@@ -40,7 +49,7 @@ export struct RightSidebar {
   }
 
   collectProps(ws: WorkspaceService): string[][] {
-    const page = ws.getPageByName(this.currentPage);
+    const page = ws.getPageByName(this.currentPageName);
     if (!page) return [];
     const entries: string[][] = [];
     page.properties.forEach((propKey: string, propValue: string) => {
@@ -282,7 +291,7 @@ export struct RightSidebar {
     }
 
     const ws = WorkspaceService.getInstance();
-    const page = ws.getPageByName(this.currentPage);
+    const page = ws.getPageByName(this.currentPageName);
     if (page) {
       page.properties.set(key, value);
       ws.savePage(page.uuid);
@@ -292,7 +301,7 @@ export struct RightSidebar {
 
   deleteProperty(key: string): void {
     const ws = WorkspaceService.getInstance();
-    const page = ws.getPageByName(this.currentPage);
+    const page = ws.getPageByName(this.currentPageName);
     if (page) {
       page.properties.remove(key);
       ws.savePage(page.uuid);

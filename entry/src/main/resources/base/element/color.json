@@ -1,20 +1,20 @@
 {
   "color": [
-    { "name": "start_window_background", "value": "#FFFFFF" },
-    { "name": "primary", "value": "#106BA3" },
-    { "name": "bg", "value": "#FFFFFF" },
+    { "name": "start_window_background", "value": "#FCFCFC" },
+    { "name": "primary", "value": "#0458A6" },
+    { "name": "bg", "value": "#FCFCFC" },
     { "name": "text", "value": "#1A1A1A" },
-    { "name": "surface0", "value": "#FFFFFF" },
-    { "name": "surface1", "value": "#F7F7F7" },
-    { "name": "surface2", "value": "#EEEEEE" },
-    { "name": "bullet", "value": "#9CA3AF" },
-    { "name": "link", "value": "#106BA3" },
-    { "name": "highlight", "value": "#FFFBEB" },
+    { "name": "surface0", "value": "#FCFCFC" },
+    { "name": "surface1", "value": "#F3F3F4" },
+    { "name": "surface2", "value": "#EAEAEB" },
+    { "name": "bullet", "value": "#A0A3A8" },
+    { "name": "link", "value": "#0458A6" },
+    { "name": "highlight", "value": "#FFF9E6" },
     { "name": "search_highlight", "value": "#FEF08A" },
-    { "name": "border", "value": "#E5E7EB" },
-    { "name": "toolbar", "value": "#F9FAFB" },
-    { "name": "muted_text", "value": "#6B7280" },
-    { "name": "danger", "value": "#EF4444" },
-    { "name": "success", "value": "#10B981" }
+    { "name": "border", "value": "#E8E9EA" },
+    { "name": "toolbar", "value": "#F6F6F7" },
+    { "name": "muted_text", "value": "#787B80" },
+    { "name": "danger", "value": "#DC2626" },
+    { "name": "success", "value": "#059669" }
   ]
 }

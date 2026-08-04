@@ -5,6 +5,12 @@ import { AppState } from '../state/AppState';
 import { ThemeManager } from '../components/common/ThemeManager';
 import { FileService } from '../services/FileService';
 import { WorkspaceService } from '../services/WorkspaceService';
+import { TestDataService } from '../services/TestDataService';
+import { CollaborationService } from '../services/CollaborationService';
+import { SubscriptionService } from '../services/SubscriptionService';
+import { EncryptionService } from '../services/EncryptionService';
+import { CloudSyncService } from '../services/CloudSyncService';
+import { registerBuiltinPlugins } from '../plugins/BuiltinPlugins';
 
 const DOMAIN = 0x0001;
 
@@ -32,6 +38,24 @@ export default class EntryAbility extends UIAbility {
     // ─── 启动链（对应迁移计划 §启动链） ───
     // 1. 初始化文件服务并加载 Graph
     FileService.initGraph();
+
+    // 1.5 播种测试数据
+    TestDataService.seedIfEmpty();
+
+    // 1.6 初始化分布式协同
+    CollaborationService.getInstance().init(this.context);
+
+    // 1.7 异步刷新 Pro 订阅状态
+    SubscriptionService.refreshProStatus();
+
+    // 1.8 初始化加密服务
+    EncryptionService.init();
+
+    // 1.9 初始化端云协同目录
+    CloudSyncService.initCloudDir();
+
+    // 1.10 初始化插件系统
+    registerBuiltinPlugins();
 
     // 2. 初始化全局状态（主题、i18n、AppStorage 默认值）
     AppState.initialize();

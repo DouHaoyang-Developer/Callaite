@@ -72,6 +72,9 @@ export class OutlinerEngine {
   /**
    * 撤销最近一个操作。
    */
+  canUndo(): boolean { return this.undoStack.length > 0; }
+  canRedo(): boolean { return this.redoStack.length > 0; }
+
   undo(): OpResult {
     if (this.undoStack.length === 0) {
       return { success: false, message: 'Nothing to undo', affectedUuids: [] };

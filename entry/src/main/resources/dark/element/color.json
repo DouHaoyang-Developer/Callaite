@@ -1,68 +1,20 @@
 {
   "color": [
-    {
-      "name": "start_window_background",
-      "value": "#000000"
-    },
-    {
-      "name": "primary",
-      "value": "#4FC3F7"
-    },
-    {
-      "name": "bg",
-      "value": "#121212"
-    },
-    {
-      "name": "text",
-      "value": "#E5E5E5"
-    },
-    {
-      "name": "surface0",
-      "value": "#121212"
-    },
-    {
-      "name": "surface1",
-      "value": "#1E1E1E"
-    },
-    {
-      "name": "surface2",
-      "value": "#2A2A2A"
-    },
-    {
-      "name": "bullet",
-      "value": "#6B7280"
-    },
-    {
-      "name": "link",
-      "value": "#4FC3F7"
-    },
-    {
-      "name": "highlight",
-      "value": "#5C4B1E"
-    },
-    {
-      "name": "search_highlight",
-      "value": "#B5A72A"
-    },
-    {
-      "name": "border",
-      "value": "#374151"
-    },
-    {
-      "name": "toolbar",
-      "value": "#1A1A1A"
-    },
-    {
-      "name": "muted_text",
-      "value": "#9CA3AF"
-    },
-    {
-      "name": "danger",
-      "value": "#F87171"
-    },
-    {
-      "name": "success",
-      "value": "#34D399"
-    }
+    { "name": "start_window_background", "value": "#1C1C1D" },
+    { "name": "primary", "value": "#5B9BD5" },
+    { "name": "bg", "value": "#1C1C1D" },
+    { "name": "text", "value": "#E0E0E0" },
+    { "name": "surface0", "value": "#1C1C1D" },
+    { "name": "surface1", "value": "#242425" },
+    { "name": "surface2", "value": "#2D2D2E" },
+    { "name": "bullet", "value": "#6B6F74" },
+    { "name": "link", "value": "#5B9BD5" },
+    { "name": "highlight", "value": "#3D3520" },
+    { "name": "search_highlight", "value": "#5C5218" },
+    { "name": "border", "value": "#38383A" },
+    { "name": "toolbar", "value": "#282829" },
+    { "name": "muted_text", "value": "#8B8F94" },
+    { "name": "danger", "value": "#F87171" },
+    { "name": "success", "value": "#34D399" }
   ]
 }

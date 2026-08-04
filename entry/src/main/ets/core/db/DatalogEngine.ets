@@ -1,18 +1,18 @@
 import { BlockData } from '../models/Block';
+import { PageData } from '../models/Page';
 import { DataStore } from './DataStore';
 import { QueryEngine, QueryOptions } from './QueryEngine';
+import { LogicEngine } from './LogicEngine';
 
 /**
- * DatalogEngine — 自研迷你 Datalog 引擎。
+ * DatalogEngine — 自研 Datalog 引擎（含递归规则）。
  *
- * 支持 Logseq 常用的 Datalog 查询模式（非完整递归规则引擎）：
- *   (and (task TODO DOING) (property tags "project"))
- *   (or (page "journal") (tag "important"))
- *   (not (task DONE))
- *   (between scheduled -7d +7d)
- *   (has-property "deadline")
+ * 支持:
+ *   1. 常用查询模式: and/or/not/between/task/priority/tag/property
+ *   2. 递归规则: ancestor/descendant/transitive-closure
+ *   3. 变量查询: [?p :page/name ?n]
  *
- * 对应 Logseq db/query_dsl.cljs (782行) + db/frontend/rules.cljs。
+ * 对应 Logseq db/query_dsl.cljs + db/frontend/rules.cljs。
  */
 export class DatalogEngine {
 
@@ -247,6 +247,119 @@ export class DatalogEngine {
     }
     if (clause.trim() !== '') clauses.push(clause.trim());
     return clauses;
+  }
+
+  // ─── 递归规则引擎 ───
+
+  /**
+   * 使用 LogicEngine 执行递归规则查询。
+   * 支持模式: (ancestor ?x ?y), (descendant ?x ?y), (path ?x ?y)
+   */
+  static executeRecursive(store: DataStore, queryStr: string): BlockData[] {
+    const engine = DatalogEngine.buildRecursiveEngine(store);
+    const trimmed = queryStr.trim();
+    const queryAtom = DatalogEngine.parseSexp(trimmed);
+
+    const results = engine.query(queryAtom);
+    if (results.length === 0) return [];
+
+    // 将绑定结果转换为 BlockData（查找 ?x 或 ?y 绑定的 page）
+    const blocks: BlockData[] = [];
+    const seen: Map<string, boolean> = new Map<string, boolean>();
+    for (let i = 0; i < results.length; i++) {
+      const bound = DatalogEngine.bindingsToBlockUuids(results[i]);
+      for (let j = 0; j < bound.length; j++) {
+        if (!seen.has(bound[j])) {
+          seen.set(bound[j], true);
+          const block = store.getBlock(bound[j]);
+          if (block) blocks.push(block);
+        }
+      }
+    }
+    return blocks;
+  }
+
+  /**
+   * 构建基于 DataStore 的递归规则引擎。
+   * 事实: (parent ?uuid ?parentUuid), (page ?uuid), (tag ?uuid ?tag)
+   * 规则: (ancestor ?x ?y) :- (parent ?x ?y)
+   *        (ancestor ?x ?y) :- (parent ?x ?z), (ancestor ?z ?y)
+   */
+  static buildRecursiveEngine(store: DataStore): LogicEngine {
+    const engine = new LogicEngine();
+
+    const pages = store.getAllPages();
+    for (let pi = 0; pi < pages.length; pi++) {
+      const blocks = store.getPageBlocks(pages[pi].uuid);
+      // 事实: (parent block-uuid parent-uuid)
+      for (let bi = 0; bi < blocks.length; bi++) {
+        if (blocks[bi].parentId !== blocks[bi].pageId) {
+          engine.addFact('parent', blocks[bi].uuid, blocks[bi].parentId);
+        }
+        engine.addFact('block', blocks[bi].uuid);
+        // 标签事实
+        for (let ti = 0; ti < blocks[bi].tags.length; ti++) {
+          engine.addFact('tag', blocks[bi].uuid, blocks[bi].tags[ti]);
+        }
+      }
+      engine.addFact('page', pages[pi].uuid);
+    }
+
+    // 规则: ancestor 传递闭包
+    engine.addRule(
+      ['ancestor', '?x', '?y'],
+      [['parent', '?x', '?y']]
+    );
+    engine.addRule(
+      ['ancestor', '?x', '?y'],
+      [['parent', '?x', '?z'], ['ancestor', '?z', '?y']]
+    );
+
+    // 规则: descendant 反向
+    engine.addRule(
+      ['descendant', '?x', '?y'],
+      [['ancestor', '?y', '?x']]
+    );
+
+    // 规则: connected (通过标签相连)
+    engine.addRule(
+      ['connected', '?x', '?y'],
+      [['tag', '?x', '?t'], ['tag', '?y', '?t']]
+    );
+
+    return engine;
+  }
+
+  /**
+   * 解析 s-expression 为 Atom。
+   * "(ancestor ?x block-uuid)" → ["ancestor", "?x", "block-uuid"]
+   */
+  static parseSexp(sexp: string): string[] {
+    const inner = sexp.trim();
+    const stripped = inner.startsWith('(') && inner.endsWith(')') ?
+      inner.substring(1, inner.length - 1).trim() : inner;
+    const parts: string[] = [];
+    let word = '';
+    for (let i = 0; i < stripped.length; i++) {
+      const ch = stripped.charAt(i);
+      if (ch === ' ' || ch === '\t') {
+        if (word !== '') { parts.push(word); word = ''; }
+      } else {
+        word += ch;
+      }
+    }
+    if (word !== '') parts.push(word);
+    return parts;
+  }
+
+  static bindingsToBlockUuids(bindings: Map<string, string>): string[] {
+    const uuids: string[] = [];
+    bindings.forEach((val: string, _key: string) => {
+      if (val.length === 36 && val.indexOf('-') >= 0) {
+        uuids.push(val);
+      }
+    });
+    return uuids;
   }
 
   private static intersect(a: BlockData[], b: BlockData[]): BlockData[] {

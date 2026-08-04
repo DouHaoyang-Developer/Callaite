@@ -2,17 +2,10 @@ import { BlockData } from '../../core/models/Block';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { EditorService } from '../../services/EditorService';
 import { ContentRenderer, ContentSegment, SegmentType } from '../../utils/ContentRenderer';
+import { MathRenderer } from '../extensions/MathRenderer';
+import { MermaidRenderer } from '../extensions/MermaidRenderer';
+import { WebEditor } from './WebEditor';
 
-/**
- * BlockView — Logseq 风格 Block 行。
- *
- * 视觉对齐 Logseq 原版:
- *  - 圆点: 6px filled circle, 灰色 #9CA3AF
- *  - 缩进: 24px/级, 无显式引导线(Logseq 用空白缩进)
- *  - 字体: 15px
- *  - 行高: 紧凑 28px
- *  - marker: 彩色圆角标签
- */
 @Component
 export struct BlockView {
   @Prop blockUuid: string = '';
@@ -21,229 +14,110 @@ export struct BlockView {
   @State editContent: string = '';
   @State showActions: boolean = false;
   @State displaySegments: ContentSegment[] = [];
+  @State isHovered: boolean = false;
+  @State bulletColor: string = '#A0A3A8';
   private blockData: BlockData | undefined;
 
-  aboutToAppear(): void {
-    this.refreshBlock();
-  }
+  aboutToAppear(): void { this.refreshBlock(); }
 
   refreshBlock(): void {
     const ws = WorkspaceService.getInstance();
     this.blockData = ws.getBlock(this.blockUuid);
-    if (this.blockData) {
-      this.displaySegments = ContentRenderer.parse(this.blockData.content);
-    }
+    if (this.blockData) this.displaySegments = ContentRenderer.parse(this.blockData.content);
   }
 
   build() {
-    if (!this.blockData) {
-      Row().width('100%').height(0)
-    } else {
+    if (!this.blockData) { Row().width('100%').height(0) }
+    else {
       Column() {
         Row() {
-          // 缩进空白（Logseq: 每级 24px）
           if (this.depth > 0) {
-            Blank().width(this.depth * 24)
+            ForEach(this.buildGuideArray(), (idx: number) => {
+              Row() {
+                Column().width(1).height('100%').backgroundColor('#E8E9EA').margin({ left: 8 })
+                Blank().width(15)
+              }.width(24).height('100%')
+            }, (idx: number) => idx.toString())
           }
 
-          // 圆点 + 内容行
           Row({ space: 8 }) {
-            // Logseq 风格圆点: 6px filled circle, 灰色
-            Circle({ width: 6, height: 6 })
-              .fill($r('app.color.bullet'))
-              .margin({ top: 6 })
+            Circle({ width: 6, height: 6 }).fill(this.bulletColor).margin({ top: 5 })
+              .animation({ duration: 150, curve: Curve.EaseOut })
 
             Row({ space: 4 }) {
-              // 任务标记（彩色标签）
               if (this.blockData.marker !== '') {
-                Text(this.blockData.marker)
-                  .fontSize(11)
-                  .fontWeight(FontWeight.Medium)
+                Text(this.blockData.marker).fontSize(11).fontWeight(FontWeight.Medium)
                   .fontColor(this.getMarkerColor(this.blockData.marker))
-                  .padding({ left: 4, right: 4, top: 2, bottom: 2 })
-                  .borderRadius(3)
+                  .padding({ left: 4, right: 4, top: 2, bottom: 2 }).borderRadius(3)
                   .backgroundColor(this.getMarkerBg(this.blockData.marker))
-                  .onClick(() => {
-                    const editor = EditorService.getInstance();
-                    editor.setFocusedBlock(this.blockUuid);
-                    editor.cycleMarker();
-                    this.refreshBlock();
-                  })
+                  .onClick(() => { EditorService.getInstance().setFocusedBlock(this.blockUuid); EditorService.getInstance().cycleMarker(); this.refreshBlock(); })
               }
-
-              // 内容区
               if (this.isEditing) {
-                TextArea({ text: this.editContent, placeholder: '输入内容...' })
-                  .fontSize(15)
-                  .fontColor($r('app.color.text'))
-                  .backgroundColor($r('app.color.surface0'))
-                  .layoutWeight(1)
-                  .height(28)
-                  .maxLength(5000)
-                  .padding(0)
-                  .onChange((value: string) => { this.editContent = value; })
-                  .onBlur(() => {
-                    EditorService.getInstance().updateBlockContent(this.blockUuid, this.editContent);
-                    this.isEditing = false;
-                    this.refreshBlock();
-                  })
+                WebEditor({ blockUuid: this.blockUuid, initialContent: this.blockData.content, pageName: this.resolvePageName(),
+                  onSave: () => { this.isEditing = false; this.refreshBlock(); },
+                  onAction: (_a: string, _d: string) => { this.refreshBlock(); } }).layoutWeight(1)
               } else {
                 Row({ space: 0 }) {
                   if (this.displaySegments.length === 0) {
-                    Text(' ')
-                      .fontSize(15)
-                      .fontColor($r('app.color.muted_text'))
-                      .height(28)
-                      .onClick(() => {
-                        EditorService.getInstance().setFocusedBlock(this.blockUuid);
-                        this.isEditing = true;
-                        this.editContent = this.blockData ? this.blockData.content : '';
-                      })
+                    Text(' ').fontSize(15).fontColor('#A0A3A8').height(28).onClick(() => { this.enterEdit(); })
                   } else {
                     ForEach(this.displaySegments, (seg: ContentSegment, idx: number) => {
-                      Text(seg.text)
-                        .fontSize(15)
-                        .fontColor(ContentRenderer.getSegmentColor(seg.type))
-                        .fontWeight(seg.type === SegmentType.BOLD ? FontWeight.Bold : FontWeight.Normal)
-                        .fontStyle(seg.type === SegmentType.ITALIC ? FontStyle.Italic : FontStyle.Normal)
-                        .decoration({
-                          type: seg.type === SegmentType.STRIKETHROUGH ? TextDecorationType.LineThrough : TextDecorationType.None,
-                          color: $r('app.color.muted_text')
-                        })
-                        .backgroundColor(seg.type === SegmentType.HIGHLIGHT ? '#FFF3CD' : Color.Transparent)
-                        .fontFamily(seg.type === SegmentType.CODE ? 'monospace' : '')
-                        .height(28)
-                        .onClick(() => {
-                          if (ContentRenderer.isClickable(seg.type)) {
-                            ContentRenderer.handleClick(seg.type, seg.text);
-                          } else {
-                            EditorService.getInstance().setFocusedBlock(this.blockUuid);
-                            this.isEditing = true;
-                            this.editContent = this.blockData ? this.blockData.content : '';
-                          }
-                        })
+                      if (seg.type === SegmentType.IMAGE) {
+                        Image(seg.text).width(120).height(80).objectFit(ImageFit.Cover).borderRadius(4)
+                      } else if (seg.type === SegmentType.MATH_BLOCK) {
+                        MathRenderer({ formula: seg.text, displayMode: true })
+                      } else if (seg.type === SegmentType.MATH_INLINE) {
+                        MathRenderer({ formula: seg.text, displayMode: false })
+                      } else if (seg.type === SegmentType.MERMAID) {
+                        MermaidRenderer({ code: seg.text })
+                      } else if (seg.type === SegmentType.BLOCKQUOTE) {
+                        Row() { Column().width(3).height('100%').backgroundColor('#D1D5DB').margin({right:8}); Text(seg.text).fontSize(14).fontColor('#787B80').fontStyle(FontStyle.Italic).layoutWeight(1) }.width('100%').padding({left:4,top:2,bottom:2})
+                      } else {
+                        Text(seg.text).fontSize(15)
+                          .fontColor(ContentRenderer.getSegmentColor(seg.type))
+                          .fontWeight(seg.type === SegmentType.BOLD ? FontWeight.Bold : FontWeight.Normal)
+                          .fontStyle(seg.type === SegmentType.ITALIC ? FontStyle.Italic : FontStyle.Normal)
+                          .decoration({ type: seg.type === SegmentType.STRIKETHROUGH ? TextDecorationType.LineThrough : TextDecorationType.None, color: '#787B80' })
+                          .backgroundColor(seg.type === SegmentType.HIGHLIGHT ? '#FFF9E6' : Color.Transparent)
+                          .fontFamily(seg.type === SegmentType.CODE ? 'monospace' : '').height(28)
+                          .onClick(() => { if (ContentRenderer.isClickable(seg.type)) ContentRenderer.handleClick(seg.type, seg.text); else this.enterEdit(); })
+                      }
                     }, (seg: ContentSegment, idx: number) => idx.toString())
                   }
-                }
-                .layoutWeight(1)
+                }.layoutWeight(1)
               }
+            }.layoutWeight(1)
+
+            if (this.isHovered || this.showActions) {
+              Row() { Text('···').fontSize(12).fontColor('#A0A3A8') }.width(20).height(20).onClick(()=>{this.showActions=!this.showActions;})
             }
-            .layoutWeight(1)
+          }.width('100%').padding({ top: 4, bottom: 4 })
+        }.width('100%')
+        .onHover((isHover: boolean) => { this.isHovered = isHover; this.bulletColor = isHover ? '#0458A6' : '#A0A3A8'; })
+        .onClick(() => { if (!this.isEditing) EditorService.getInstance().setFocusedBlock(this.blockUuid); })
+        .backgroundColor(this.isHovered ? '#F3F3F4' : Color.Transparent).borderRadius(4)
 
-            // 操作菜单（hover 时显示）
-            if (this.showActions) {
-              Row({ space: 2 }) {
-                // Indent
-                Row() {
-                  Text('→').fontSize(12).fontColor($r('app.color.muted_text'))
-                }
-                .width(22).height(22)
-                .onClick(() => { EditorService.getInstance().indentBlock(); this.refreshBlock(); this.showActions = false; })
-
-                // Outdent
-                Row() {
-                  Text('←').fontSize(12).fontColor($r('app.color.muted_text'))
-                }
-                .width(22).height(22)
-                .onClick(() => { EditorService.getInstance().outdentBlock(); this.refreshBlock(); this.showActions = false; })
-
-                // Delete
-                Row() {
-                  Text('×').fontSize(14).fontColor($r('app.color.danger'))
-                }
-                .width(22).height(22)
-                .onClick(() => {
-                  WorkspaceService.getInstance().executeOp({ type: 'delete-block', uuid: this.blockUuid });
-                  this.refreshBlock(); this.showActions = false;
-                })
-              }
-            }
-          }
-          .width('100%')
-          .constraintSize({ minHeight: 28 })
-          .padding({ top: 2, bottom: 2 })
-          .onClick(() => {
-            if (!this.isEditing) {
-              EditorService.getInstance().setFocusedBlock(this.blockUuid);
-              this.showActions = !this.showActions;
-            }
-          })
+        if (this.showActions) {
+          Row({ space: 4 }) {
+            Button(){Text('→').fontSize(13).fontColor('#3A3A3A')}.width(26).height(26).type(ButtonType.Circle).backgroundColor('#EAEAEB').onClick(()=>{EditorService.getInstance().indentBlock();this.refreshBlock();this.showActions=false;})
+            Button(){Text('←').fontSize(13).fontColor('#3A3A3A')}.width(26).height(26).type(ButtonType.Circle).backgroundColor('#EAEAEB').onClick(()=>{EditorService.getInstance().outdentBlock();this.refreshBlock();this.showActions=false;})
+            Button(){Text('↑').fontSize(13).fontColor('#3A3A3A')}.width(26).height(26).type(ButtonType.Circle).backgroundColor('#EAEAEB').onClick(()=>{EditorService.getInstance().moveBlockUp();this.refreshBlock();this.showActions=false;})
+            Button(){Text('↓').fontSize(13).fontColor('#3A3A3A')}.width(26).height(26).type(ButtonType.Circle).backgroundColor('#EAEAEB').onClick(()=>{EditorService.getInstance().moveBlockDown();this.refreshBlock();this.showActions=false;})
+            Button(){Text('×').fontSize(15).fontColor('#DC2626')}.width(26).height(26).type(ButtonType.Circle).backgroundColor('#EAEAEB').onClick(()=>{WorkspaceService.getInstance().executeOp({type:'delete-block',uuid:this.blockUuid});this.refreshBlock();this.showActions=false;})
+          }.width('100%').padding({left:24,right:8,bottom:4})
         }
-        .width('100%')
-
-        // Block 嵌入预览
-        if (this.hasEmbedSegments()) {
-          this.EmbedBlocks()
-        }
-      }
-      .width('100%')
-      .padding({ left: 12, right: 12 })
+        if (this.hasEmbedSegments()) this.EmbedBlocks()
+      }.width('100%').padding({ left: 16, right: 16 })
     }
   }
 
-  hasEmbedSegments(): boolean {
-    for (let i = 0; i < this.displaySegments.length; i++) {
-      if (this.displaySegments[i].type === SegmentType.BLOCK_EMBED ||
-          this.displaySegments[i].type === SegmentType.PAGE_EMBED) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  getEmbedUuids(): string[] {
-    const uuids: string[] = [];
-    for (let i = 0; i < this.displaySegments.length; i++) {
-      if (this.displaySegments[i].type === SegmentType.BLOCK_EMBED) {
-        uuids.push(this.displaySegments[i].text);
-      }
-    }
-    return uuids;
-  }
-
-  @Builder
-  EmbedBlocks() {
-    Column({ space: 4 }) {
-      ForEach(this.getEmbedUuids(), (uuid: string) => {
-        Column() {
-          Text(this.getBlockContent(uuid))
-            .fontSize(13)
-            .fontColor($r('app.color.muted_text'))
-            .maxLines(3)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .width('100%')
-            .padding({ top: 4, bottom: 4, left: 12, right: 8 })
-        }
-        .width('100%')
-        .backgroundColor($r('app.color.surface1'))
-        .borderRadius(4)
-        .border({ width: { left: 2 }, color: $r('app.color.primary') })
-        .padding({ left: 24 })
-      }, (uuid: string) => uuid)
-    }
-    .width('100%')
-  }
-
-  getBlockContent(uuid: string): string {
-    const ws = WorkspaceService.getInstance();
-    const block = ws.getBlock(uuid);
-    if (block) return block.content.substring(0, 120);
-    return uuid.substring(0, 8) + '...';
-  }
-
-  getMarkerColor(marker: string): ResourceColor {
-    if (marker === 'DONE') return '#10B981';
-    if (marker === 'DOING') return '#0078D4';
-    if (marker === 'TODO') return '#EF4444';
-    if (marker === 'CANCELLED') return '#9CA3AF';
-    return '#9CA3AF';
-  }
-
-  getMarkerBg(marker: string): ResourceColor {
-    if (marker === 'DONE') return '#10B98118';
-    if (marker === 'DOING') return '#0078D418';
-    if (marker === 'TODO') return '#EF444418';
-    if (marker === 'CANCELLED') return '#6B728018';
-    return Color.Transparent;
-  }
+  enterEdit(): void { EditorService.getInstance().setFocusedBlock(this.blockUuid); this.isEditing = true; }
+  resolvePageName(): string { const ws=WorkspaceService.getInstance(); const pid=ws.getPageUuidForBlock(this.blockUuid); if(pid){ const p=ws.getDataStore().getIndexStore().getPage(pid); if(p)return p.originalName; } return ''; }
+  buildGuideArray(): number[] { const a:number[]=[]; for(let i=0;i<this.depth;i++)a.push(i); return a; }
+  hasEmbedSegments(): boolean { for(let i=0;i<this.displaySegments.length;i++){ const t=this.displaySegments[i].type; if(t===SegmentType.BLOCK_EMBED||t===SegmentType.PAGE_EMBED)return true; } return false; }
+  getEmbedUuids(): string[] { const u:string[]=[]; for(let i=0;i<this.displaySegments.length;i++){ if(this.displaySegments[i].type===SegmentType.BLOCK_EMBED)u.push(this.displaySegments[i].text); } return u; }
+  @Builder EmbedBlocks() { Column({space:4}){ ForEach(this.getEmbedUuids(),(uuid:string)=>{ Column(){Text(this.getBlockContent(uuid)).fontSize(13).fontColor('#787B80').maxLines(3).textOverflow({overflow:TextOverflow.Ellipsis}).width('100%').padding({top:4,bottom:4,left:12,right:8})}.width('100%').backgroundColor('#F3F3F4').borderRadius(4).border({width:{left:2},color:'#0458A6'}).padding({left:24})},(uuid:string)=>uuid) }.width('100%') }
+  getBlockContent(uuid: string): string { const ws=WorkspaceService.getInstance(); const b=ws.getBlock(uuid); if(b)return b.content.substring(0,120); return uuid.substring(0,8)+'...'; }
+  getMarkerColor(m: string): ResourceColor { if(m==='DONE')return'#059669';if(m==='DOING')return'#0458A6';if(m==='TODO')return'#DC2626';if(m==='CANCELLED')return'#A0A3A8';return'#A0A3A8'; }
+  getMarkerBg(m: string): ResourceColor { if(m==='DONE')return'#05966918';if(m==='DOING')return'#0458A618';if(m==='TODO')return'#DC262618';if(m==='CANCELLED')return'#787B8018';return Color.Transparent; }
 }

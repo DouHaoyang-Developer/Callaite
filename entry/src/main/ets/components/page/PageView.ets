@@ -2,28 +2,58 @@ import { BlockList } from '../outliner/BlockList';
 import { JournalService } from '../../services/JournalService';
 import { SettingsPage } from '../settings/SettingsPage';
 import { QueryBuilder } from '../query/QueryBuilder';
+import { GraphView } from '../graph/GraphView';
+import { Whiteboard } from '../whiteboard/Whiteboard';
+import { FlashcardPage } from '../flashcard/FlashcardPage';
 import { TaskDashboard } from '../search/TaskDashboard';
+import { WorkspaceService } from '../../services/WorkspaceService';
 
 @Component
 export struct PageView {
   @StorageLink('callaite_currentPage') currentPage: string = 'Journal';
   @State displayName: string = '';
   @State showProperties: boolean = false;
+  @State pagePropKeys: string[] = [];
+  @State pagePropValues: string[] = [];
 
   aboutToAppear(): void {
+    this.resolvePage();
+  }
+
+  resolvePage(): void {
     if (this.currentPage === 'Journal') {
       JournalService.ensureTodayJournal();
       this.displayName = JournalService.getTodayDateString();
     } else {
       this.displayName = this.currentPage;
     }
+    this.loadProperties();
+  }
+
+  loadProperties(): void {
+    const ws = WorkspaceService.getInstance();
+    const page = ws.getPageByName(this.displayName);
+    const keys: string[] = [];
+    const values: string[] = [];
+    if (page) {
+      page.properties.forEach((key: string, value: string) => {
+        keys.push(key);
+        values.push(value);
+      });
+    }
+    this.pagePropKeys = keys;
+    this.pagePropValues = values;
   }
 
   build() {
     if (this.currentPage === 'Settings') {
       SettingsPage()
     } else if (this.currentPage === 'Graph') {
-      this.QueryView()
+      GraphView()
+    } else if (this.currentPage === 'Whiteboards') {
+      Whiteboard()
+    } else if (this.currentPage === 'Flashcards') {
+      FlashcardPage()
     } else {
       Column({ space: 0 }) {
         // 页面标题（Logseq 风格: 大号粗体, 可点击编辑）
@@ -52,11 +82,23 @@ export struct PageView {
         .padding({ top: 8, bottom: 8, left: 4, right: 4 })
 
         if (this.showProperties) {
-          Row()
-            .width('100%')
-            .padding(10)
-            .backgroundColor($r('app.color.surface1'))
-            .borderRadius(4)
+          Column({ space: 4 }) {
+            if (this.pagePropKeys.length > 0) {
+              ForEach(this.pagePropKeys, (key: string, idx: number) => {
+                Row({ space: 8 }) {
+                  Text(key + ':').fontSize(12).fontWeight(FontWeight.Medium).fontColor($r('app.color.muted_text'))
+                  Text(this.pagePropValues[idx]).fontSize(13).fontColor($r('app.color.text')).layoutWeight(1)
+                }
+                .width('100%')
+              }, (key: string) => key)
+            } else {
+              Text('无属性').fontSize(12).fontColor($r('app.color.muted_text'))
+            }
+          }
+          .width('100%')
+          .padding(10)
+          .backgroundColor($r('app.color.surface1'))
+          .borderRadius(4)
         }
 
         // 任务面板（仅日志页）

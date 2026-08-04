@@ -11,6 +11,10 @@
     {
       "name": "EntryAbility_label",
       "value": "Callaite"
+    },
+    {
+      "name": "distributed_reason",
+      "value": "用于跨设备实时协同编辑笔记"
     }
   ]
 }

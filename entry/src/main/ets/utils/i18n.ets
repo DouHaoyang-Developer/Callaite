@@ -62,6 +62,11 @@ function buildZhCN(): I18nDict {
   d.add('from_page', '来自');
   d.add('about', '关于');
   d.add('rename', '重命名');
+  d.add('import', '导入');
+  d.add('export', '导出');
+  d.add('recycle', '回收站');
+  d.add('onboarding_welcome', '欢迎使用 Callaite');
+  d.add('onboarding_desc', 'Logseq 风格的鸿蒙知识管理应用');
   d.add('loading', '加载中...');
   return d;
 }
@@ -106,6 +111,11 @@ function buildEnUS(): I18nDict {
   d.add('from_page', 'From');
   d.add('about', 'About');
   d.add('rename', 'Rename');
+  d.add('import', 'Import');
+  d.add('export', 'Export');
+  d.add('recycle', 'Recycle Bin');
+  d.add('onboarding_welcome', 'Welcome to Callaite');
+  d.add('onboarding_desc', 'Logseq-style knowledge management for HarmonyOS');
   d.add('loading', 'Loading...');
   return d;
 }
