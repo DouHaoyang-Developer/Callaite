@@ -11,6 +11,7 @@ import { SubscriptionService } from '../services/SubscriptionService';
 import { EncryptionService } from '../services/EncryptionService';
 import { CloudSyncService } from '../services/CloudSyncService';
 import { registerBuiltinPlugins } from '../plugins/BuiltinPlugins';
+import { ContinuationManager } from '../services/ContinuationManager';
 
 const DOMAIN = 0x0001;
 
@@ -87,5 +88,29 @@ export default class EntryAbility extends UIAbility {
     } catch (_e) {
       // 保存失败不阻塞
     }
+  }
+
+  // ─── 多端流转（Continuation） ───
+
+  /**
+   * 源端流转回调：在设备迁移前将应用状态写入 wantParam。
+   * SDK 签名要求返回 AbilityConstant.OnContinueResult，表示是否同意流转。
+   */
+  onContinue(wantParam: Record<string, Object>): AbilityConstant.OnContinueResult {
+    hilog.info(DOMAIN, 'EntryAbility', '%{public}s', 'Ability onContinue — preparing migration');
+    const want: Want = {
+      parameters: wantParam
+    };
+    ContinuationManager.saveToContinue(want);
+    return AbilityConstant.OnContinueResult.AGREE;
+  }
+
+  /**
+   * 目标端流转回调：从 want 恢复应用状态。
+   * 在 onCreate 之后、onWindowStageCreate 之前调用。
+   */
+  onRestoreData(want: Want): void {
+    hilog.info(DOMAIN, 'EntryAbility', '%{public}s', 'Ability onRestoreData — restoring state');
+    ContinuationManager.restoreFromContinue(want);
   }
 }

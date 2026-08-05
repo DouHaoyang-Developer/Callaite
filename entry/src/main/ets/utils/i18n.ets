@@ -68,6 +68,41 @@ function buildZhCN(): I18nDict {
   d.add('onboarding_welcome', '欢迎使用 Callaite');
   d.add('onboarding_desc', 'Logseq 风格的鸿蒙知识管理应用');
   d.add('loading', '加载中...');
+  // 新增 — Header 与导航
+  d.add('nav_journals', '日志');
+  d.add('nav_all_pages', '所有页面');
+  d.add('nav_graph_view', '图谱视图');
+  d.add('nav_flashcards', '闪卡复习');
+  d.add('nav_home', '主页');
+  d.add('nav_appearance', '外观');
+  d.add('nav_recycle', '回收站');
+  d.add('nav_export', '导出图谱');
+  d.add('nav_import', '导入');
+  d.add('nav_about', '关于');
+  d.add('header_more', '更多');
+  d.add('header_go_back', '后退');
+  d.add('header_go_forward', '前进');
+  d.add('header_toggle_left_sidebar', '切换左侧栏');
+  d.add('header_toggle_right_sidebar', '切换右侧栏');
+  d.add('header_search', '搜索');
+  d.add('header_home', '主页');
+  // 右侧栏
+  d.add('sidebar_right_title', '右侧栏');
+  d.add('sidebar_contents', '目录');
+  d.add('sidebar_page_graph', '页面图谱');
+  d.add('sidebar_help', '帮助');
+  d.add('sidebar_navigations', '导航');
+  d.add('close_all', '全部关闭');
+  d.add('collapse_all', '全部折叠');
+  d.add('expand_all', '全部展开');
+  d.add('open_in_sidebar', '在侧栏中打开');
+  d.add('open_as_page', '作为页面打开');
+  d.add('no_backlinks', '暂无反向链接');
+  d.add('no_outline', '暂无大纲');
+  d.add('no_properties', '暂无属性');
+  d.add('add_property_hint', 'key:: value 添加属性');
+  d.add('empty_sidebar', '右侧栏为空');
+  d.add('empty_sidebar_hint', '点击右侧栏图标查看页面信息');
   return d;
 }
 
@@ -117,6 +152,40 @@ function buildEnUS(): I18nDict {
   d.add('onboarding_welcome', 'Welcome to Callaite');
   d.add('onboarding_desc', 'Logseq-style knowledge management for HarmonyOS');
   d.add('loading', 'Loading...');
+  // Header & navigation
+  d.add('nav_journals', 'Journals');
+  d.add('nav_all_pages', 'All Pages');
+  d.add('nav_graph_view', 'Graph View');
+  d.add('nav_flashcards', 'Flashcards');
+  d.add('nav_home', 'Home');
+  d.add('nav_appearance', 'Appearance');
+  d.add('nav_recycle', 'Recycle Bin');
+  d.add('nav_export', 'Export Graph');
+  d.add('nav_import', 'Import');
+  d.add('nav_about', 'About');
+  d.add('header_more', 'More');
+  d.add('header_go_back', 'Go Back');
+  d.add('header_go_forward', 'Go Forward');
+  d.add('header_toggle_left_sidebar', 'Toggle Left Sidebar');
+  d.add('header_toggle_right_sidebar', 'Toggle Right Sidebar');
+  d.add('header_search', 'Search');
+  d.add('header_home', 'Home');
+  d.add('sidebar_right_title', 'Right Sidebar');
+  d.add('sidebar_contents', 'Contents');
+  d.add('sidebar_page_graph', 'Page Graph');
+  d.add('sidebar_help', 'Help');
+  d.add('sidebar_navigations', 'Navigations');
+  d.add('close_all', 'Close All');
+  d.add('collapse_all', 'Collapse All');
+  d.add('expand_all', 'Expand All');
+  d.add('open_in_sidebar', 'Open in Sidebar');
+  d.add('open_as_page', 'Open as Page');
+  d.add('no_backlinks', 'No backlinks');
+  d.add('no_outline', 'No outline');
+  d.add('no_properties', 'No properties');
+  d.add('add_property_hint', 'key:: value to add property');
+  d.add('empty_sidebar', 'Sidebar is empty');
+  d.add('empty_sidebar_hint', 'Click right sidebar icons to view page info');
   return d;
 }
 

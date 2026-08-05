@@ -1,4 +1,4 @@
-import { LuniusPlugin } from './LuniusPlugin';
+import { CallaitePlugin } from './CallaitePlugin';
 import { PluginAPI } from './PluginAPI';
 import { fileIo as fs } from '@kit.CoreFileKit';
 
@@ -12,9 +12,11 @@ import { fileIo as fs } from '@kit.CoreFileKit';
  */
 export class PluginManager {
   private static instance: PluginManager | undefined;
-  private plugins: Map<string, LuniusPlugin> = new Map<string, LuniusPlugin>();
+  private plugins: Map<string, CallaitePlugin> = new Map<string, CallaitePlugin>();
   private enabledPlugins: Set<string> = new Set<string>();
-  private registry: LuniusPlugin[] = [];
+  // 修复：添加 disabledPlugins 集合，区分"显式禁用"和"未配置"
+  private disabledPlugins: Set<string> = new Set<string>();
+  private registry: CallaitePlugin[] = [];
 
   private readonly CONFIG_PATH = '/data/storage/el2/base/files/plugin_state.json';
 
@@ -25,7 +27,7 @@ export class PluginManager {
     return PluginManager.instance;
   }
 
-  register(plugin: LuniusPlugin): PluginManager {
+  register(plugin: CallaitePlugin): PluginManager {
     this.registry.push(plugin);
     return this;
   }
@@ -35,27 +37,18 @@ export class PluginManager {
     for (let i = 0; i < this.registry.length; i++) {
       const plugin = this.registry[i];
       this.plugins.set(plugin.id, plugin);
-      if (this.enabledPlugins.has(plugin.id) || (plugin.enabledByDefault && !PluginManager.hasExplicit(this, plugin.id))) {
+      // 修复：正确区分"显式启用"、"显式禁用"、"未配置（按默认）"三种状态
+      if (this.enabledPlugins.has(plugin.id)) {
+        // 显式启用
+        this.enable(plugin.id);
+      } else if (this.disabledPlugins.has(plugin.id)) {
+        // 显式禁用 — 不启用
+      } else if (plugin.enabledByDefault) {
+        // 未配置但默认启用
         this.enable(plugin.id);
       }
     }
     console.info('[PluginManager] Initialized ' + this.plugins.size + ' plugins');
-  }
-
-  private static hasExplicit(mgr: PluginManager, id: string): boolean {
-    try {
-      if (fs.accessSync(mgr.CONFIG_PATH)) {
-        const raw = fs.readTextSync(mgr.CONFIG_PATH);
-        const state: PluginState = JSON.parse(raw) as PluginState;
-        if (state.enabled) {
-          for (let i = 0; i < state.enabled.length; i++) {
-            if (state.enabled[i] === id) return false;
-          }
-          return true;
-        }
-      }
-    } catch (_e) {}
-    return false;
   }
 
   /**
@@ -67,6 +60,8 @@ export class PluginManager {
     try {
       plugin.onEnable();
       this.enabledPlugins.add(pluginId);
+      // 修复：启用时从显式禁用集合中移除
+      this.disabledPlugins.delete(pluginId);
       this.saveState();
     } catch (e) {
       console.error('[PluginManager] Failed to enable: ' + pluginId, e);
@@ -82,6 +77,8 @@ export class PluginManager {
     try {
       plugin.onDisable();
       this.enabledPlugins.delete(pluginId);
+      // 修复：记录显式禁用状态，防止重启后默认启用的插件被重新启用
+      this.disabledPlugins.add(pluginId);
       this.saveState();
     } catch (e) {
       console.error('[PluginManager] Failed to disable: ' + pluginId, e);
@@ -91,9 +88,9 @@ export class PluginManager {
   /**
    * 获取所有已注册插件。
    */
-  getAll(): LuniusPlugin[] {
-    const result: LuniusPlugin[] = [];
-    this.plugins.forEach((p: LuniusPlugin) => { result.push(p); });
+  getAll(): CallaitePlugin[] {
+    const result: CallaitePlugin[] = [];
+    this.plugins.forEach((p: CallaitePlugin) => { result.push(p); });
     return result;
   }
 
@@ -116,6 +113,12 @@ export class PluginManager {
             this.enabledPlugins.add(state.enabled[i]);
           }
         }
+        // 修复：加载显式禁用列表
+        if (state.disabled) {
+          for (let i = 0; i < state.disabled.length; i++) {
+            this.disabledPlugins.add(state.disabled[i]);
+          }
+        }
       }
     } catch (_e) { /* 首次启动 */ }
   }
@@ -124,7 +127,9 @@ export class PluginManager {
     try {
       const enabled: string[] = [];
       this.enabledPlugins.forEach((id: string) => { enabled.push(id); });
-      const state: PluginState = { enabled: enabled };
+      const disabled: string[] = [];
+      this.disabledPlugins.forEach((id: string) => { disabled.push(id); });
+      const state: PluginState = { enabled: enabled, disabled: disabled };
       const json = JSON.stringify(state);
       const file = fs.openSync(this.CONFIG_PATH, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
       fs.writeSync(file.fd, json);
@@ -138,4 +143,5 @@ export class PluginManager {
 
 interface PluginState {
   enabled: string[];
+  disabled?: string[];
 }

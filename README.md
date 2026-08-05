@@ -3,7 +3,7 @@
 **Logseq 风格的鸿蒙知识管理应用** — 基于 HarmonyOS ArkTS 构建，完整复刻 Logseq 的大纲编辑、双向链接、知识图谱等核心体验。
 
 > **SDK**: 6.1.1(24) / API 12 · **语言**: ArkTS · **模型**: Stage Model  
-> **规模**: 72 源文件 · ~10,200 行代码 · 0 第三方运行时依赖  
+> **规模**: 108 源文件 · ~25,163 行代码 · 0 第三方运行时依赖 · 完成度 80%+  
 > **架构**: MVVM + Service + Plugin + Query 四层架构
 
 ---
@@ -20,6 +20,7 @@
 - [查询系统](#查询系统)
 - [插件框架](#插件框架)
 - [鸿蒙特性](#鸿蒙特性)
+- [扩展功能](#扩展功能)
 - [UI 设计规范](#ui-设计规范)
 - [启动链](#启动链)
 - [技术选型](#技术选型)
@@ -63,13 +64,16 @@ Callaite 的核心是 Logseq 风格的大纲树编辑器。每个 Block 是一�
 - **自动保存**：编辑器失焦时自动保存到 DataStore 并持久化到 .md 文件
 
 **Block 操作**
-- 圆点（●）点击：展开操作工具栏
+- 圆点（●）点击：展开操作工具栏 / 折叠子 Block
 - 任务标记（TODO/DOING/DONE）：点击循环切换，彩色标签
 - 缩进/反缩进：Tab / Shift+Tab 或操作按钮
 - 上移/下移：Alt+↑↓ 或操作按钮
 - 删除：操作栏 × 按钮
-- 折叠/展开：点击 chevron 图标隐藏/显示子 Block
-- 拖拽排序：拖拽手柄 + EditorService.moveBlockToTarget
+- 折叠/展开：点击 chevron 图标或圆点隐藏/显示子 Block
+- 拖拽排序：长按 500ms 激活拖拽 + 振动反馈 + PanGesture 排序
+- 多选批量：Shift+点击 进入多选 + 批量缩进/删除/移动
+- 页内搜索：Ctrl+F 触发 FindInPage + 高亮匹配 + 上/下导航
+- 智能粘贴：粘贴 Markdown 自动按 `- ` 前缀拆分为多个 Block，保留缩进层级
 
 **行内格式渲染**
 
@@ -206,14 +210,23 @@ Callaite 的核心是 Logseq 风格的大纲树编辑器。每个 Block 是一�
 
 **Cloze 填空**：`{{cloze 隐藏答案}}` 格式，复习时点击翻转显示
 
-**间隔重复评分**：
+**FSRS-4.5 算法**（Free Spaced Repetition Scheduler）：
 
-| 评分 | 间隔系数 | 说明 |
-|------|---------|------|
-| 忘记 (0) | 重置为 1 | 完全遗忘 |
-| 困难 (1) | ×0.8 | 勉强回忆 |
-| 良好 (2) | ×1.5 | 正常回忆 |
-| 简单 (3) | ×2.5 | 轻松回忆 |
+基于稳定性（Stability）/ 难度（Difficulty）/ 可提取性（Retrievability）三大核心变量的现代间隔重复算法，取代传统 SM-2。
+
+| 评分 | 含义 | 调度逻辑 |
+|------|------|---------|
+| Again (1) | 完全遗忘 | 稳定性重置， lapse+1，进入重新学习 |
+| Hard (2) | 勉强回忆 | 稳定性增长 ×(1 + W[8]×难度惩罚) |
+| Good (3) | 正常回忆 | 稳定性增长 ×(1 + W[9]×可提取性) |
+| Easy (4) | 轻松回忆 | 稳定性增长 ×(1 + W[10]×易度奖励) |
+
+- 19 个参数权重 `W[0..18]`，默认值适配通用场景
+- 难度向 5.0 回归（meanReversion），避免极端值
+- 可提取性 R = exp(-elapsedDays/stability)
+- 调度数据持久化到 Block 属性 `fsrs_*`
+
+**复习界面**：顶部进度条 + 翻卡 + 4 按钮评分 + 完成后统计摘要（已复习/平均难度/下次到期）
 
 ### 8. 模板系统
 
@@ -231,6 +244,25 @@ Callaite 的核心是 Logseq 风格的大纲树编辑器。每个 Block 是一�
 - 项目页面：tags::project + status::active
 - 周回顾：{{date:-7d}} ~ {{date}}
 
+### 9. 白板（Whiteboard）
+
+Logseq Whiteboards 风格的无限画布白板，支持形状/连线/手写笔/页面引用。
+
+**画布与手势**
+- 无限平移（PanGesture）+ 缩放（PinchGesture）
+- 6 种工具：选择 / 矩形 / 椭圆 / 菱形 / 文本 / 连线 / 手写笔
+- 撤销/重做栈（50 层，含 shapes / connectors / strokes 快照）
+- `.canvas` JSON 文件持久化（JSON Canvas 1.0 规范）
+
+**形状与连线**
+- WbShape：矩形/椭圆/菱形/文本 + 命中测试 + 拖动/缩放
+- WbConnector：贝塞尔曲线连线 + 箭头 + 自动跟随端点
+- WbPageRef：拖入 Logseq 页面 + 双击跳转
+
+**PenKit 手写笔**（详见 [鸿蒙特性](#鸿蒙特性)）
+- 4 种笔刷：钢笔 / 铅笔 / 马克笔 / 橡皮擦
+- 压感映射 + 手掌误触过滤 + 笔触平滑
+
 ---
 
 ## 架构设计
@@ -245,7 +277,7 @@ Callaite 的核心是 Logseq 风格的大纲树编辑器。每个 Block 是一�
 │ Services（单例 static class）           │  ← 业务逻辑层
 │   Workspace / Editor / File / ...       │
 ├─────────────────────────────────────────┤
-│ Plugins（LuniusPlugin + PluginAPI）     │  ← 扩展层
+│ Plugins（CallaitePlugin + PluginAPI）     │  ← 扩展层
 │   BookmarkPlugin / TodoExportPlugin     │
 ├─────────────────────────────────────────┤
 │ Core Engine                             │  ← 引擎层
@@ -520,7 +552,7 @@ PluginManager（单例）
 ### 开发插件
 
 ```typescript
-class MyPlugin extends LuniusPlugin {
+class MyPlugin extends CallaitePlugin {
   get id(): string { return 'my-plugin'; }
   get name(): string { return 'My Plugin'; }
   get version(): string { return '1.0.0'; }
@@ -564,6 +596,42 @@ const kvStore = await kvManager.getKVStore('callaite_collab_store', {
 kvStore.on('dataChange', SubscribeType.SUBSCRIBE_TYPE_ALL, (data) => { ... });
 ```
 
+### 多端流转（Continuation）
+
+跨设备无缝迁移编辑状态，基于 `continuable` Ability + `onContinue` / `onRestoreData` 回调。
+
+```typescript
+// EntryAbility.onContinue — 源端序列化
+onContinue(wantParam: Record<string, Object>): void {
+  const want: Want = { parameters: wantParam };
+  ContinuationManager.saveToContinue(want);
+}
+
+// EntryAbility.onRestoreData — 目标端恢复
+onRestoreData(want: Want): void {
+  ContinuationManager.restoreFromContinue(want);
+}
+```
+
+**迁移状态字段**：currentPage / editingBlockUuid / scrollOffset / leftSidebarOpen / rightSidebarOpen
+
+`module.json5` 已配置 `"continuable": true`。
+
+### PenKit 手写笔集成
+
+白板支持手写笔压感输入，4 种笔刷各有独特映射：
+
+| 笔刷 | 线宽公式 | 透明度 |
+|------|---------|--------|
+| 钢笔（PEN） | `base × (0.3 + 0.7×pressure)` | 1.0 |
+| 铅笔（PENCIL） | `base × (0.5 + 0.5×pressure)` | 随压感变化 |
+| 马克笔（MARKER） | `base × (0.8 + 0.2×pressure)` | 0.6 |
+| 橡皮擦（ERASER） | `base × 1.5` | 1.0 |
+
+- 手掌误触过滤：压感 < 0.1 且非手写笔来源判定为手掌
+- 笔触平滑：3 点移动平均
+- 模拟器降级：检测不到手写笔时 pressure 固定 1.0，通过 `TouchEvent.force` 运行时检测
+
 ### IAP Kit 订阅
 
 | 方法 | API |
@@ -579,17 +647,100 @@ kvStore.on('dataChange', SubscribeType.SUBSCRIBE_TYPE_ALL, (data) => { ... });
                                         → 其他设备自动下行同步
 ```
 
-### 服务卡片
+### 服务卡片（FormExtensionAbility）
 
-- 类型：FormExtensionAbility（2×2 ArkTS 卡片）
-- 内容：显示最新 3 个 Block 预览
-- 刷新：每 2 小时定时更新
+两种卡片类型，30 分钟定时刷新：
+
+| 卡片类型 | 功能 |
+|---------|------|
+| 概览卡片（2×2） | 显示页面数 + 最新 3 条 Block 预览 |
+| 速记卡片 | 说明文本 + 打开应用按钮，点击跳转主应用 |
+
+卡片不支持 TextInput（SDK 限制），速记输入在主应用内完成：
+
+```
+点击按钮 → postCardAction router → EntryAbility
+```
+
+> 兼容说明：EntryFormAbility 仍保留 `onFormEvent` message 通道
+> （`handleQuickNoteFromMessage`），旧版卡片发送的
+> `{ "text": "..." }` message 依旧会创建 Block 到今日日志页。
+
+### 分享接收（ShareReceiveAbility）
+
+接收系统分享文本/URL，自动创建 Block 到今日日志页：
+
+- 文本分享 → Block content
+- URL 分享 → 转为 `[url]` 格式 Block
+- 处理后显示 toast 提示并跳转日志页
 
 ### 安全
 
 - **应用沙箱**：HarmonyOS 应用沙箱隔离
 - **AES-256-CBC 加密**：cryptoFramework + 随机 IV
 - **权限**：DISTRIBUTED_DATASYNC（分布式数据同步）
+
+---
+
+## 扩展功能
+
+### 导入导出
+
+**导出**（ExportService + ExportDialog）
+
+| 范围 | 格式 | 说明 |
+|------|------|------|
+| 当前页 | Markdown | 复制原 .md 文件到目标目录 |
+| 全部页 | Markdown | 批量复制所有 .md |
+| 当前页 | HTML | Block → `<ul><li>` 嵌套 + TODO/引用/代码/引用块 + 完整 HTML 文档 |
+| 全部页 | HTML | 批量导出 HTML |
+
+**导入**（ImportService + ImportDialog）
+
+外部 .md 文件导入，自动解析为 Block 树：
+
+- `- ` / `* ` 前缀识别 Block
+- 2 空格 / Tab 缩进识别层级
+- `# ` 标题作为顶层 Block
+- `- [ ]` / `- [x]` 作为 TODO Block
+- ``` 代码块合并为单个 Block
+- `---` 分隔符识别
+
+导入模式：导入到当前页 / 作为新页面（文件名作为页面名）。
+
+### 快捷键自定义（ShortcutSettings）
+
+设置页内提供快捷键自定义入口，支持：
+
+- 按分类分组的快捷键列表（编辑 / 导航 / 视图 / 其他）
+- 搜索过滤
+- 点击"修改"进入按键监听模式
+- 冲突检测（重复绑定显示红色警告）
+- 恢复默认
+- 持久化到 AppStorage，加载时合并默认值与用户覆盖
+
+### 多步引导（Onboarding）
+
+首次启动 4 步引导流程：
+
+1. **欢迎**：功能介绍（日志 / 大纲 / 双向链接 / 搜索）
+2. **创建 Graph**：说明本地 Markdown 存储
+3. **快捷键**：6 个核心快捷键展示
+4. **示例页面**：点击"开始使用"完成引导
+
+顶部 4 圆点进度指示器，完成后写入 `AppStorage('callaite_onboarded', true)`。
+
+### 代码高亮（CodeBlock）
+
+WebView + highlight.js CDN 实现代码语法高亮，支持常见语言。
+
+### 数学公式（MathRenderer）
+
+WebView + KaTeX 0.16.9 CDN，支持行内 `$...$` 和块级 `$$...$$`。
+
+### 图表（MermaidRenderer）
+
+WebView + mermaid.js 10 CDN，支持流程图/时序图/类图等，主题自动适配深浅色。
 
 ---
 
@@ -655,6 +806,9 @@ kvStore.on('dataChange', SubscribeType.SUBSCRIBE_TYPE_ALL, (data) => { ... });
 EntryAbility.onCreate
   └── FileService.setContext(this.context)
 
+EntryAbility.onRestoreData（仅多端流转目标端）
+  └── ContinuationManager.restoreFromContinue(want)   // 恢复迁移状态
+
 EntryAbility.onWindowStageCreate
   ├── FileService.initGraph()             // 加载 .md 文件到内存
   ├── TestDataService.seedIfEmpty()       // 空 Graph → 播种 5 个测试页面
@@ -663,8 +817,8 @@ EntryAbility.onWindowStageCreate
   ├── EncryptionService.init()            // AES-256 密钥初始化
   ├── CloudSyncService.initCloudDir()     // 端云协同目录创建
   ├── registerBuiltinPlugins()            // 插件系统初始化
-  ├── AppState.initialize()              // 主题 → i18n → AppStorage → 侧栏状态
-  └── loadContent('pages/Index')         // 渲染主界面
+  ├── AppState.initialize()               // 主题 → i18n → AppStorage → 侧栏状态
+  └── loadContent('pages/Index')          // 渲染主界面
 ```
 
 ---
@@ -684,9 +838,12 @@ EntryAbility.onWindowStageCreate
 | 公式 | WebView + KaTeX 0.16.9 CDN | 行内 + 块级 |
 | 图表 | WebView + Mermaid 10.9.0 CDN | 流程图/时序图 |
 | 分布式 | DistributedKVStore + autoSync | P2P 实时协同 |
+| 多端流转 | continuable Ability + onContinue/onRestoreData | 跨设备状态迁移 |
+| 手写笔 | PenKit（运行时检测 + TouchEvent.force） | 压感映射 + 模拟器降级 |
 | 订阅 | IAP Kit | 华为应用市场 |
 | 云同步 | Core File Kit 端云协同 | 零服务器 |
 | 加密 | cryptoFramework AES-256-CBC | 随机 IV |
+| 闪卡 | FSRS-4.5 算法 | 稳定性/难度/可提取性 |
 | 图标 | 97 个 Tabler SVG → ArkTS Shape | MIT 协议 |
 | 插件 | 预编译 + 静态注册表 | ArkTS 安全兼容 |
 | i18n | 自定义 I18nDict class | 中/英双语 |
@@ -717,42 +874,46 @@ EntryAbility.onWindowStageCreate
 
 ```
 Callaite/entry/src/main/ets/
-├── components/              34 文件 (UI 层)
-│   ├── outliner/             6  (BlockView / BlockList / WebEditor / SlashMenu / AutoComplete / Toolbar)
-│   ├── sidebar/              2  (LeftSidebar / RightSidebar)
-│   ├── page/                 2  (PageView / ContentArea)
+├── components/              49 文件 (UI 层)
+│   ├── outliner/            11  (BlockView / BlockList / BlockChildren / BlockDragHandler / BlockSelection /
+│   │                            WebEditor / RichBlockEditor / SlashMenu / AutoComplete / Toolbar / FindInPage)
+│   ├── sidebar/              5  (LeftSidebar / RightSidebar / PageTree / PageContextMenu / BacklinkFilters)
+│   ├── page/                 3  (PageView / ContentArea / AllPagesPage)
 │   ├── layout/               2  (Header / MainContainer)
-│   ├── graph/                2  (GraphView / GraphLayout)
-│   ├── whiteboard/           1  (Whiteboard)
-│   ├── search/               1  (TaskDashboard)
-│   ├── settings/             3  (SettingsPage / ProUpgradePage / RecycleBinPage)
+│   ├── graph/                3  (GraphView / GraphLayout / GraphActions)
+│   ├── whiteboard/           4  (Whiteboard / WbShape / WbConnector / WbPageRef)
+│   ├── search/               3  (SearchPanel / TaskDashboard / TaskSchedulePanel)
+│   ├── settings/             4  (SettingsPage / ProUpgradePage / RecycleBinPage / ShortcutSettings)
+│   ├── property/             3  (PropertyEditor / PropertyConfig / PropertyValueEditor)
+│   ├── query/                2  (QueryBuilder / QueryView)
 │   ├── commandpalette/       1  (CommandPalette)
 │   ├── flashcard/            1  (FlashcardPage)
 │   ├── onboarding/           1  (OnboardingPage)
-│   ├── common/               3  (Icons / TablerIconPaths / ThemeManager)
-│   ├── extensions/           2  (MathRenderer / MermaidRenderer)
-│   ├── property/             1  (PropertyValueEditor)
-│   └── query/                1  (QueryBuilder)
-├── core/                    12 文件 (引擎层)
+│   ├── mobile/               1  (MobileToolbar)
+│   ├── common/               4  (Icons / TablerIconPaths / ThemeManager / DatePicker)
+│   └── extensions/           3  (MathRenderer / MermaidRenderer / CodeBlock)
+├── core/                    18 文件 (引擎层)
 │   ├── models/               4  (Block / Page / Property / Constants)
-│   ├── engine/               4  (BlockTree / OutlinerOps / OutlinerEngine / Validator)
+│   ├── engine/               9  (BlockTree / OutlinerOps / OutlinerEngine / Validator /
+│   │                            TransactionPipeline / ReferenceResolver / PropertyEngine /
+│   │                            TemplateEngine / RecycleEngine)
 │   ├── parser/               2  (MarkdownParser / MarkdownExporter)
-│   ├── db/                   5  (DataStore / IndexStore / QueryEngine / DatalogEngine / LogicEngine)
+│   ├── db/                   6  (DataStore / IndexStore / QueryEngine / DatalogEngine / LogicEngine / ReactiveQuery)
 │   └── persistence/          1  (FileRepository)
-├── services/                15 文件 (服务层)
-│   Workspace / File / Editor / Journal / Template /
-│   Subscription / Collaboration / Encryption / CloudSync /
-│   Export / Flashcard / TestData
+├── services/                18 文件 (服务层)
+│   Workspace / File / Editor / Journal / Template / ShortcutService / PasteService /
+│   Subscription / Collaboration / Encryption / CloudSync / ContinuationManager /
+│   PenKitService / Export / Import / Flashcard / WhiteboardFileService / TestData
 ├── plugins/                  4 文件 (插件框架)
-│   LuniusPlugin / PluginAPI / PluginManager / BuiltinPlugins
+│   CallaitePlugin / PluginAPI / PluginManager / BuiltinPlugins
 ├── state/                    1  (AppState)
-├── utils/                    3  (i18n / UUID / ContentRenderer)
+├── utils/                    4  (i18n / UUID / ContentRenderer / NamespaceUtils)
 ├── pages/                    1  (Index)
-├── entryability/             1  (EntryAbility)
-├── entryformability/         1  (EntryFormAbility)
+├── entryability/             1  (EntryAbility — 含 onContinue/onRestoreData)
+├── entryformability/         1  (EntryFormAbility — 速记卡片 + 30 分钟刷新)
 ├── entrybackupability/       1  (EntryBackupAbility)
-├── shareability/             1  (ShareReceiveAbility)
-└── widget/pages/             1  (WidgetCard)
+├── shareability/             1  (ShareReceiveAbility — 接收分享创建 Block)
+└── widget/pages/             1  (WidgetCard — 概览/速记双卡片)
 ```
 
 ---

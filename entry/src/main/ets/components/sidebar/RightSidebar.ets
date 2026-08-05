@@ -1,40 +1,376 @@
 import { TablerIcon } from '../common/Icons';
-import { AppState } from '../../state/AppState';
+import { AppState, RightSidebarBlock } from '../../state/AppState';
 import { t } from '../../utils/i18n';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { BlockData } from '../../core/models/Block';
 import { BacklinkInfo } from '../../core/db/DataStore';
 import { JournalService } from '../../services/JournalService';
 
+/**
+ * RightSidebar — 按 logseq right_sidebar.cljs 多块堆叠结构复刻
+ *
+ * 结构：
+ *   ┌──────────────────────────────────────┐
+ *   │ [⇲ collapse all] [⇱ expand] [✕ close all] │  ← 顶部工具栏
+ *   ├──────────────────────────────────────┤
+ *   │ ▼ Block Title                  [✕]   │  ← 块头部（可折叠）
+ *   │   block content                      │
+ *   ├──────────────────────────────────────┤
+ *   │ ▶ Block Title (collapsed)      [✕]   │
+ *   ├──────────────────────────────────────┤
+ *   │ ▼ ...                                │
+ *   └──────────────────────────────────────┘
+ *
+ * 块类型（type）：
+ *   - 'backlinks'  : 反向链接列表
+ *   - 'outline'    : 页面大纲
+ *   - 'properties' : 页面属性
+ *   - 'page'       : 页面预览
+ *   - 'help'       : 帮助信息
+ *
+ * 数据源：AppState.getRightSidebarBlocks() 持久化在 AppStorage。
+ * 自动初始化：首次打开且 blocks 为空时，添加 backlinks/outline/properties 三个默认块。
+ */
 @Component
 export struct RightSidebar {
-  @StorageLink('callaite_currentPage') currentPage: string = 'Journal';
-  @State backlinks: BacklinkInfo[] = [];
-  @State backlinksFilter: string = 'all';
-  @State headings: BlockData[] = [];
-  @State propEntries: string[][] = [];
+  @StorageLink('callaite_currentPage') @Watch('onCurrentPageChanged') currentPage: string = 'Journal';
+  @StorageLink('callaite_rightSidebarBlocksVersion') private blocksVersion: number = 0;
+  @State backlinksCache: BacklinkInfo[] = [];
+  @State headingsCache: BlockData[] = [];
+  @State propsCache: string[][] = [];
 
   aboutToAppear(): void {
-    this.refresh();
+    this.ensureDefaultBlocks();
+    this.refreshCaches();
   }
 
-  /** 解析当前页面的实际名称（Journal → 日期字符串） */
-  get currentPageName(): string {
+  /**
+   * currentPage 变更时刷新缓存数据（反链/大纲/属性）。
+   */
+  onCurrentPageChanged(): void {
+    this.refreshCaches();
+  }
+
+  /**
+   * 当 currentPage 或 blocksVersion 变更时刷新缓存与块内容。
+   */
+  build() {
+    Column({ space: 0 }) {
+      this.Toolbar()
+      Divider().color($r('app.color.border')).width('100%')
+
+      Scroll() {
+        Column({ space: 0 }) {
+          if (this.getBlocks().length === 0) {
+            this.EmptyState()
+          } else {
+            ForEach(this.getBlocks(), (block: RightSidebarBlock) => {
+              this.SidebarBlock(block)
+            }, (block: RightSidebarBlock) => block.id)
+          }
+        }
+        .width('100%')
+        .padding({ bottom: 16 })
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Auto)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor($r('app.color.surface1'))
+    .border({ width: { left: 1 }, color: $r('app.color.border') })
+  }
+
+  /**
+   * 顶部工具栏 — 全部折叠 / 全部展开 / 全部关闭。
+   */
+  @Builder
+  Toolbar() {
+    Row({ space: 8 }) {
+      Text(t('sidebar_right_title'))
+        .fontSize(12)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.muted_text'))
+        .layoutWeight(1)
+
+      // collapse all
+      Row() {
+        TablerIcon('chevron-up', 14, $r('app.color.muted_text'))
+      }
+      .width(28)
+      .height(28)
+      .borderRadius(4)
+      .onClick(() => { this.collapseAll(); })
+
+      // expand all
+      Row() {
+        TablerIcon('chevron-down', 14, $r('app.color.muted_text'))
+      }
+      .width(28)
+      .height(28)
+      .borderRadius(4)
+      .onClick(() => { this.expandAll(); })
+
+      // close all
+      Row() {
+        TablerIcon('x', 14, $r('app.color.muted_text'))
+      }
+      .width(28)
+      .height(28)
+      .borderRadius(4)
+      .onClick(() => { this.closeAll(); })
+    }
+    .width('100%')
+    .height(40)
+    .padding({ left: 16, right: 16 })
+  }
+
+  /**
+   * 单个堆叠块 — 头部 + 可折叠内容。
+   */
+  @Builder
+  SidebarBlock(block: RightSidebarBlock) {
+    Column({ space: 0 }) {
+      // 块头部：chevron + 标题 + 关闭按钮
+      Row({ space: 8 }) {
+        TablerIcon(block.collapsed ? 'chevron-right' : 'chevron-down',
+          14, $r('app.color.muted_text'))
+        Text(block.title)
+          .fontSize(13)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text'))
+          .layoutWeight(1)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Row() {
+          TablerIcon('x', 12, $r('app.color.muted_text'))
+        }
+        .width(20)
+        .height(20)
+        .onClick(() => { AppState.removeRightSidebarBlock(block.id); })
+      }
+      .width('100%')
+      .height(34)
+      .padding({ left: 16, right: 12 })
+      .onClick(() => { AppState.toggleRightSidebarBlockCollapsed(block.id); })
+
+      // 块内容（折叠时隐藏）
+      if (!block.collapsed) {
+        Column({ space: 4 }) {
+          this.BlockContent(block)
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 4, bottom: 12 })
+      }
+
+      Divider().color($r('app.color.border')).width('100%')
+    }
+    .width('100%')
+  }
+
+  /**
+   * 根据 block.type 渲染对应内容。
+   */
+  @Builder
+  BlockContent(block: RightSidebarBlock) {
+    if (block.type === 'backlinks') {
+      this.BacklinksContent(block)
+    } else if (block.type === 'outline') {
+      this.OutlineContent(block)
+    } else if (block.type === 'properties') {
+      this.PropertiesContent(block)
+    } else if (block.type === 'page') {
+      this.PagePreviewContent(block)
+    } else if (block.type === 'help') {
+      this.HelpContent(block)
+    }
+  }
+
+  @Builder
+  BacklinksContent(block: RightSidebarBlock) {
+    if (this.backlinksCache.length === 0) {
+      Text(t('no_backlinks'))
+        .fontSize(12)
+        .fontColor($r('app.color.muted_text'))
+        .width('100%')
+    } else {
+      ForEach(this.backlinksCache, (info: BacklinkInfo) => {
+        Row({ space: 8 }) {
+          TablerIcon('arrow-right', 12, $r('app.color.muted_text'))
+          Column({ space: 2 }) {
+            Text(info.sourceContent)
+              .fontSize(12)
+              .fontColor($r('app.color.text'))
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text(t('from_page') + ': ' + info.sourcePageName)
+              .fontSize(10)
+              .fontColor($r('app.color.muted_text'))
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .padding({ top: 4, bottom: 4 })
+      }, (info: BacklinkInfo) => info.sourceBlockId)
+    }
+  }
+
+  @Builder
+  OutlineContent(block: RightSidebarBlock) {
+    if (this.headingsCache.length === 0) {
+      Text(t('no_outline'))
+        .fontSize(12)
+        .fontColor($r('app.color.muted_text'))
+        .width('100%')
+    } else {
+      ForEach(this.headingsCache, (b: BlockData) => {
+        Row({ space: 8 }) {
+          if (b.level > 0) {
+            Blank().width(b.level * 12)
+          }
+          Circle({ width: 4, height: 4 })
+            .fill($r('app.color.bullet'))
+          Text(b.content)
+            .fontSize(12)
+            .fontColor($r('app.color.text'))
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .width('100%')
+        .padding({ top: 2, bottom: 2 })
+      }, (b: BlockData) => b.uuid)
+    }
+  }
+
+  @Builder
+  PropertiesContent(block: RightSidebarBlock) {
+    if (this.propsCache.length === 0) {
+      Text(t('no_properties'))
+        .fontSize(12)
+        .fontColor($r('app.color.muted_text'))
+        .width('100%')
+    } else {
+      ForEach(this.propsCache, (pair: string[]) => {
+        Row({ space: 4 }) {
+          Text(pair[0] + '::')
+            .fontSize(11)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.muted_text'))
+          Text(pair[1])
+            .fontSize(12)
+            .fontColor($r('app.color.text'))
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .width('100%')
+        .padding({ top: 2, bottom: 2 })
+      }, (pair: string[]) => pair[0])
+    }
+  }
+
+  @Builder
+  PagePreviewContent(block: RightSidebarBlock) {
+    Column({ space: 4 }) {
+      Text(block.pageName)
+        .fontSize(14)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text'))
+      Text('（页面预览）')
+        .fontSize(11)
+        .fontColor($r('app.color.muted_text'))
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  HelpContent(block: RightSidebarBlock) {
+    Column({ space: 4 }) {
+      Text(t('sidebar_help'))
+        .fontSize(12)
+        .fontColor($r('app.color.text'))
+      Text('— ' + t('app_name'))
+        .fontSize(11)
+        .fontColor($r('app.color.muted_text'))
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  EmptyState() {
+    Column({ space: 6 }) {
+      Text(t('empty_sidebar'))
+        .fontSize(13)
+        .fontColor($r('app.color.muted_text'))
+      Text(t('empty_sidebar_hint'))
+        .fontSize(11)
+        .fontColor($r('app.color.muted_text'))
+        .opacity(0.7)
+    }
+    .width('100%')
+    .padding({ top: 40, left: 24, right: 24 })
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  // ─── 工具方法 ───
+
+  get currentDisplayPage(): string {
     if (this.currentPage === 'Journal') {
       return JournalService.getTodayDateString();
     }
     return this.currentPage;
   }
 
-  refresh(): void {
+  getBlocks(): RightSidebarBlock[] {
+    return AppState.getRightSidebarBlocks();
+  }
+
+  /**
+   * 首次打开自动添加默认块（backlinks / outline / properties）。
+   */
+  ensureDefaultBlocks(): void {
+    const existing = AppState.getRightSidebarBlocks();
+    if (existing.length > 0) return;
+    const pageName = this.currentDisplayPage;
+    const blocks: RightSidebarBlock[] = [];
+    blocks[0] = {
+      id: 'backlinks-' + pageName,
+      type: 'backlinks',
+      title: t('backlinks'),
+      pageName: pageName,
+      collapsed: false
+    };
+    blocks[1] = {
+      id: 'outline-' + pageName,
+      type: 'outline',
+      title: t('outline'),
+      pageName: pageName,
+      collapsed: false
+    };
+    blocks[2] = {
+      id: 'properties-' + pageName,
+      type: 'properties',
+      title: t('properties'),
+      pageName: pageName,
+      collapsed: false
+    };
+    AppState.setRightSidebarBlocks(blocks);
+  }
+
+  refreshCaches(): void {
     const ws = WorkspaceService.getInstance();
-    this.backlinks = ws.getDataStore().getBacklinks(this.currentPageName);
-    this.headings = this.collectHeadings(ws);
-    this.propEntries = this.collectProps(ws);
+    this.backlinksCache = ws.getDataStore().getBacklinks(this.currentDisplayPage);
+    this.headingsCache = this.collectHeadings(ws);
+    this.propsCache = this.collectProps(ws);
   }
 
   collectHeadings(ws: WorkspaceService): BlockData[] {
-    const page = ws.getPageByName(this.currentPageName);
+    const page = ws.getPageByName(this.currentDisplayPage);
     if (!page) return [];
     const allBlocks = ws.getPageBlocks(page.uuid);
     const result: BlockData[] = [];
@@ -49,7 +385,7 @@ export struct RightSidebar {
   }
 
   collectProps(ws: WorkspaceService): string[][] {
-    const page = ws.getPageByName(this.currentPageName);
+    const page = ws.getPageByName(this.currentDisplayPage);
     if (!page) return [];
     const entries: string[][] = [];
     page.properties.forEach((propKey: string, propValue: string) => {
@@ -61,251 +397,33 @@ export struct RightSidebar {
     return entries;
   }
 
-  build() {
-    Column({ space: 16 }) {
-      // 标题栏
-      Row({ space: 8 }) {
-        Text(t('sidebar_right'))
-          .fontSize(12)
-          .fontColor($r('app.color.muted_text'))
-          .layoutWeight(1)
+  // ─── 工具栏动作 ───
 
-        Row() {
-          TablerIcon('x', 16, $r('app.color.muted_text'))
-        }
-        .width(28)
-        .height(28)
-        .onClick(() => {
-          AppState.setRightSidebarOpen(false);
-        })
-      }
-      .width('100%')
-      .padding(16)
-
-      Scroll() {
-        Column({ space: 20 }) {
-          this.BacklinksPanel()
-          Row({ space: 6 }) {
-            Row() { Text('全部').fontSize(11).fontColor(this.backlinksFilter === 'all' ? $r('app.color.primary') : $r('app.color.muted_text')) }
-            .onClick(() => { this.backlinksFilter = 'all'; })
-            Row() { Text('页面').fontSize(11).fontColor(this.backlinksFilter === 'page' ? $r('app.color.primary') : $r('app.color.muted_text')) }
-            .onClick(() => { this.backlinksFilter = 'page'; })
-            Row() { Text('Block').fontSize(11).fontColor(this.backlinksFilter === 'block' ? $r('app.color.primary') : $r('app.color.muted_text')) }
-            .onClick(() => { this.backlinksFilter = 'block'; })
-          }
-          .width('100%')
-          .padding({ left: 16 })
-
-          // 2. 页面大纲
-          this.OutlinePanel()
-
-          // 3. 属性
-          this.PropertiesPanel()
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, bottom: 16 })
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .scrollBar(BarState.Auto)
+  collapseAll(): void {
+    const list = AppState.getRightSidebarBlocks();
+    const newList: RightSidebarBlock[] = [];
+    for (let i = 0; i < list.length; i++) {
+      newList.push({
+        id: list[i].id, type: list[i].type, title: list[i].title,
+        pageName: list[i].pageName, collapsed: true
+      });
     }
-    .width('100%')
-    .height('100%')
-    .padding({ top: 8, bottom: 8 })
-    .backgroundColor($r('app.color.surface1'))
-    .border({ width: { left: 1 }, color: $r('app.color.border') })
+    AppState.setRightSidebarBlocks(newList);
   }
 
-  @Builder
-  BacklinksPanel() {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
-        TablerIcon('world', 18, $r('app.color.text'))
-        Text(t('backlinks'))
-          .fontSize(15)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text'))
-      }
-      .width('100%')
-
-      if (this.getFilteredBacklinks().length === 0) {
-        Text('—')
-          .fontSize(13)
-          .fontColor($r('app.color.muted_text'))
-          .width('100%')
-      } else {
-        ForEach(this.getFilteredBacklinks(), (info: BacklinkInfo) => {
-          Row({ space: 8 }) {
-            TablerIcon('arrow-right', 14, $r('app.color.muted_text'))
-            Column({ space: 2 }) {
-              Text(info.sourceContent)
-                .fontSize(13)
-                .fontColor($r('app.color.text'))
-                .maxLines(2)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(t('from_page') + ': ' + info.sourcePageName)
-                .fontSize(11)
-                .fontColor($r('app.color.muted_text'))
-            }
-            .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
-          }
-          .width('100%')
-          .padding({ top: 4, bottom: 4 })
-          .borderRadius(4)
-        }, (info: BacklinkInfo) => info.sourceBlockId)
-      }
+  expandAll(): void {
+    const list = AppState.getRightSidebarBlocks();
+    const newList: RightSidebarBlock[] = [];
+    for (let i = 0; i < list.length; i++) {
+      newList.push({
+        id: list[i].id, type: list[i].type, title: list[i].title,
+        pageName: list[i].pageName, collapsed: false
+      });
     }
-    .width('100%')
+    AppState.setRightSidebarBlocks(newList);
   }
 
-  @Builder
-  OutlinePanel() {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
-        TablerIcon('list-details', 18, $r('app.color.text'))
-        Text(t('outline'))
-          .fontSize(15)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text'))
-      }
-      .width('100%')
-
-      if (this.headings.length === 0) {
-        Text('—')
-          .fontSize(13)
-          .fontColor($r('app.color.muted_text'))
-          .width('100%')
-      } else {
-        ForEach(this.headings, (block: BlockData) => {
-          Row({ space: 8 }) {
-            if (block.level > 0) {
-              Blank().width(block.level * 12)
-            }
-            Circle({ width: 5, height: 5 })
-              .fill($r('app.color.bullet'))
-            Text(block.content)
-              .fontSize(13)
-              .fontColor($r('app.color.text'))
-              .layoutWeight(1)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-          .width('100%')
-          .padding({ top: 3, bottom: 3 })
-        }, (block: BlockData) => block.uuid)
-      }
-    }
-    .width('100%')
-  }
-
-  @Builder
-  PropertiesPanel() {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
-        TablerIcon('adjustments', 18, $r('app.color.text'))
-        Text(t('properties'))
-          .fontSize(15)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text'))
-      }
-      .width('100%')
-
-      if (this.propEntries.length === 0) {
-        Text('—')
-          .fontSize(13)
-          .fontColor($r('app.color.muted_text'))
-          .width('100%')
-      } else {
-        ForEach(this.propEntries, (pair: string[]) => {
-          Row({ space: 4 }) {
-            Text(pair[0])
-              .fontSize(12)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.muted_text'))
-            Text(pair[1])
-              .fontSize(13)
-              .fontColor($r('app.color.text'))
-              .layoutWeight(1)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Row() {
-              TablerIcon('x', 12, $r('app.color.danger'))
-            }
-            .width(20).height(20)
-            .onClick(() => {
-              this.deleteProperty(pair[0]);
-            })
-          }
-          .width('100%')
-          .padding({ top: 2, bottom: 2 })
-        }, (pair: string[]) => pair[0])
-      }
-
-      // 添加属性输入
-      Row({ space: 4 }) {
-        TextInput({ placeholder: 'key:: value' })
-          .fontSize(12)
-          .layoutWeight(1)
-          .height(32)
-          .onChange((value: string) => {
-            // 检测 :: 分隔符后自动添加
-            if (value.indexOf('::') > 0 && value.indexOf('::') < value.length - 2) {
-              this.addProperty(value);
-            }
-          })
-      }
-      .width('100%')
-      .padding({ top: 4 })
-    }
-    .width('100%')
-  }
-
-  getFilteredBacklinks(): BacklinkInfo[] {
-    if (this.backlinksFilter === 'page') {
-      const result: BacklinkInfo[] = [];
-      for (let i = 0; i < this.backlinks.length; i++) {
-        if (!this.backlinks[i].isBlockRef) result.push(this.backlinks[i]);
-      }
-      return result;
-    }
-    if (this.backlinksFilter === 'block') {
-      const result: BacklinkInfo[] = [];
-      for (let i = 0; i < this.backlinks.length; i++) {
-        if (this.backlinks[i].isBlockRef) result.push(this.backlinks[i]);
-      }
-      return result;
-    }
-    return this.backlinks;
-  }
-
-  addProperty(input: string): void {
-    const sepIdx = input.indexOf('::');
-    if (sepIdx <= 0) {
-      return;
-    }
-    const key = input.substring(0, sepIdx).trim();
-    const value = input.substring(sepIdx + 2).trim();
-    if (!key || !value) {
-      return;
-    }
-
-    const ws = WorkspaceService.getInstance();
-    const page = ws.getPageByName(this.currentPageName);
-    if (page) {
-      page.properties.set(key, value);
-      ws.savePage(page.uuid);
-      this.refresh();
-    }
-  }
-
-  deleteProperty(key: string): void {
-    const ws = WorkspaceService.getInstance();
-    const page = ws.getPageByName(this.currentPageName);
-    if (page) {
-      page.properties.remove(key);
-      ws.savePage(page.uuid);
-      this.refresh();
-    }
+  closeAll(): void {
+    AppState.clearRightSidebarBlocks();
   }
 }

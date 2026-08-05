@@ -10,6 +10,18 @@ export struct Toolbar {
   @State canUndo: boolean = false;
   @State canRedo: boolean = false;
 
+  aboutToAppear(): void {
+    this.refreshState();
+  }
+
+  /**
+   * 页面显示时刷新撤销/重做状态。
+   * 修复：此前未调用 refreshState()，canUndo/canRedo 始终为 false，工具栏永远不显示。
+   */
+  onPageShow(): void {
+    this.refreshState();
+  }
+
   build() {
     if (!this.canUndo && !this.canRedo) {
       Row().width(0).height(0)

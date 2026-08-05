@@ -15,6 +15,8 @@
     { "name": "toolbar", "value": "#F6F6F7" },
     { "name": "muted_text", "value": "#787B80" },
     { "name": "danger", "value": "#DC2626" },
+    { "name": "error", "value": "#DC2626" },
+    { "name": "warning", "value": "#D97706" },
     { "name": "success", "value": "#059669" }
   ]
 }

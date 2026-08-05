@@ -48,55 +48,18 @@ export struct WebEditor {
       .height(32)
       .javaScriptAccess(true)
       .domStorageAccess(true)
+      .javaScriptProxy({
+        object: this.bridgeObj,
+        name: 'nativeProxy',
+        methodList: ['onAction', 'getContent'],
+        controller: this.controller
+      })
       .onPageEnd(() => {
         this.editorReady = true;
       })
   }
 
-  // Bridge registered via javaScriptProxy in constructor
-
-  /**
-   * 处理来自 JS 的键盘操作。
-   */
-  private handleAction(action: string, data: string): void {
-    const ws = WorkspaceService.getInstance();
-    const editor = EditorService.getInstance();
-
-    if (action === 'save') {
-      // 保存内容
-      editor.updateBlockContent(this.blockUuid, data);
-      this.onSave();
-    } else if (action === 'newBlock') {
-      // Enter: 创建兄弟 Block
-      const page = ws.getPageByName(this.pageName);
-      if (page) {
-        const newUuid = editor.createBlockBelow(page.uuid);
-        // 通知父组件聚焦新 Block
-        this.onAction('focusNew', newUuid);
-      }
-      // 同时保存当前内容
-      editor.updateBlockContent(this.blockUuid, data);
-    } else if (action === 'indent') {
-      editor.setFocusedBlock(this.blockUuid);
-      editor.indentBlock();
-      editor.updateBlockContent(this.blockUuid, data);
-    } else if (action === 'outdent') {
-      editor.setFocusedBlock(this.blockUuid);
-      editor.outdentBlock();
-      editor.updateBlockContent(this.blockUuid, data);
-    } else if (action === 'delete') {
-      editor.setFocusedBlock(this.blockUuid);
-      const deleted = editor.deleteEmptyBlock();
-      if (deleted) {
-        // 焦点已移到前一个 Block，通过 controller 更新
-        this.onAction('focusPrev', '');
-      }
-    } else if (action === 'focusPrev') {
-      this.onAction('focusPrev', '');
-    } else if (action === 'focusNext') {
-      this.onAction('focusNext', '');
-    }
-  }
+  // Bridge registered via javaScriptProxy — NativeBridge 处理所有 JS 回调
 
   /**
    * 外部调用：设置焦点到编辑器。

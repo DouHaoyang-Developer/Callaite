@@ -1,11 +1,11 @@
-import { LuniusPlugin } from './LuniusPlugin';
+import { CallaitePlugin } from './CallaitePlugin';
 import { PluginManager } from './PluginManager';
 import { PluginAPI } from './PluginAPI';
 
 /**
  * BookmarkPlugin — 每日速记插件。
  */
-export class BookmarkPlugin extends LuniusPlugin {
+export class BookmarkPlugin extends CallaitePlugin {
   get id(): string { return 'callaite-bookmark'; }
   get name(): string { return '每日速记'; }
   get version(): string { return '1.0.0'; }
@@ -20,7 +20,7 @@ export class BookmarkPlugin extends LuniusPlugin {
 /**
  * TodoExportPlugin — 待办统计插件。
  */
-export class TodoExportPlugin extends LuniusPlugin {
+export class TodoExportPlugin extends CallaitePlugin {
   get id(): string { return 'callaite-todo-export'; }
   get name(): string { return '待办统计'; }
   get version(): string { return '1.0.0'; }

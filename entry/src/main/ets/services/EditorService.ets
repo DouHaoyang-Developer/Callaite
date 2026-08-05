@@ -402,4 +402,154 @@ export class EditorService {
   closeSlashMenu(): void {
     this.slashMenuOpen = false;
   }
+
+  // ─── 优先级循环（A → B → C → 无） ───
+
+  cyclePriority(): void {
+    if (!this.focusedBlockUuid) {
+      return;
+    }
+    const ws = WorkspaceService.getInstance();
+    const block = ws.getBlock(this.focusedBlockUuid);
+    if (!block) {
+      return;
+    }
+
+    let nextPriority = '';
+    if (block.priority === '') {
+      nextPriority = 'A';
+    } else if (block.priority === 'A') {
+      nextPriority = 'B';
+    } else if (block.priority === 'B') {
+      nextPriority = 'C';
+    } else if (block.priority === 'C') {
+      nextPriority = '';
+    } else {
+      nextPriority = 'A';
+    }
+
+    ws.executeOp({ type: 'set-priority', uuid: block.uuid, priority: nextPriority });
+  }
+
+  // ─── SCHEDULED / DEADLINE 设置 ───
+
+  setScheduled(date: string): void {
+    if (!this.focusedBlockUuid) {
+      return;
+    }
+    const ws = WorkspaceService.getInstance();
+    ws.executeOp({ type: 'set-scheduled', uuid: this.focusedBlockUuid, date: date });
+  }
+
+  setDeadline(date: string): void {
+    if (!this.focusedBlockUuid) {
+      return;
+    }
+    const ws = WorkspaceService.getInstance();
+    ws.executeOp({ type: 'set-deadline', uuid: this.focusedBlockUuid, date: date });
+  }
+
+  clearScheduled(): void {
+    this.setScheduled('');
+  }
+
+  clearDeadline(): void {
+    this.setDeadline('');
+  }
+
+  // ─── 折叠/展开 ───
+
+  toggleCollapse(uuid: string): void {
+    const ws = WorkspaceService.getInstance();
+    const block = ws.getBlock(uuid);
+    if (!block) {
+      return;
+    }
+    ws.executeOp({ type: 'collapse', uuid: uuid, collapsed: !block.collapsed });
+  }
+
+  collapseAll(pageId: string): void {
+    const ws = WorkspaceService.getInstance();
+    const blocks = ws.getDataStore().getPageBlocks(pageId);
+    for (let i = 0; i < blocks.length; i++) {
+      if (!blocks[i].collapsed) {
+        ws.executeOp({ type: 'collapse', uuid: blocks[i].uuid, collapsed: true });
+      }
+    }
+  }
+
+  expandAll(pageId: string): void {
+    const ws = WorkspaceService.getInstance();
+    const blocks = ws.getDataStore().getPageBlocks(pageId);
+    for (let i = 0; i < blocks.length; i++) {
+      if (blocks[i].collapsed) {
+        ws.executeOp({ type: 'collapse', uuid: blocks[i].uuid, collapsed: false });
+      }
+    }
+  }
+
+  // ─── 多选扩展 ───
+
+  getSelectedUuids(): string[] {
+    const result: string[] = [];
+    for (let i = 0; i < this.selectedUuids.length; i++) {
+      result.push(this.selectedUuids[i]);
+    }
+    return result;
+  }
+
+  selectAll(pageId: string): void {
+    const ws = WorkspaceService.getInstance();
+    const blocks = ws.getDataStore().getPageBlocks(pageId);
+    this.selectedUuids = [];
+    for (let i = 0; i < blocks.length; i++) {
+      this.selectedUuids.push(blocks[i].uuid);
+    }
+  }
+
+  clearSelection(): void {
+    this.selectedUuids = [];
+  }
+
+  hasSelection(): boolean {
+    return this.selectedUuids.length > 0;
+  }
+
+  // ─── 批量缩进/反缩进 ───
+
+  indentSelected(): void {
+    const ws = WorkspaceService.getInstance();
+    for (let i = 0; i < this.selectedUuids.length; i++) {
+      ws.executeOp({ type: 'indent', uuid: this.selectedUuids[i] });
+    }
+  }
+
+  outdentSelected(): void {
+    const ws = WorkspaceService.getInstance();
+    for (let i = 0; i < this.selectedUuids.length; i++) {
+      ws.executeOp({ type: 'outdent', uuid: this.selectedUuids[i] });
+    }
+  }
+
+  // ─── 属性操作 ───
+
+  addProperty(blockUuid: string, name: string, value: string): void {
+    const ws = WorkspaceService.getInstance();
+    ws.executeOp({ type: 'add-property', blockUuid: blockUuid, name: name, value: value });
+  }
+
+  removeProperty(blockUuid: string, name: string): void {
+    const ws = WorkspaceService.getInstance();
+    ws.executeOp({ type: 'remove-property', blockUuid: blockUuid, name: name });
+  }
+
+  // ─── 当前页面名 ───
+
+  setCurrentPageName(name: string): void {
+    this.currentPageName = name;
+  }
+
+  getCurrentPageName(): string {
+    return this.currentPageName;
+  }
 }

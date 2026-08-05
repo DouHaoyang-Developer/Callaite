@@ -1,13 +1,29 @@
 import { TablerIcon } from '../common/Icons';
 import { AppState } from '../../state/AppState';
 import { JournalService } from '../../services/JournalService';
+import { t } from '../../utils/i18n';
+import { ThemeManager } from '../common/ThemeManager';
 
+/**
+ * Header — 按 logseq header.cljs 布局复刻
+ *
+ * 结构（左→右）：
+ *   [☰ 菜单] [← 后退] [→ 前进] [🔍 搜索]    [页面标题/面包屑]    [🏠 主页] [··· 更多] [UILayout 右侧栏]
+ *
+ * 历史栈变更通过 @StorageLink 监听 callaite_historyBack / callaite_historyForward 触发重渲染。
+ */
 @Component
 export struct Header {
   @StorageLink('callaite_currentPage') currentPage: string = 'Journal';
   @StorageLink('callaite_leftSidebarOpen') leftSidebarOpen: boolean = true;
   @StorageLink('callaite_rightSidebarOpen') rightSidebarOpen: boolean = false;
+  // 历史栈触发器 — 用于驱动 build 重新计算 canBack/canForward
+  @StorageLink('callaite_historyBack') private historyBackTrigger: number = 0;
+  @StorageLink('callaite_historyForward') private historyForwardTrigger: number = 0;
 
+  /**
+   * 显示标题：Journal → 今日日期；其他 → 页面名。
+   */
   get displayTitle(): string {
     if (this.currentPage === 'Journal') {
       return JournalService.getTodayDateString();
@@ -16,62 +32,138 @@ export struct Header {
   }
 
   build() {
-    Row() {
-      Row({ space: 4 }) {
-        Row() {
-          TablerIcon('menu-2', 18, $r('app.color.text'))
-        }
-        .width(32).height(32).borderRadius(4)
-        .onClick(() => { AppState.toggleLeftSidebar(); })
+    Row({ space: 4 }) {
+      // ─── 左侧：菜单 + 后退 + 前进 + 搜索 ───
+      this.IconButton('menu-2', this.leftSidebarOpen,
+        () => { AppState.toggleLeftSidebar(); })
 
-        Row() {
-          TablerIcon('arrow-left', 16, '#9CA3AF')
-        }
-        .width(28).height(28)
-        .onClick(() => {
-          if (this.currentPage === 'Journal') {
-            AppState.setCurrentPage(JournalService.getYesterdayDateString());
-          }
-        })
+      this.IconButton('arrow-left', AppState.canGoBack(),
+        () => { AppState.goBack(); })
 
-        Row() {
-          TablerIcon('arrow-right', 16, '#9CA3AF')
-        }
-        .width(28).height(28)
-        .onClick(() => {
-          if (this.currentPage === 'Journal') {
-            AppState.setCurrentPage(JournalService.getTomorrowDateString());
+      this.IconButton('arrow-right', AppState.canGoForward(),
+        () => { AppState.goForward(); })
+
+      this.IconButton('search', true,
+        () => { AppState.setSearchPanelOpen(true); })
+
+      // ─── 中间：页面标题（含日志页前后日期导航）───
+      Row({ space: 6 }) {
+        Text(this.displayTitle)
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+
+        // 日志页：显示前后日期导航箭头（logseq journal 风格）
+        if (this.currentPage === 'Journal') {
+          Row({ space: 2 }) {
+            Row() {
+              TablerIcon('chevron-left', 14, $r('app.color.muted_text'))
+            }
+            .width(22).height(22).borderRadius(4)
+            .onClick(() => {
+              AppState.setCurrentPage(JournalService.getYesterdayDateString());
+            })
+
+            Row() {
+              TablerIcon('chevron-right', 14, $r('app.color.muted_text'))
+            }
+            .width(22).height(22).borderRadius(4)
+            .onClick(() => {
+              AppState.setCurrentPage(JournalService.getTomorrowDateString());
+            })
           }
-        })
+        }
       }
+      .layoutWeight(1)
+      .constraintSize({ maxWidth: 480 })
+      .alignItems(VerticalAlign.Center)
 
       Blank()
 
-      Row({ space: 2 }) {
-        Row() {
-          TablerIcon('search', 18, $r('app.color.text'))
-        }
-        .width(32).height(32).borderRadius(4)
-        .onClick(() => { AppState.setSearchPanelOpen(true); })
+      // ─── 右侧：主页 + 更多 + 右侧栏 ───
+      this.IconButton('home', this.currentPage !== 'Journal',
+        () => { AppState.setCurrentPage('Journal'); })
 
-        Row() {
-          TablerIcon('layout-sidebar-right', 18,
-            this.rightSidebarOpen ? $r('app.color.primary') : $r('app.color.text'))
-        }
-        .width(32).height(32).borderRadius(4)
-        .onClick(() => { AppState.toggleRightSidebar(); })
-
-        Row() {
-          TablerIcon('settings', 18, $r('app.color.text'))
-        }
-        .width(32).height(32).borderRadius(4)
-        .onClick(() => { AppState.setCurrentPage('Settings'); })
+      // 三点菜单（logseq toolbar-dots-menu）
+      Row() {
+        TablerIcon('dots-vertical', 18, $r('app.color.text'))
       }
+      .width(32).height(32).borderRadius(4)
+      .bindMenu(this.DotsMenu)
+
+      this.IconButton('layout-sidebar-right', true,
+        () => { AppState.toggleRightSidebar(); }, this.rightSidebarOpen)
     }
     .width('100%')
     .height(44)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: 10, right: 10 })
     .backgroundColor($r('app.color.surface0'))
-    .border({ width: { bottom: 1 }, color: '#E5E7EB' })
+    .border({ width: { bottom: 1 }, color: $r('app.color.border') })
+  }
+
+  /**
+   * 通用图标按钮 Builder。
+   * active 参数用于在按钮处于激活态时使用主色高亮（如右侧栏已打开）。
+   */
+  @Builder
+  IconButton(name: string, enabled: boolean, onClick: () => void, active: boolean = false) {
+    Row() {
+      TablerIcon(name, 18,
+        enabled
+          ? (active ? $r('app.color.primary') : $r('app.color.text'))
+          : $r('app.color.muted_text'))
+    }
+    .width(32).height(32).borderRadius(4)
+    .opacity(enabled ? 1 : 0.4)
+    .onClick(() => {
+      if (enabled) {
+        onClick();
+      }
+    })
+  }
+
+  /**
+   * 三点菜单（logseq 的 toolbar-dots-menu）— 使用 Menu + MenuItemGroup 分组。
+   * Menu 仅允许 Option/MenuItem/MenuItemGroup 子组件，组间自带分隔效果。
+   */
+  @Builder
+  DotsMenu() {
+    Menu() {
+      MenuItemGroup() {
+        MenuItem({ content: t('settings') })
+          .onClick(() => { AppState.setCurrentPage('Settings'); })
+
+        MenuItem({ content: t('nav_appearance') })
+          .onClick(() => { ThemeManager.toggleTheme(); })
+
+        MenuItem({ content: t('nav_recycle') })
+          .onClick(() => { AppState.setCurrentPage('Recycle'); })
+
+        MenuItem({ content: t('nav_graph_view') })
+          .onClick(() => { AppState.setCurrentPage('Graph'); })
+
+        MenuItem({ content: t('nav_flashcards') })
+          .onClick(() => { AppState.setCurrentPage('Flashcards'); })
+      }
+
+      MenuItemGroup() {
+        MenuItem({ content: t('nav_all_pages') })
+          .onClick(() => { AppState.setCurrentPage('AllPages'); })
+
+        MenuItem({ content: t('nav_export') })
+          .onClick(() => { /* 预留：导出 */ })
+
+        MenuItem({ content: t('nav_import') })
+          .onClick(() => { /* 预留：导入 */ })
+      }
+
+      MenuItemGroup() {
+        MenuItem({ content: t('nav_about') })
+          .onClick(() => { AppState.setCurrentPage('About'); })
+      }
+    }
   }
 }

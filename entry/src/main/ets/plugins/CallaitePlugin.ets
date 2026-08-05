@@ -1,5 +1,5 @@
 /**
- * LuniusPlugin — 插件抽象基类。
+ * CallaitePlugin — 插件抽象基类。
  *
  * 所有插件必须继承此类并实现 getManifest()。
  * 插件通过 PluginManager 注册，在应用启动时自动发现。
@@ -7,7 +7,7 @@
  * ArkTS 兼容方案: 插件代码预编译为 ArkTS 模块，
  * PluginManager 通过静态注册表发现，无需动态加载。
  */
-export abstract class LuniusPlugin {
+export abstract class CallaitePlugin {
   /** 插件唯一 ID（kebab-case） */
   abstract get id(): string;
 

@@ -4,11 +4,40 @@ import { t } from '../../utils/i18n';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData } from '../../core/models/Page';
 
+interface NavItem {
+  key: string;          // 唯一标识，对应 AppState.currentPage 值
+  label: string;        // i18n 标题
+  iconName: string;     // Tabler 图标名
+}
+
+/**
+ * LeftSidebar — 按 logseq left_sidebar.cljs 布局复刻
+ *
+ * 结构（自上而下）：
+ *   ┌──────────────────────┐
+ *   │ App Name Header      │
+ *   ├──────────────────────┤
+ *   │ NAVIGATION（导航区）  │  ← 新增：Journal / AllPages / Graph / Flashcards
+ *   ├──────────────────────┤
+ *   │ FAVORITES（收藏夹）   │
+ *   ├──────────────────────┤
+ *   │ RECENT（最近访问）    │
+ *   ├──────────────────────┤
+ *   │ ALL PAGES（页面树）   │  按命名空间分组
+ *   ├──────────────────────┤
+ *   │ Settings Footer      │
+ *   └──────────────────────┘
+ *
+ * 视觉规则：
+ *  - 当前页 highlight 用 primary 色文字 + 浅色背景
+ *  - section header 全大写、11px、muted_text、左侧带小图标
+ *  - 页面项左缩进 20px，hover/current 高亮
+ */
 @Component
 export struct LeftSidebar {
   @StorageLink('callaite_currentPage') currentPage: string = 'Journal';
-  @StorageLink('callaite_favorites') favoritesRaw: string = '[]';
-  @StorageLink('callaite_recentPages') recentRaw: string = '[]';
+  @StorageLink('callaite_favorites') @Watch('onFavoritesChanged') favoritesRaw: string = '[]';
+  @StorageLink('callaite_recentPages') @Watch('onRecentChanged') recentRaw: string = '[]';
   @State allPages: PageData[] = [];
   @State favorites: string[] = [];
   @State recent: string[] = [];
@@ -21,101 +50,250 @@ export struct LeftSidebar {
     this.refreshSidebarData();
   }
 
+  /**
+   * 修复：favoritesRaw 变化时重新解析收藏列表。
+   * 此前仅在 aboutToAppear 调用 refreshSidebarData，外部添加/删除收藏后左侧栏不刷新。
+   */
+  onFavoritesChanged(): void {
+    this.refreshFavorites();
+  }
+
+  /**
+   * 修复：recentRaw 变化时重新解析最近访问列表。
+   */
+  onRecentChanged(): void {
+    this.refreshRecent();
+  }
+
+  refreshFavorites(): void {
+    if (this.favoritesRaw) {
+      try { this.favorites = JSON.parse(this.favoritesRaw) as string[] ?? []; } catch (e) { this.favorites = []; }
+    } else {
+      this.favorites = [];
+    }
+  }
+
+  refreshRecent(): void {
+    if (this.recentRaw) {
+      try { this.recent = JSON.parse(this.recentRaw) as string[] ?? []; } catch (e) { this.recent = []; }
+    } else {
+      this.recent = [];
+    }
+  }
+
   refreshSidebarData(): void {
-    if (this.favoritesRaw) { try { this.favorites = JSON.parse(this.favoritesRaw) as string[] ?? []; } catch (e) { this.favorites = []; } }
-    if (this.recentRaw) { try { this.recent = JSON.parse(this.recentRaw) as string[] ?? []; } catch (e) { this.recent = []; } }
+    this.refreshFavorites();
+    this.refreshRecent();
+  }
+
+  /**
+   * 导航项列表 — 对应 logseq sidebar 顶部 nav 区。
+   */
+  get navItems(): NavItem[] {
+    const items: NavItem[] = [];
+    items[0] = { key: 'Journal', label: t('nav_journals'), iconName: 'calendar' };
+    items[1] = { key: 'AllPages', label: t('nav_all_pages'), iconName: 'apps' };
+    items[2] = { key: 'Graph', label: t('nav_graph_view'), iconName: 'world' };
+    items[3] = { key: 'Flashcards', label: t('nav_flashcards'), iconName: 'book' };
+    return items;
   }
 
   build() {
     Column({ space: 0 }) {
+      // ─── App Name Header ───
       Row({ space: 10 }) {
-        Text(t('app_name')).fontSize(17).fontWeight(FontWeight.Bold).fontColor('#1A1A1A')
+        TablerIcon('bolt', 18, $r('app.color.primary'))
+        Text(t('app_name'))
+          .fontSize(17)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text'))
+          .layoutWeight(1)
       }
-      .width('100%').height(48).padding({ left: 18, right: 16 })
+      .width('100%')
+      .height(48)
+      .padding({ left: 18, right: 16 })
 
-      Divider().color('#E8E9EA').width('100%')
+      Divider().color($r('app.color.border')).width('100%')
 
+      // ─── 可滚动主体 ───
       Scroll() {
         Column({ space: 0 }) {
+          // 导航区（logseq sidebar 顶部）
+          this.SectionHeader(t('sidebar_navigations'), 'menu-2')
+          ForEach(this.navItems, (item: NavItem) => {
+            this.NavRow(item)
+          }, (item: NavItem) => item.key)
+          this.SectionSpacer()
+
+          // 收藏夹
           this.SectionHeader(t('favorites'), 'pin')
           ForEach(this.favorites, (name: string) => { this.PageLink(name); }, (name: string) => name)
-          if (this.favorites.length === 0) this.EmptyHint('点击 ··· 收藏页面')
+          if (this.favorites.length === 0) this.EmptyHint(t('empty_sidebar_hint'))
           this.SectionSpacer()
 
+          // 最近页面
           this.SectionHeader(t('recent'), 'refresh')
           ForEach(this.recent.slice(0, 8), (name: string) => { this.PageLink(name); }, (name: string) => name)
-          if (this.recent.length === 0) this.EmptyHint('最近访问的页面')
+          if (this.recent.length === 0) this.EmptyHint(t('empty_sidebar_hint'))
           this.SectionSpacer()
 
+          // 所有页面（按命名空间分组）
           this.SectionHeader(t('all_pages'), 'file')
           ForEach(this.getNamespaceGroups(), (ns: string) => {
             if (ns !== '') {
               Row({ space: 6 }) {
-                TablerIcon('folder', 12, '#A0A3A8')
-                Text(ns).fontSize(11).fontWeight(FontWeight.Medium).fontColor('#787B80')
-              }.width('100%').padding({ left: 20, top: 10, bottom: 4 })
+                TablerIcon('folder', 12, $r('app.color.muted_text'))
+                Text(ns)
+                  .fontSize(11)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor($r('app.color.muted_text'))
+              }
+              .width('100%')
+              .padding({ left: 20, top: 10, bottom: 4 })
             }
             ForEach(this.getPagesByNamespace(ns), (page: PageData) => {
               this.PageLink(page.originalName);
             }, (page: PageData) => page.uuid)
           }, (ns: string) => ns)
-          if (this.allPages.length === 0) this.EmptyHint('创建新页面')
+          if (this.allPages.length === 0) this.EmptyHint(t('empty_page'))
         }.width('100%')
       }
-      .width('100%').layoutWeight(1).scrollBar(BarState.Off)
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
 
-      Divider().color('#E8E9EA').width('100%')
+      // ─── Footer：设置 ───
+      Divider().color($r('app.color.border')).width('100%')
       Row({ space: 8 }) {
-        TablerIcon('settings', 15, '#787B80')
-        Text(t('settings')).fontSize(13).fontColor('#787B80')
+        TablerIcon('settings', 15, $r('app.color.muted_text'))
+        Text(t('settings')).fontSize(13).fontColor($r('app.color.muted_text'))
       }
-      .width('100%').height(40).padding({ left: 18, right: 16 })
+      .width('100%')
+      .height(40)
+      .padding({ left: 18, right: 16 })
       .onClick(() => { AppState.setCurrentPage('Settings'); })
     }
-    .width('100%').height('100%').padding({ top: 4, bottom: 4 })
-    .backgroundColor('#F3F3F4')
-    .border({ width: { right: 1 }, color: '#E8E9EA' })
+    .width('100%')
+    .height('100%')
+    .padding({ top: 4, bottom: 4 })
+    .backgroundColor($r('app.color.surface1'))
+    .border({ width: { right: 1 }, color: $r('app.color.border') })
   }
 
-  @Builder SectionHeader(title: string, iconName: string) {
+  /**
+   * section header — 大写 + 11px + muted_text + 小图标。
+   */
+  @Builder
+  SectionHeader(title: string, iconName: string) {
     Row({ space: 6 }) {
-      TablerIcon(iconName, 13, '#A0A3A8')
-      Text(title).fontSize(11).fontWeight(FontWeight.Bold).fontColor('#787B80')
-    }.width('100%').padding({ left: 20, right: 16, top: 14, bottom: 6 })
+      TablerIcon(iconName, 13, $r('app.color.muted_text'))
+      Text(title.toUpperCase())
+        .fontSize(11)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.muted_text'))
+    }
+    .width('100%')
+    .padding({ left: 20, right: 16, top: 14, bottom: 6 })
   }
 
-  @Builder SectionSpacer() {
-    Divider().color('#E8E9EA').width('100%').margin({ left: 16, right: 16, top: 2, bottom: 2 })
+  @Builder
+  SectionSpacer() {
+    Divider()
+      .color($r('app.color.border'))
+      .width('100%')
+      .margin({ left: 16, right: 16, top: 2, bottom: 2 })
   }
 
-  @Builder EmptyHint(text: string) {
-    Text(text).fontSize(12).fontColor('#B0B3B8')
+  @Builder
+  EmptyHint(text: string) {
+    Text(text)
+      .fontSize(12)
+      .fontColor($r('app.color.muted_text'))
       .padding({ left: 20, right: 16, top: 4, bottom: 4 })
+      .opacity(0.7)
   }
 
-  @Builder PageLink(name: string) {
+  /**
+   * 导航项 row — logseq sidebar nav 风格。
+   * 选中时 primary 色文字 + 浅色背景。
+   */
+  @Builder
+  NavRow(item: NavItem) {
+    Row({ space: 10 }) {
+      TablerIcon(item.iconName, 15,
+        this.currentPage === item.key
+          ? $r('app.color.primary')
+          : $r('app.color.text'))
+      Text(item.label)
+        .fontSize(13)
+        .fontColor(this.currentPage === item.key
+          ? $r('app.color.primary')
+          : $r('app.color.text'))
+        .fontWeight(this.currentPage === item.key ? FontWeight.Medium : FontWeight.Normal)
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .width('100%')
+    .height(30)
+    .padding({ left: 20, right: 14 })
+    .borderRadius(4)
+    .backgroundColor(this.currentPage === item.key
+      ? $r('app.color.surface2')
+      : Color.Transparent)
+    .onClick(() => { AppState.setCurrentPage(item.key); })
+  }
+
+  /**
+   * 页面项 row — logseq sidebar page 风格。
+   * 含 rename/delete 操作按钮（hover 时显示）。
+   */
+  @Builder
+  PageLink(name: string) {
     Row({ space: 10 }) {
       if (this.renamingPage === name) {
-        TextInput({ text: this.renameText }).fontSize(13).layoutWeight(1).height(26)
+        TextInput({ text: this.renameText })
+          .fontSize(13)
+          .layoutWeight(1)
+          .height(26)
           .onChange((value: string) => { this.renameText = value; })
           .onSubmit(() => { this.commitRename(); })
       } else {
         Text(name)
-          .fontSize(13).fontColor(this.currentPage === name ? '#0458A6' : '#3A3A3A')
+          .fontSize(13)
+          .fontColor(this.currentPage === name
+            ? $r('app.color.primary')
+            : $r('app.color.text'))
           .fontWeight(this.currentPage === name ? FontWeight.Medium : FontWeight.Normal)
-          .layoutWeight(1).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
           .onClick(() => { AppState.setCurrentPage(name); })
       }
-      Row() { TablerIcon('edit', 12, '#B0B3B8') }.width(16).height(16).opacity(0.4)
+      Row() { TablerIcon('edit', 12, $r('app.color.muted_text')) }
+        .width(16)
+        .height(16)
+        .opacity(0.4)
         .onClick(() => { this.startRename(name); })
-      Row() { TablerIcon('trash', 12, '#DC2626') }.width(16).height(16).opacity(0.4)
+      Row() { TablerIcon('trash', 12, $r('app.color.danger')) }
+        .width(16)
+        .height(16)
+        .opacity(0.4)
         .onClick(() => { this.deletePage(name); })
     }
-    .width('100%').height(30).padding({ left: 20, right: 14 }).borderRadius(4)
-    .backgroundColor(this.currentPage === name ? '#0458A612' : Color.Transparent)
+    .width('100%')
+    .height(30)
+    .padding({ left: 20, right: 14 })
+    .borderRadius(4)
+    .backgroundColor(this.currentPage === name
+      ? $r('app.color.surface2')
+      : Color.Transparent)
   }
 
-  startRename(oldName: string): void { this.renamingPage = oldName; this.renameText = oldName; }
+  startRename(oldName: string): void {
+    this.renamingPage = oldName;
+    this.renameText = oldName;
+  }
 
   commitRename(): void {
     const ws = WorkspaceService.getInstance();
@@ -123,16 +301,38 @@ export struct LeftSidebar {
     if (page && this.renameText !== '' && this.renameText !== this.renamingPage) {
       ws.getDataStore().renamePage(page.uuid, this.renameText);
     }
-    this.renamingPage = ''; this.renameText = '';
+    this.renamingPage = '';
+    this.renameText = '';
     this.allPages = WorkspaceService.getInstance().getAllPages();
   }
 
   deletePage(pageName: string): void {
     const ws = WorkspaceService.getInstance();
     const page = ws.getPageByName(pageName);
-    if (page) { ws.getDataStore().deletePage(page.uuid); this.allPages = ws.getAllPages(); }
+    if (page) {
+      ws.getDataStore().deletePage(page.uuid);
+      this.allPages = ws.getAllPages();
+    }
   }
 
-  getNamespaceGroups(): string[] { const ns: string[] = ['']; for (let i=0;i<this.allPages.length;i++){ const n=this.allPages[i].namespace; if(n&&ns.indexOf(n)===-1)ns.push(n); } return ns; }
-  getPagesByNamespace(ns: string): PageData[] { const r:PageData[]=[]; for(let i=0;i<this.allPages.length;i++){ if(this.allPages[i].namespace===ns)r.push(this.allPages[i]); } return r; }
+  getNamespaceGroups(): string[] {
+    const ns: string[] = [''];
+    for (let i = 0; i < this.allPages.length; i++) {
+      const n = this.allPages[i].namespace;
+      if (n && ns.indexOf(n) === -1) {
+        ns.push(n);
+      }
+    }
+    return ns;
+  }
+
+  getPagesByNamespace(ns: string): PageData[] {
+    const r: PageData[] = [];
+    for (let i = 0; i < this.allPages.length; i++) {
+      if (this.allPages[i].namespace === ns) {
+        r.push(this.allPages[i]);
+      }
+    }
+    return r;
+  }
 }

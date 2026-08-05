@@ -31,28 +31,34 @@ export struct ContentArea {
           const page = ws.getPageByName(ContentArea.resolvePageName(this.currentPage));
           if (!page) return;
 
-          // Enter (2054) — 创建新 Block
-          if (event.type === KeyType.Down && event.keyCode === 2054) {
+          // 修复：使用 HarmonyOS 标准键码
+          // KEYCODE_ENTER = 2049, KEYCODE_DEL = 2048 (Backspace), KEYCODE_TAB = 2050
+          // KEYCODE_DPAD_UP = 2017, KEYCODE_DPAD_DOWN = 2018
+
+          // Enter (2049) — 创建新 Block
+          if (event.type === KeyType.Down && event.keyCode === 2049) {
             editor.createBlockBelow(page.uuid);
           }
 
-          // Backspace (2053) on empty — 删除空 Block
-          if (event.type === KeyType.Down && event.keyCode === 2053) {
+          // Backspace (2048) on empty — 删除空 Block
+          if (event.type === KeyType.Down && event.keyCode === 2048) {
             editor.deleteEmptyBlock();
           }
 
-          // Tab (2055) — 缩进
-          if (event.type === KeyType.Down && event.keyCode === 2055) {
+          // Tab (2050) — 缩进
+          if (event.type === KeyType.Down && event.keyCode === 2050) {
             editor.indentBlock();
           }
 
-          // Alt+↑ (2019) — 上移
-          if (event.type === KeyType.Down && event.keyCode === 2019) {
+          // Alt+↑ (2017) — 上移
+          if (event.type === KeyType.Down && event.keyCode === 2017 &&
+              event.getModifierKeyState!(['alt'])) {
             editor.moveBlockUp();
           }
 
-          // Alt+↓ (2020) — 下移
-          if (event.type === KeyType.Down && event.keyCode === 2020) {
+          // Alt+↓ (2018) — 下移
+          if (event.type === KeyType.Down && event.keyCode === 2018 &&
+              event.getModifierKeyState!(['alt'])) {
             editor.moveBlockDown();
           }
         })

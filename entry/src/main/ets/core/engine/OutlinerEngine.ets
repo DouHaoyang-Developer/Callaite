@@ -40,6 +40,8 @@ export class OutlinerEngine {
   private undoStack: OutlinerOp[] = [];
   private redoStack: OutlinerOp[] = [];
   private maxUndoDepth: number = 50;
+  // 修复：记录每次操作的结果，用于 undo 时获取受影响的 UUID
+  private lastOpResults: Map<OutlinerOp, string[]> = new Map();
 
   constructor(dataStore: DataStore) {
     this.dataStore = dataStore;
@@ -56,13 +58,17 @@ export class OutlinerEngine {
     this.redoStack = [];
 
     if (this.undoStack.length > this.maxUndoDepth) {
-      this.undoStack.splice(0, 1);
+      const removed = this.undoStack.splice(0, 1);
+      // 清理对应的 result 缓存
+      this.lastOpResults.delete(removed[0]);
       this.blockTree.clearRecycleBin();
     }
 
     const result = this.dispatch(op);
 
     if (result.success) {
+      // 修复：记录操作结果，供 undo 使用
+      this.lastOpResults.set(op, result.affectedUuids);
       this.persistForOp(op);
     }
 
@@ -294,29 +300,51 @@ export class OutlinerEngine {
   // ─── Undo ───
 
   private undoOp(op: OutlinerOp): OpResult {
+    // 修复：使用 lastOpResults 获取操作影响的具体 UUID
+    const affectedUuids = this.lastOpResults.get(op);
+
     if (op.type === 'insert-block') {
-      // undo insert = delete
-      return this.doDeleteBlock({ type: 'delete-block', uuid: this.getLastInsertedUuid(op) });
+      // undo insert = delete 插入的 block
+      if (affectedUuids && affectedUuids.length > 0) {
+        const insertedUuid = affectedUuids[0];
+        this.lastOpResults.delete(op);
+        return this.doDeleteBlock({ type: 'delete-block', uuid: insertedUuid });
+      }
+      return { success: false, message: 'Cannot undo insert: no UUID recorded', affectedUuids: [] };
     }
     if (op.type === 'delete-block') {
       // undo delete = restore from recycle bin
       this.blockTree.restoreFromRecycleBin(op.uuid);
+      this.lastOpResults.delete(op);
       return { success: true, message: 'Block restored', affectedUuids: [op.uuid] };
     }
     if (op.type === 'update-block') {
-      // undo update = we'd need old content; simplified: can't undo content changes
-      return { success: false, message: 'Undo update not yet supported', affectedUuids: [] };
+      // undo update: 需要旧内容 — 此前未保存，标记不支持
+      // 完整实现需要在 execute 前保存 block 旧内容
+      this.lastOpResults.delete(op);
+      return { success: false, message: 'Undo content update not supported', affectedUuids: [] };
+    }
+    if (op.type === 'indent') {
+      // undo indent = outdent
+      this.lastOpResults.delete(op);
+      return this.doOutdent({ type: 'outdent', uuid: op.uuid });
+    }
+    if (op.type === 'outdent') {
+      // undo outdent = indent
+      this.lastOpResults.delete(op);
+      return this.doIndent({ type: 'indent', uuid: op.uuid });
+    }
+    if (op.type === 'set-marker') {
+      // undo set-marker: 需要旧 marker — 简化不支持
+      this.lastOpResults.delete(op);
+      return { success: false, message: 'Undo marker change not supported', affectedUuids: [] };
     }
     // 其他操作的 undo 暂简化为不支持
+    this.lastOpResults.delete(op);
     return { success: false, message: 'Undo not yet supported for this operation', affectedUuids: [] };
   }
 
   // ─── 辅助 ───
-
-  private getLastInsertedUuid(op: InsertBlockOp): string {
-    // 简化：从 tree 中找最近插入的 block
-    return '';
-  }
 
   private extractUuids(blocks: BlockData[]): string[] {
     const result: string[] = [];
