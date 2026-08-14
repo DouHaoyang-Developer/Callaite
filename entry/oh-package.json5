@@ -1,10 +1,10 @@
 {
   "name": "entry",
   "version": "1.0.0",
-  "description": "Please describe the basic information.",
+  "description": "Callaite entry module — Logseq 风格知识管理应用",
   "main": "",
-  "author": "",
-  "license": "",
+  "author": "Callaite",
+  "license": "MIT",
   "dependencies": {}
 }
 

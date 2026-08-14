@@ -14,6 +14,7 @@ import { registerBuiltinPlugins } from '../plugins/BuiltinPlugins';
 import { ContinuationManager } from '../services/ContinuationManager';
 import { HuaweiAccountService } from '../services/HuaweiAccountService';
 import { BlockMetadataSyncService } from '../services/BlockMetadataSyncService';
+import { ErrorRecoveryService } from '../services/ErrorRecoveryService';
 
 const DOMAIN = 0x0001;
 
@@ -24,6 +25,9 @@ export default class EntryAbility extends UIAbility {
     // 设置应用上下文（FileService 需要 context 获取沙箱路径）
     FileService.setContext(this.context);
 
+    // 启用崩溃恢复与全局异常捕获
+    ErrorRecoveryService.init();
+
     try {
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
@@ -33,6 +37,19 @@ export default class EntryAbility extends UIAbility {
 
   onDestroy(): void {
     hilog.info(DOMAIN, 'EntryAbility', '%{public}s', 'Ability onDestroy');
+  }
+
+  /**
+   * 应用异常/后台时由框架调用，保存应用数据以便崩溃恢复后继续使用。
+   */
+  onSaveState(reason: AbilityConstant.StateType, wantParam: Record<string, Object>): AbilityConstant.OnSaveResult {
+    hilog.info(DOMAIN, 'EntryAbility', 'onSaveState reason=%{public}d', reason);
+    try {
+      WorkspaceService.getInstance().saveAll();
+    } catch (_e) {
+      // 保存失败不阻塞
+    }
+    return AbilityConstant.OnSaveResult.ALL_AGREE;
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {

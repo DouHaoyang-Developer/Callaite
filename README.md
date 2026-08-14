@@ -1047,6 +1047,14 @@ node "D:\program files\Huawei\DevEco Studio\plugins\codelinter\run\index.js" -c 
 - 端云同步文件以 AES-256-CBC 加密写入
 - 依赖无第三方运行时库；仅使用 HarmonyOS 官方 Kit
 
+### 可靠性与发布优化（已就绪）
+
+- 崩溃恢复与全局异常捕获：`appRecovery` 启用 JS 崩溃/主线程卡死/Native 崩溃自动重启，`errorManager.on('error')` 全局捕获未处理异常并落日志、保存数据
+- 文件原子写入：`FileRepository.writeTextSync` 先写临时文件并 `fsync`，再 `rename` 原子替换，异常退出不破坏原文件
+- 单元测试已补齐：本地纯逻辑测试（路径穿越/UUID）与设备端测试（Markdown 链接/模板展开）
+- release 混淆已启用：`entry/build-profile.json5` 的 release `buildOptionSet` 中 `obfuscation.ruleOptions.enable = true`
+- 包元信息：`entry/oh-package.json5` 已设置 `license: "MIT"` 与描述
+
 ### 6. 功能回归清单（真机）
 
 **编辑器**

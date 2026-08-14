@@ -1,35 +1,39 @@
-import { hilog } from '@kit.PerformanceAnalysisKit';
-import { describe, beforeAll, beforeEach, afterEach, afterAll, it, expect } from '@ohos/hypium';
+import { describe, it, expect } from '@ohos/hypium';
+import { ContentRenderer, SegmentType } from '../../main/ets/utils/ContentRenderer';
+import { TemplateService } from '../../main/ets/services/TemplateService';
 
+/**
+ * 设备端测试（含内容渲染与模板展开）。
+ */
 export default function abilityTest() {
-  describe('ActsAbilityTest', () => {
-    // Defines a test suite. Two parameters are supported: test suite name and test suite function.
-    beforeAll(() => {
-      // Presets an action, which is performed only once before all test cases of the test suite start.
-      // This API supports only one parameter: preset action function.
-    })
-    beforeEach(() => {
-      // Presets an action, which is performed before each unit test case starts.
-      // The number of execution times is the same as the number of test cases defined by **it**.
-      // This API supports only one parameter: preset action function.
-    })
-    afterEach(() => {
-      // Presets a clear action, which is performed after each unit test case ends.
-      // The number of execution times is the same as the number of test cases defined by **it**.
-      // This API supports only one parameter: clear action function.
-    })
-    afterAll(() => {
-      // Presets a clear action, which is performed after all test cases of the test suite end.
-      // This API supports only one parameter: clear action function.
-    })
-    it('assertContain', 0, () => {
-      // Defines a test case. This API supports three parameters: test case name, filter parameter, and test case function.
-      hilog.info(0x0000, 'testTag', '%{public}s', 'it begin');
-      let a = 'abc';
-      let b = 'b';
-      // Defines a variety of assertion methods, which are used to declare expected boolean conditions.
-      expect(a).assertContain(b);
-      expect(a).assertEqual(a);
-    })
-  })
+  describe('Callaite 核心功能', () => {
+    it('ContentRenderer 解析 markdown 链接', 0, () => {
+      const segs = ContentRenderer.parse('[文本](https://example.com)');
+      expect(segs.length === 1).assertTrue();
+      expect(segs[0].type).assertEqual(SegmentType.LINK);
+      expect(segs[0].text).assertEqual('https://example.com');
+      expect(segs[0].extra).assertEqual('文本');
+    });
+
+    it('ContentRenderer 解析页面引用与加粗', 0, () => {
+      const segs = ContentRenderer.parse('[[页面]] 与 **加粗**');
+      expect(segs.length === 3).assertTrue();
+      expect(segs[0].type).assertEqual(SegmentType.PAGE_REF);
+      expect(segs[1].type).assertEqual(SegmentType.TEXT);
+      expect(segs[2].type).assertEqual(SegmentType.BOLD);
+    });
+
+    it('ContentRenderer 解析块引用与代码', 0, () => {
+      const segs = ContentRenderer.parse('```ts\nconst a = 1;\n```');
+      expect(segs.length === 1).assertTrue();
+      expect(segs[0].type).assertEqual(SegmentType.CODE);
+    });
+
+    it('TemplateService 展开变量', 0, () => {
+      const result = TemplateService.expand('标题：{{title}}，日期：{{date}}', '我的页面');
+      expect(result.indexOf('我的页面') >= 0).assertTrue();
+      expect(result.indexOf('{{date}}') === -1).assertTrue();
+      expect(result.indexOf('{{title}}') === -1).assertTrue();
+    });
+  });
 }

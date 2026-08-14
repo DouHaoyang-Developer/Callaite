@@ -107,14 +107,25 @@ export class FileRepository {
   }
 
   /**
-   * 写入文本文件（同步，通过 fd）。
+   * 写入文本文件（同步，通过 fd，原子写入）。
+   * 先写入临时文件并 fsync，再 rename 原子替换，异常退出不会破坏原文件。
    */
   writeTextSync(path: string, content: string): void {
+    const tmpPath = path + '.tmp';
     try {
-      const file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+      const file = fs.openSync(tmpPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
       fs.writeSync(file.fd, content);
+      fs.fsyncSync(file.fd);
       fs.closeSync(file);
+      fs.renameSync(tmpPath, path);
     } catch (e) {
+      try {
+        if (fs.accessSync(tmpPath)) {
+          fs.unlinkSync(tmpPath);
+        }
+      } catch (_cleanupErr) {
+        // 临时文件清理失败忽略
+      }
       console.error('[FileRepository] Failed to write file: ' + path, e);
     }
   }
