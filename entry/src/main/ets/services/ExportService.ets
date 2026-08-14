@@ -176,6 +176,25 @@ export class ExportService {
   }
 
   /**
+   * 导出 OPML 到文件。
+   * @param pageNames 页面名列表
+   * @param targetDir 目标目录
+   * @returns 是否成功
+   */
+  static exportOpmlToFile(pageNames: string[], targetDir: string): boolean {
+    const ws = WorkspaceService.getInstance();
+    const repo = ws.getDataStore().getFileRepo();
+    const opml = ExportService.exportOpml(pageNames);
+    const dst = repo.joinPath(targetDir, 'callaite.opml');
+    try {
+      const file = fs.openSync(dst, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+      fs.writeSync(file.fd, opml);
+      fs.closeSync(file);
+      return true;
+    } catch (_e) { return false; }
+  }
+
+  /**
    * 导出 HTML 到文件。
    * @param pageName 页面名
    * @param targetDir 目标目录

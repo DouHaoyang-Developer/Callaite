@@ -1,5 +1,5 @@
 import { BlockData } from '../models/Block';
-import { PageData, createPageData } from '../models/Page';
+import { PageData, createPageData, pageNameToFileName } from '../models/Page';
 import { BlockTree } from '../engine/BlockTree';
 import { IndexStore } from './IndexStore';
 import { MarkdownParser, ParseResult } from '../parser/MarkdownParser';
@@ -111,7 +111,8 @@ export class DataStore {
   createPage(name: string, originalName: string): PageData {
     const uuid = UUID.generate();
     const page = createPageData(uuid, name, originalName);
-    page.filePath = name + '.md';
+    // 使用安全文件名转换，防止页面名包含 / .. 等造成路径穿越
+    page.filePath = pageNameToFileName(name);
     this.indexStore.addPage(page);
     this.savePage(uuid);
     return page;
@@ -147,7 +148,7 @@ export class DataStore {
     const oldName = page.name;
     page.name = newName;
     page.originalName = newName;
-    page.filePath = newName + '.md';
+    page.filePath = pageNameToFileName(newName);
     page.updatedAt = Date.now();
 
     // 重新索引

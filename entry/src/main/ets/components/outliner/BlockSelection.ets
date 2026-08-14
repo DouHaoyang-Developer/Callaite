@@ -87,10 +87,7 @@ export struct BlockSelection {
 
           // ─── 缩进按钮（→） ───
           Button() {
-            Text('→')
-              .fontSize(16)
-              .fontColor($r('app.color.text'))
-              .fontWeight(FontWeight.Bold)
+            TablerIcon('indent-increase', 16, $r('app.color.text'))
           }
           .width(32).height(32)
           .type(ButtonType.Circle)
@@ -101,10 +98,7 @@ export struct BlockSelection {
 
           // ─── 反缩进按钮（←） ───
           Button() {
-            Text('←')
-              .fontSize(16)
-              .fontColor($r('app.color.text'))
-              .fontWeight(FontWeight.Bold)
+            TablerIcon('indent-decrease', 16, $r('app.color.text'))
           }
           .width(32).height(32)
           .type(ButtonType.Circle)
@@ -115,10 +109,7 @@ export struct BlockSelection {
 
           // ─── 删除按钮（×） ───
           Button() {
-            Text('×')
-              .fontSize(18)
-              .fontColor($r('app.color.error'))
-              .fontWeight(FontWeight.Bold)
+            TablerIcon('trash', 16, $r('app.color.error'))
           }
           .width(32).height(32)
           .type(ButtonType.Circle)
@@ -140,7 +131,7 @@ export struct BlockSelection {
 
           // ─── 全选按钮 ───
           Button() {
-            TablerIcon('checkboxes', 14, $r('app.color.text'))
+            TablerIcon('square-check', 14, $r('app.color.text'))
           }
           .width(32).height(32)
           .type(ButtonType.Circle)

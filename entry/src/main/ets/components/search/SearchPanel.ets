@@ -52,6 +52,13 @@ export struct SearchPanel {
   onPanelVisibilityChanged(): void {
     if (this.isOpen) {
       this.recentPages = AppState.getRecentPages();
+      // 消费标签点击产生的过滤请求
+      const tagFilter = AppStorage.get<string>('callaite_tagFilter');
+      if (tagFilter && tagFilter !== '') {
+        AppStorage.setOrCreate('callaite_tagFilter', '');
+        this.searchQuery = '#' + tagFilter;
+        this.executeSearch(this.searchQuery);
+      }
       setTimeout(() => {
         if (this.isOpen) {
           this.inputController.requestFocus();
@@ -76,6 +83,25 @@ export struct SearchPanel {
     const ws = WorkspaceService.getInstance();
     const items: SearchResultItem[] = [];
     const lowerQuery = query.toLowerCase();
+
+    // 标签搜索：`#tag` 前缀时按标签索引查找页面
+    if (query.startsWith('#') && query.length > 1) {
+      const tag = query.substring(1);
+      const pagesByTag = ws.getPagesByTag(tag);
+      for (let i = 0; i < pagesByTag.length && items.length < 50; i++) {
+        const item: SearchResultItem = {
+          type: 'page',
+          pageName: pagesByTag[i].originalName,
+          blockUuid: '',
+          content: pagesByTag[i].originalName,
+          matchedText: query
+        };
+        items.push(item);
+      }
+      this.results = items;
+      this.isSearching = false;
+      return;
+    }
 
     // 1. 搜索页面名
     const pages = ws.searchPages(query);

@@ -1,8 +1,12 @@
 import { AppState } from '../state/AppState';
+import { WorkspaceService } from '../services/WorkspaceService';
+import { FileService } from '../services/FileService';
+import { common } from '@kit.AbilityKit';
 
 export interface ContentSegment {
   text: string;
   type: SegmentType;
+  extra?: string;
 }
 
 export enum SegmentType {
@@ -22,7 +26,8 @@ export enum SegmentType {
   TABLE_CELL = 13,
   MATH_INLINE = 14,
   MATH_BLOCK = 15,
-  MERMAID = 16
+  MERMAID = 16,
+  LINK = 17
 }
 
 interface MatchResult {
@@ -99,6 +104,21 @@ export class ContentRenderer {
         const seg: ContentSegment = { text: inner, type: segType };
         const result: MatchResult = { segment: seg, consumed: consumed };
         return result;
+      }
+    }
+
+    // [text](url) markdown 链接
+    if (ch === '[' && (pos + 1 >= text.length || text.charAt(pos + 1) !== '[')) {
+      const closeBracket = text.indexOf('](', pos + 1);
+      if (closeBracket > pos + 1) {
+        const urlEnd = text.indexOf(')', closeBracket + 2);
+        if (urlEnd > closeBracket + 2) {
+          const label = text.substring(pos + 1, closeBracket);
+          const url = text.substring(closeBracket + 2, urlEnd);
+          const seg: ContentSegment = { text: url, type: SegmentType.LINK, extra: label };
+          const result: MatchResult = { segment: seg, consumed: urlEnd + 1 - pos };
+          return result;
+        }
       }
     }
 
@@ -237,7 +257,8 @@ export class ContentRenderer {
     for (let i = fromPos; i < text.length; i++) {
       const ch = text.charAt(i);
       if (ch === '[' || ch === '(' || ch === '*' || ch === '=' ||
-          ch === '~' || ch === '`' || ch === '#') {
+          ch === '~' || ch === '`' || ch === '#' || ch === '!' ||
+          ch === '>' || ch === '$') {
         result.push(i);
       }
     }
@@ -257,19 +278,21 @@ export class ContentRenderer {
     if (type === SegmentType.PAGE_REF || type === SegmentType.PAGE_EMBED) return $r('app.color.link');
     if (type === SegmentType.BLOCK_REF || type === SegmentType.BLOCK_EMBED) return $r('app.color.primary');
     if (type === SegmentType.TAG_REF) return $r('app.color.success');
-    if (type === SegmentType.CODE) return '#EF4444';
-    if (type === SegmentType.HIGHLIGHT) return '#B8860B';
+    if (type === SegmentType.CODE) return $r('app.color.inline_code');
+    if (type === SegmentType.HIGHLIGHT) return $r('app.color.text');
     if (type === SegmentType.IMAGE) return $r('app.color.link');
     if (type === SegmentType.BLOCKQUOTE) return $r('app.color.muted_text');
-    if (type === SegmentType.MATH_INLINE || type === SegmentType.MATH_BLOCK) return '#8B5CF6';
-    if (type === SegmentType.MERMAID) return '#06B6D4';
+    if (type === SegmentType.MATH_INLINE || type === SegmentType.MATH_BLOCK) return $r('app.color.math');
+    if (type === SegmentType.MERMAID) return $r('app.color.mermaid');
+    if (type === SegmentType.LINK) return $r('app.color.link');
     return $r('app.color.text');
   }
 
   static isClickable(type: SegmentType): boolean {
     return type === SegmentType.PAGE_REF || type === SegmentType.BLOCK_REF ||
            type === SegmentType.TAG_REF || type === SegmentType.PAGE_EMBED ||
-           type === SegmentType.BLOCK_EMBED || type === SegmentType.IMAGE;
+           type === SegmentType.BLOCK_EMBED || type === SegmentType.IMAGE ||
+           type === SegmentType.LINK;
   }
 
   static handleClick(type: SegmentType, value: string): void {
@@ -277,10 +300,27 @@ export class ContentRenderer {
       AppState.setCurrentPage(value);
     }
     if (type === SegmentType.BLOCK_REF || type === SegmentType.BLOCK_EMBED) {
-      AppState.setCurrentPage(value);
+      // Block 引用点击应跳转到 Block 所属页面，而不是把 UUID 当作页面名。
+      const pageId = WorkspaceService.getInstance().getPageUuidForBlock(value);
+      const page = pageId ? WorkspaceService.getInstance().getDataStore().getPage(pageId) : undefined;
+      if (page) {
+        AppState.setCurrentPage(page.originalName);
+      }
     }
     if (type === SegmentType.TAG_REF) {
-      AppState.setCurrentPage(value);
+      // 标签不是页面，点击标签应打开搜索面板并按标签过滤。
+      AppState.setSearchPanelOpen(true);
+      AppStorage.setOrCreate('callaite_tagFilter', value);
+    }
+    if (type === SegmentType.LINK) {
+      try {
+        const ctx = FileService.getContext() as common.UIAbilityContext;
+        if (ctx) {
+          ctx.openLink(value).catch(() => {});
+        }
+      } catch (_e) {
+        // 打开链接失败时忽略
+      }
     }
   }
 }

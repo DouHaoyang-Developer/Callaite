@@ -61,8 +61,7 @@ export struct ExportDialog {
         ok = n > 0;
         detail = '共 ' + n.toString() + ' 个页面';
       }
-    } else {
-      // html
+    } else if (this.format === 'html') {
       if (this.scope === 'current') {
         ok = ExportService.exportHtmlToFile(this.pageName, this.targetDir);
         detail = this.pageName + '.html';
@@ -70,6 +69,21 @@ export struct ExportDialog {
         const n = ExportService.exportAllHtml(this.targetDir);
         ok = n > 0;
         detail = '共 ' + n.toString() + ' 个页面';
+      }
+    } else {
+      // opml
+      if (this.scope === 'current') {
+        const names: string[] = [this.pageName];
+        ok = ExportService.exportOpmlToFile(names, this.targetDir);
+        detail = this.pageName + '.opml';
+      } else {
+        const pages = WorkspaceService.getInstance().getAllPages();
+        const names: string[] = [];
+        for (let i = 0; i < pages.length; i++) {
+          names.push(pages[i].originalName);
+        }
+        ok = ExportService.exportOpmlToFile(names, this.targetDir);
+        detail = '共 ' + names.length.toString() + ' 个页面';
       }
     }
 
@@ -116,6 +130,7 @@ export struct ExportDialog {
         Row({ space: 8 }) {
           this.FormatBtn('Markdown', 'md')
           this.FormatBtn('HTML', 'html')
+          this.FormatBtn('OPML', 'opml')
         }
         .width('100%')
       }

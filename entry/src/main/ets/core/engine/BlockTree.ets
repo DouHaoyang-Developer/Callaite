@@ -247,6 +247,8 @@ export class BlockTree {
 
     // 从父节点的 children 列表中移除
     this.removeFromChildrenList(block.parentId, uuid);
+    // 修复右侧兄弟的 leftId 链：原来 leftId 指向被删块，现在指向被删块的左侧兄弟
+    this.fixLeftIdOnRemoval(block.parentId, uuid, block.leftId);
 
     // 从 blockMap 中移除并存入 recycleBin
     for (let i = 0; i < toDelete.length; i++) {
@@ -268,19 +270,22 @@ export class BlockTree {
       return;
     }
 
+    // 记录旧层级，用于后续统一更新子孙层级
+    const oldLevel = block.level;
+
     // 从旧位置移除
     this.removeFromChildrenList(block.parentId, uuid);
-    this.updateNeighborLeftId(block.parentId, '', uuid);
+    // 修复旧父节点下的兄弟 leftId 链
+    this.fixLeftIdOnRemoval(block.parentId, uuid, block.leftId);
 
     // 更新位置信息
-    const oldParentId = block.parentId;
     block.parentId = newParentId;
     block.leftId = newLeftId;
     block.level = newLevel;
 
     // 递归更新子 Block 的 level
     const descendants = this.getDescendants(uuid);
-    const levelDelta = newLevel - block.level;
+    const levelDelta = newLevel - oldLevel;
     for (let i = 0; i < descendants.length; i++) {
       descendants[i].level = descendants[i].level + levelDelta;
     }
@@ -432,6 +437,24 @@ export class BlockTree {
   }
 
   /**
+   * 删除/移走 Block 后，将其右侧兄弟的 leftId 指回被移除块的左侧兄弟。
+   * 保证 leftId 链表不因删除而断裂。
+   */
+  private fixLeftIdOnRemoval(parentId: string, removedUuid: string, removedLeftId: string): void {
+    const siblings = this.childrenMap.get(parentId);
+    if (!siblings) {
+      return;
+    }
+    for (let i = 0; i < siblings.length; i++) {
+      const block = this.blockMap.get(siblings[i]);
+      if (block && block.leftId === removedUuid) {
+        block.leftId = removedLeftId;
+        break;
+      }
+    }
+  }
+
+  /**
    * 清空回收站（undo 栈满时调用）。
    */
   clearRecycleBin(): void {
@@ -447,7 +470,29 @@ export class BlockTree {
       this.recycleBin.delete(uuid);
       this.blockMap.set(uuid, block);
       this.addToChildrenList(block.parentId, uuid, block.leftId);
+      // 恢复整棵子树（删除时子孙也进入了 recycleBin）
+      this.restoreDescendantsFromRecycleBin(uuid);
     }
     return block;
+  }
+
+  /**
+   * 递归恢复回收站中某个 Block 的后代。
+   * 修复 undo 删除时仅恢复父块、丢失子块的问题。
+   */
+  private restoreDescendantsFromRecycleBin(parentUuid: string): void {
+    const descendants: BlockData[] = [];
+    this.recycleBin.forEach((candidate: BlockData) => {
+      if (candidate.parentId === parentUuid) {
+        descendants.push(candidate);
+      }
+    });
+    for (let i = 0; i < descendants.length; i++) {
+      const child = descendants[i];
+      this.recycleBin.delete(child.uuid);
+      this.blockMap.set(child.uuid, child);
+      this.addToChildrenList(parentUuid, child.uuid, child.leftId);
+      this.restoreDescendantsFromRecycleBin(child.uuid);
+    }
   }
 }

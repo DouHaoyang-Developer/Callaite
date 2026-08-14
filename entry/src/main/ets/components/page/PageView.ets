@@ -5,6 +5,8 @@ import { QueryBuilder } from '../query/QueryBuilder';
 import { GraphView } from '../graph/GraphView';
 import { Whiteboard } from '../whiteboard/Whiteboard';
 import { FlashcardPage } from '../flashcard/FlashcardPage';
+import { PdfPage } from '../extensions/PdfPage';
+import { ProUpgradePage } from '../settings/ProUpgradePage';
 import { TaskDashboard } from '../search/TaskDashboard';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { t } from '../../utils/i18n';
@@ -66,6 +68,10 @@ export struct PageView {
       Whiteboard()
     } else if (this.currentPage === 'Flashcards') {
       FlashcardPage()
+    } else if (this.currentPage === 'Pdf') {
+      PdfPage()
+    } else if (this.currentPage === 'ProUpgrade') {
+      ProUpgradePage()
     } else if (this.currentPage === 'AllPages') {
       this.AllPagesView()
     } else if (this.currentPage === 'Recycle') {

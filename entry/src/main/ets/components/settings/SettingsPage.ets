@@ -7,6 +7,10 @@ import { ShortcutService, ShortcutDef } from '../../services/ShortcutService';
 import { SubscriptionService } from '../../services/SubscriptionService';
 import { CloudSyncService } from '../../services/CloudSyncService';
 import { ShortcutSettings } from './ShortcutSettings';
+import { promptAction } from '@kit.ArkUI';
+import { PluginManager } from '../../plugins/PluginManager';
+import { HuaweiAccountService } from '../../services/HuaweiAccountService';
+import { BlockMetadataSyncService } from '../../services/BlockMetadataSyncService';
 
 /**
  * SettingsPage — 设置页。
@@ -44,6 +48,13 @@ interface SelectOption {
   value: string;
 }
 
+interface PluginInfo {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+}
+
 @Component
 export struct SettingsPage {
   @State selectedTheme: string = '';
@@ -59,6 +70,9 @@ export struct SettingsPage {
   @State shortcuts: ShortcutDef[] = [];
   @State showShortcuts: boolean = false;
   @State currentSection: string = 'main';
+  @State plugins: PluginInfo[] = [];
+  @State huaweiAccountName: string = '未登录';
+  @State huaweiLoggedIn: boolean = false;
 
   aboutToAppear(): void {
     this.selectedTheme = ThemeManager.getThemeMode();
@@ -82,6 +96,7 @@ export struct SettingsPage {
     // 加载同步设置
     this.cloudSyncEnabled = AppStorage.get<boolean>(KEY_CLOUD_SYNC) ?? false;
     this.collabEnabled = AppStorage.get<boolean>(KEY_COLLAB) ?? false;
+    CloudSyncService.setEnabled(this.cloudSyncEnabled);
     this.refreshSyncStatus();
 
     // 加载账户状态
@@ -92,6 +107,34 @@ export struct SettingsPage {
 
     // 加载快捷键
     this.shortcuts = ShortcutService.getInstance().getAllShortcuts();
+    this.refreshPlugins();
+    this.refreshAccount();
+  }
+
+  private refreshAccount(): void {
+    HuaweiAccountService.refresh().then((info) => {
+      this.huaweiLoggedIn = info.isLoggedIn;
+      this.huaweiAccountName = info.isLoggedIn ? HuaweiAccountService.displayName() : '未登录';
+    }).catch(() => {
+      this.huaweiLoggedIn = false;
+      this.huaweiAccountName = '未登录';
+    });
+  }
+
+  private refreshPlugins(): void {
+    const pm = PluginManager.getInstance();
+    const all = pm.getAll();
+    const list: PluginInfo[] = [];
+    for (let i = 0; i < all.length; i++) {
+      const info: PluginInfo = {
+        id: all[i].id,
+        name: all[i].name,
+        description: all[i].description,
+        enabled: pm.isEnabled(all[i].id)
+      };
+      list.push(info);
+    }
+    this.plugins = list;
   }
 
   /**
@@ -115,10 +158,11 @@ export struct SettingsPage {
       return;
     }
     const count = CloudSyncService.countSyncedGraphs();
+    const limit = SubscriptionService.getGraphLimit();
     if (count > 0) {
-      this.syncStatus = '已同步 ' + count + ' 个文件';
+      this.syncStatus = '已同步 ' + count + '/' + limit + ' 个文件';
     } else {
-      this.syncStatus = '已启用，暂无同步文件';
+      this.syncStatus = '已启用，配额 ' + limit + ' 个文件';
     }
   }
 
@@ -288,6 +332,7 @@ export struct SettingsPage {
           this.ToggleRow('云同步', this.cloudSyncEnabled, (on: boolean) => {
             this.cloudSyncEnabled = on;
             AppStorage.setOrCreate(KEY_CLOUD_SYNC, on);
+            CloudSyncService.setEnabled(on);
             this.refreshSyncStatus();
           })
           this.ToggleRow('协同编辑', this.collabEnabled, (on: boolean) => {
@@ -305,11 +350,37 @@ export struct SettingsPage {
           }
           .width('100%')
           .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          this.ButtonRow('立即同步', 'refresh', () => {
+            CloudSyncService.syncAll().then((_count: number) => {
+              BlockMetadataSyncService.syncToCloud().catch(() => {});
+              this.refreshSyncStatus();
+            }).catch(() => {
+              this.refreshSyncStatus();
+            });
+          })
 
           this.SectionDivider()
 
           // ─── 账户 ───
           this.SectionHeader('账户', 'user')
+          Row({ space: 8 }) {
+            Text('华为账号')
+              .fontSize(14)
+              .fontColor($r('app.color.text'))
+              .layoutWeight(1)
+            Text(this.huaweiAccountName)
+              .fontSize(12)
+              .fontColor(this.huaweiLoggedIn ? $r('app.color.success') : $r('app.color.muted_text'))
+          }
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          if (!this.huaweiLoggedIn) {
+            Text('未登录华为账号：云同步与订阅不可用，请在系统设置中登录华为账号')
+              .fontSize(11)
+              .fontColor($r('app.color.warning'))
+              .width('100%')
+              .padding({ left: 12, right: 12, bottom: 8 })
+          }
           Row({ space: 8 }) {
             Text('Pro 订阅')
               .fontSize(14)
@@ -321,21 +392,44 @@ export struct SettingsPage {
           }
           .width('100%')
           .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          Row({ space: 8 }) {
+            Text('云同步绑定')
+              .fontSize(14)
+              .fontColor($r('app.color.text'))
+              .layoutWeight(1)
+            Text(this.huaweiLoggedIn ? '已绑定' : '未绑定')
+              .fontSize(12)
+              .fontColor(this.huaweiLoggedIn ? $r('app.color.success') : $r('app.color.muted_text'))
+          }
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          this.ButtonRow('刷新账号状态', 'refresh', () => {
+            this.refreshAccount();
+            SubscriptionService.refreshProStatus().then((ok: boolean) => {
+              this.isPro = ok;
+            });
+          })
           if (!this.isPro) {
             this.ButtonRow('升级到 Pro', 'crown', () => {
-              SubscriptionService.purchasePro().then((ok: boolean) => {
-                this.isPro = ok;
-              });
+              AppState.setCurrentPage('ProUpgrade');
             })
           }
 
           this.SectionDivider()
 
+          // ─── 插件 ───
+          this.SectionHeader('插件', 'puzzle')
+          ForEach(this.plugins, (p: PluginInfo) => {
+            this.PluginRow(p)
+          }, (p: PluginInfo) => p.id)
+
+          this.SectionDivider()
+
           // ─── 数据 ───
           this.SectionHeader('数据', 'database')
-          this.ButtonRow('导出数据', 'download', () => {})
-          this.ButtonRow('导入数据', 'upload', () => {})
-          this.ButtonRow('清除缓存', 'trash', () => {})
+          this.ButtonRow('导出数据', 'download', () => { AppState.setExportDialogOpen(true); })
+          this.ButtonRow('导入数据', 'upload', () => { AppState.setImportDialogOpen(true); })
+          this.ButtonRow('清除缓存', 'trash', () => { this.clearCache(); })
 
           this.SectionDivider()
 
@@ -354,8 +448,8 @@ export struct SettingsPage {
           }
           .width('100%')
           .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-          this.ButtonRow('开源许可', 'license', () => {})
-          this.ButtonRow('反馈', 'message', () => {})
+          this.ButtonRow('开源许可', 'license', () => { this.showLicense(); })
+          this.ButtonRow('反馈', 'message', () => { this.showFeedback(); })
 
           Blank().height(24)
         }
@@ -448,6 +542,37 @@ export struct SettingsPage {
     })
   }
 
+  @Builder
+  PluginRow(p: PluginInfo) {
+    Row({ space: 10 }) {
+      Column({ space: 2 }) {
+        Text(p.name)
+          .fontSize(14)
+          .fontColor($r('app.color.text'))
+        Text(p.description)
+          .fontSize(11)
+          .fontColor($r('app.color.muted_text'))
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Toggle({ type: ToggleType.Switch, isOn: p.enabled })
+        .onChange((on: boolean) => {
+          const pm = PluginManager.getInstance();
+          if (on) {
+            pm.enable(p.id);
+          } else {
+            pm.disable(p.id);
+          }
+          this.refreshPlugins();
+        })
+    }
+    .width('100%')
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+  }
+
   // ─── 外观 / 语言（保留原有） ───
 
   @Builder
@@ -496,5 +621,38 @@ export struct SettingsPage {
       I18n.setLanguage(lang);
       AppStorage.setOrCreate('language', lang);
     })
+  }
+
+  // ─── 数据 / 关于 操作 ───
+
+  private clearCache(): void {
+    // 清除本地会话缓存（最近页面、右侧栏块），不触碰笔记文件。
+    AppState.setRecentPages([]);
+    AppState.clearRightSidebarBlocks();
+    promptAction.openToast({
+      message: '缓存已清除'
+    }).catch(() => {});
+  }
+
+  private showLicense(): void {
+    this.getUIContext().showAlertDialog({
+      title: '开源许可',
+      message: 'Callaite 依据 MIT License 开源。\n\n图标使用 Tabler Icons（MIT）。\n本应用为 Logseq 风格的鸿蒙知识管理工具。',
+      confirm: {
+        value: t('confirm'),
+        action: () => {}
+      }
+    });
+  }
+
+  private showFeedback(): void {
+    this.getUIContext().showAlertDialog({
+      title: '反馈',
+      message: '感谢使用 Callaite！\n\n如遇问题或建议，请通过项目 GitHub Issues 提交反馈。',
+      confirm: {
+        value: t('confirm'),
+        action: () => {}
+      }
+    });
   }
 }

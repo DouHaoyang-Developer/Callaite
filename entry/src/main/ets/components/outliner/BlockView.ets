@@ -7,6 +7,12 @@ import { MermaidRenderer } from '../extensions/MermaidRenderer';
 import { WebEditor } from './WebEditor';
 import { TablerIcon } from '../common/Icons';
 import { AppState } from '../../state/AppState';
+import { InlineQueryBlock } from '../query/InlineQueryBlock';
+
+interface EmbedItem {
+  kind: string;   // 'block' | 'page'
+  value: string;
+}
 
 /**
  * BlockView — 单个 Block 的渲染组件。
@@ -35,6 +41,14 @@ export struct BlockView {
   @State bulletColor: ResourceColor = $r('app.color.muted_text');
   // 选中状态（多选支持）
   @State isSelected: boolean = false;
+  // 内联查询文本（{{query ...}} 或 #+BEGIN_QUERY）
+  @State inlineQuery: string = '';
+  // Markdown 表格原始行（按行保留，支持单元格编辑）
+  @State tableLines: string[] = [];
+  @State isTable: boolean = false;
+  @State editingCellLine: number = -1;
+  @State editingCellCol: number = -1;
+  @State editingCellText: string = '';
   private blockData: BlockData | undefined;
 
   aboutToAppear(): void {
@@ -48,6 +62,9 @@ export struct BlockView {
       this.displaySegments = ContentRenderer.parse(this.blockData.content);
       this.isCollapsed = this.blockData.collapsed;
       this.hasChildrenFlag = ws.getChildrenOfBlock(this.blockUuid).length > 0;
+      this.inlineQuery = BlockView.extractQuery(this.blockData.content);
+      this.tableLines = BlockView.extractTableLines(this.blockData.content);
+      this.isTable = this.tableLines.length >= 2;
     }
   }
 
@@ -114,8 +131,17 @@ export struct BlockView {
                 }).layoutWeight(1)
               } else {
                 Column() {
-                  // 内容 segments
-                  this.ContentSegments()
+                  if (this.isTable) {
+                    this.TableView()
+                  } else if (BlockView.isPureQueryBlock(this.blockData.content)) {
+                    InlineQueryBlock({ queryText: this.inlineQuery })
+                  } else {
+                    // 内容 segments
+                    this.ContentSegments()
+                    if (this.inlineQuery !== '') {
+                      InlineQueryBlock({ queryText: this.inlineQuery })
+                    }
+                  }
 
                   // SCHEDULED / DEADLINE 日期标签
                   if (this.blockData !== undefined &&
@@ -129,7 +155,7 @@ export struct BlockView {
             // 悬停操作按钮
             if (this.isHovered || this.showActions) {
               Row() {
-                Text('···').fontSize(12).fontColor($r('app.color.muted_text'))
+                TablerIcon('dots', 12, $r('app.color.muted_text'))
               }
               .width(20).height(20)
               .onClick(() => {
@@ -290,6 +316,15 @@ export struct BlockView {
         .onClick(() => {
           AppState.setCurrentPage(seg.text);
         })
+    } else if (seg.type === SegmentType.LINK) {
+      Text(seg.extra !== undefined && seg.extra !== '' ? seg.extra : seg.text)
+        .fontSize(15)
+        .fontColor($r('app.color.link'))
+        .decoration({ type: TextDecorationType.Underline, color: $r('app.color.link') })
+        .height(28)
+        .onClick(() => {
+          ContentRenderer.handleClick(SegmentType.LINK, seg.text);
+        })
     } else {
       Text(seg.text)
         .fontSize(15)
@@ -300,7 +335,7 @@ export struct BlockView {
           type: seg.type === SegmentType.STRIKETHROUGH ? TextDecorationType.LineThrough : TextDecorationType.None,
           color: $r('app.color.muted_text')
         })
-        .backgroundColor(seg.type === SegmentType.HIGHLIGHT ? '#FFF9E6' : Color.Transparent)
+        .backgroundColor(seg.type === SegmentType.HIGHLIGHT ? $r('app.color.highlight') : Color.Transparent)
         .fontFamily(seg.type === SegmentType.CODE ? 'monospace' : '')
         .height(28)
         .onClick(() => {
@@ -351,7 +386,7 @@ export struct BlockView {
   ActionsBar() {
     Row({ space: 4 }) {
       // 缩进
-      Button() { Text('→').fontSize(13).fontColor($r('app.color.text')) }
+      Button() { TablerIcon('indent-increase', 14, $r('app.color.text')) }
         .width(26).height(26).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
@@ -361,7 +396,7 @@ export struct BlockView {
           AppState.bumpBlocksVersion();
         })
       // 反缩进
-      Button() { Text('←').fontSize(13).fontColor($r('app.color.text')) }
+      Button() { TablerIcon('indent-decrease', 14, $r('app.color.text')) }
         .width(26).height(26).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
@@ -371,7 +406,7 @@ export struct BlockView {
           AppState.bumpBlocksVersion();
         })
       // 上移
-      Button() { Text('↑').fontSize(13).fontColor($r('app.color.text')) }
+      Button() { TablerIcon('arrow-up', 14, $r('app.color.text')) }
         .width(26).height(26).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
@@ -381,7 +416,7 @@ export struct BlockView {
           AppState.bumpBlocksVersion();
         })
       // 下移
-      Button() { Text('↓').fontSize(13).fontColor($r('app.color.text')) }
+      Button() { TablerIcon('arrow-down', 14, $r('app.color.text')) }
         .width(26).height(26).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
@@ -393,9 +428,9 @@ export struct BlockView {
       // 折叠/展开
       if (this.hasChildrenFlag) {
         Button() {
-          Text(this.isCollapsed ? '展开' : '折叠').fontSize(11).fontColor($r('app.color.text'))
+          TablerIcon(this.isCollapsed ? 'chevron-down' : 'chevron-up', 14, $r('app.color.text'))
         }
-        .height(26).type(ButtonType.Capsule)
+        .width(26).height(26).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
           this.toggleCollapse();
@@ -403,7 +438,7 @@ export struct BlockView {
         })
       }
       // 删除
-      Button() { Text('×').fontSize(15).fontColor($r('app.color.error')) }
+      Button() { TablerIcon('trash', 14, $r('app.color.error')) }
         .width(26).height(26).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
@@ -415,28 +450,88 @@ export struct BlockView {
     }.width('100%').padding({ left: 24, right: 8, bottom: 4 })
   }
 
-  // ─── Block 引用嵌入 ───
+  // ─── 引用 / 嵌入渲染 ───
 
   @Builder
   EmbedBlocks() {
     Column({ space: 4 }) {
-      ForEach(this.getEmbedUuids(), (uuid: string) => {
-        Column() {
-          Text(this.getBlockContent(uuid))
-            .fontSize(13)
+      ForEach(this.getEmbedItems(), (item: EmbedItem) => {
+        this.EmbedItemView(item)
+      }, (item: EmbedItem) => item.kind + ':' + item.value)
+    }.width('100%')
+  }
+
+  @Builder
+  EmbedItemView(item: EmbedItem) {
+    Column({ space: 2 }) {
+      if (item.kind === 'page') {
+        Text('![[' + item.value + ']]')
+          .fontSize(11)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.link'))
+          .width('100%')
+        ForEach(this.getPageEmbedLines(item.value), (line: string, idx: number) => {
+          Text(line)
+            .fontSize(12)
             .fontColor($r('app.color.muted_text'))
-            .maxLines(3)
+            .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
-            .padding({ top: 4, bottom: 4, left: 12, right: 8 })
+        }, (line: string, idx: number) => idx.toString())
+      } else {
+        Text(this.getBlockContent(item.value))
+          .fontSize(13)
+          .fontColor($r('app.color.muted_text'))
+          .maxLines(3)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
+    }
+    .width('100%')
+    .backgroundColor($r('app.color.surface2'))
+    .borderRadius(4)
+    .border({ width: { left: 2 }, color: $r('app.color.primary') })
+    .padding({ left: 12, right: 8, top: 6, bottom: 6 })
+  }
+
+  @Builder
+  TableView() {
+    Column() {
+      ForEach(this.tableLines, (line: string, li: number) => {
+        if (!BlockView.isSeparatorRow(BlockView.splitTableRow(line))) {
+          Row() {
+            ForEach(BlockView.splitTableRow(line), (cell: string, ci: number) => {
+              if (this.editingCellLine === li && this.editingCellCol === ci) {
+                TextInput({ text: this.editingCellText })
+                  .fontSize(12)
+                  .fontColor($r('app.color.text'))
+                  .layoutWeight(1)
+                  .height(32)
+                  .padding({ left: 4, right: 4 })
+                  .backgroundColor($r('app.color.surface0'))
+                  .onChange((v: string) => { this.editingCellText = v; })
+                  .onSubmit(() => { this.commitCellEdit(); })
+              } else {
+                Text(cell)
+                  .fontSize(12)
+                  .fontColor($r('app.color.text'))
+                  .fontWeight(li === 0 ? FontWeight.Medium : FontWeight.Normal)
+                  .layoutWeight(1)
+                  .padding({ left: 6, right: 6, top: 5, bottom: 5 })
+                  .backgroundColor(li === 0 ? $r('app.color.surface2') : Color.Transparent)
+                  .border({ width: { right: 1, bottom: 1 }, color: $r('app.color.border') })
+                  .onClick(() => { this.startCellEdit(li, ci, cell); })
+              }
+            }, (cell: string, ci: number) => li.toString() + '-' + ci.toString())
+          }
+          .width('100%')
         }
-        .width('100%')
-        .backgroundColor($r('app.color.surface2'))
-        .borderRadius(4)
-        .border({ width: { left: 2 }, color: $r('app.color.primary') })
-        .padding({ left: 24 })
-      }, (uuid: string) => uuid)
-    }.width('100%')
+      }, (line: string, li: number) => li.toString())
+    }
+    .width('100%')
+    .border({ width: 1, color: $r('app.color.border') })
+    .borderRadius(4)
+    .padding({ top: 4, bottom: 4 })
   }
 
   // ─── 辅助方法 ───
@@ -444,6 +539,34 @@ export struct BlockView {
   enterEdit(): void {
     EditorService.getInstance().setFocusedBlock(this.blockUuid);
     this.isEditing = true;
+  }
+
+  private startCellEdit(line: number, col: number, text: string): void {
+    this.editingCellLine = line;
+    this.editingCellCol = col;
+    this.editingCellText = text;
+  }
+
+  private clearCellEdit(): void {
+    this.editingCellLine = -1;
+    this.editingCellCol = -1;
+    this.editingCellText = '';
+  }
+
+  private commitCellEdit(): void {
+    if (this.editingCellLine < 0 || this.editingCellCol < 0) {
+      return;
+    }
+    const line = this.tableLines[this.editingCellLine];
+    const cells = BlockView.splitTableRow(line);
+    if (this.editingCellCol < cells.length) {
+      cells[this.editingCellCol] = this.editingCellText.trim();
+      this.tableLines[this.editingCellLine] = '| ' + cells.join(' | ') + ' |';
+      const newContent = this.tableLines.join('\n');
+      EditorService.getInstance().updateBlockContent(this.blockUuid, newContent);
+    }
+    this.clearCellEdit();
+    this.refreshBlock();
   }
 
   resolvePageName(): string {
@@ -472,14 +595,31 @@ export struct BlockView {
     return false;
   }
 
-  getEmbedUuids(): string[] {
-    const u: string[] = [];
+  getEmbedItems(): EmbedItem[] {
+    const items: EmbedItem[] = [];
     for (let i = 0; i < this.displaySegments.length; i++) {
-      if (this.displaySegments[i].type === SegmentType.BLOCK_EMBED) {
-        u.push(this.displaySegments[i].text);
+      const seg = this.displaySegments[i];
+      if (seg.type === SegmentType.BLOCK_EMBED) {
+        items.push({ kind: 'block', value: seg.text });
+      } else if (seg.type === SegmentType.PAGE_EMBED) {
+        items.push({ kind: 'page', value: seg.text });
       }
     }
-    return u;
+    return items;
+  }
+
+  getPageEmbedLines(pageName: string): string[] {
+    const ws = WorkspaceService.getInstance();
+    const page = ws.getPageByName(pageName);
+    if (!page) {
+      return [];
+    }
+    const blocks = ws.getPageBlocks(page.uuid);
+    const lines: string[] = [];
+    for (let i = 0; i < blocks.length && i < 5; i++) {
+      lines.push(blocks[i].content.substring(0, 80));
+    }
+    return lines;
   }
 
   getBlockContent(uuid: string): string {
@@ -489,19 +629,132 @@ export struct BlockView {
     return uuid.substring(0, 8) + '...';
   }
 
+  static extractQuery(content: string): string {
+    const beginIdx = content.indexOf('#+BEGIN_QUERY');
+    const endIdx = content.indexOf('#+END_QUERY');
+    if (beginIdx >= 0 && endIdx > beginIdx) {
+      const inner = content.substring(beginIdx + '#+BEGIN_QUERY'.length, endIdx);
+      const open = inner.indexOf('(');
+      const close = inner.lastIndexOf(')');
+      if (open >= 0 && close > open) {
+        return inner.substring(open, close + 1).trim();
+      }
+      return inner.trim();
+    }
+    const qIdx = content.indexOf('{{query');
+    if (qIdx >= 0) {
+      let start = qIdx + '{{query'.length;
+      if (start < content.length && content.charAt(start) === ':') {
+        start = start + 1;
+      }
+      let end = content.indexOf('}}', start);
+      if (end < 0) {
+        end = content.length;
+      }
+      return content.substring(start, end).trim();
+    }
+    return '';
+  }
+
+  static isPureQueryBlock(content: string): boolean {
+    const trimmed = content.trim();
+    return trimmed.startsWith('#+BEGIN_QUERY') || trimmed.startsWith('{{query');
+  }
+
+  static extractTableLines(content: string): string[] {
+    const lines = content.split('\n');
+    const result: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i].trim();
+      if (t === '') {
+        continue;
+      }
+      if (!t.startsWith('|')) {
+        return [];
+      }
+      result.push(t);
+    }
+    return result.length >= 2 ? result : [];
+  }
+
+  static parseTable(content: string): string[][] {
+    const lines = content.split('\n');
+    const tableLines: string[] = [];
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i].trim();
+      if (t === '') {
+        continue;
+      }
+      if (!t.startsWith('|')) {
+        return [];
+      }
+      tableLines.push(t);
+    }
+    if (tableLines.length < 2) {
+      return [];
+    }
+    const rows: string[][] = [];
+    for (let i = 0; i < tableLines.length; i++) {
+      const cells = BlockView.splitTableRow(tableLines[i]);
+      if (BlockView.isSeparatorRow(cells)) {
+        continue;
+      }
+      rows.push(cells);
+    }
+    return rows;
+  }
+
+  static splitTableRow(line: string): string[] {
+    let inner = line;
+    if (inner.startsWith('|')) {
+      inner = inner.substring(1);
+    }
+    if (inner.endsWith('|')) {
+      inner = inner.substring(0, inner.length - 1);
+    }
+    const parts = inner.split('|');
+    const cells: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      cells.push(parts[i].trim());
+    }
+    return cells;
+  }
+
+  static isSeparatorRow(cells: string[]): boolean {
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      let ok = true;
+      for (let j = 0; j < c.length; j++) {
+        const ch = c.charAt(j);
+        if (ch !== '-' && ch !== ':' && ch !== ' ') {
+          ok = false;
+          break;
+        }
+      }
+      if (!ok) {
+        return false;
+      }
+    }
+    return cells.length > 0;
+  }
+
   getMarkerColor(m: string): ResourceColor {
-    if (m === 'DONE') return '#059669';
-    if (m === 'DOING') return $r('app.color.primary');
-    if (m === 'TODO') return $r('app.color.error');
-    if (m === 'CANCELLED') return $r('app.color.muted_text');
+    if (m === 'DONE') return $r('app.color.marker_done');
+    if (m === 'DOING') return $r('app.color.marker_doing');
+    if (m === 'TODO') return $r('app.color.marker_todo');
+    if (m === 'LATER') return $r('app.color.marker_later');
+    if (m === 'NOW') return $r('app.color.marker_doing');
+    if (m === 'CANCELLED') return $r('app.color.marker_cancelled');
     return $r('app.color.muted_text');
   }
 
   getMarkerBg(m: string): ResourceColor {
-    if (m === 'DONE') return '#05966918';
-    if (m === 'DOING') return '#0458A618';
-    if (m === 'TODO') return '#DC262618';
-    if (m === 'CANCELLED') return '#787B8018';
+    if (m === 'DONE') return $r('app.color.marker_done_bg');
+    if (m === 'DOING') return $r('app.color.marker_doing_bg');
+    if (m === 'TODO') return $r('app.color.marker_todo_bg');
+    if (m === 'LATER') return $r('app.color.marker_later_bg');
+    if (m === 'NOW') return $r('app.color.marker_doing_bg');
+    if (m === 'CANCELLED') return $r('app.color.marker_cancelled_bg');
     return Color.Transparent;
   }
 }

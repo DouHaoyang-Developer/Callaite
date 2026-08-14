@@ -25,7 +25,10 @@ export class MarkdownExporter {
     if (hasProperties) {
       lines.push('---');
       page.properties.forEach((key: string, value: string) => {
-        lines.push(key + ':: ' + value);
+        // alias/aliases 统一从 page.aliases 输出，避免重复写入
+        if (key !== 'alias' && key !== 'aliases') {
+          lines.push(key + ':: ' + value);
+        }
       });
       if (page.aliases.length > 0) {
         lines.push('alias:: ' + page.aliases.join(', '));

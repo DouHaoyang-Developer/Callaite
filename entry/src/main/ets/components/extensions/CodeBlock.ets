@@ -55,8 +55,8 @@ export struct CodeBlock {
     const themeName: string = dark ? 'github-dark' : 'github';
     const bg: string = dark ? '#0d1117' : '#f6f8fa';
     const fg: string = dark ? '#c9d1d9' : '#24292f';
-    const lang: string = this.language ? this.language : 'plaintext';
-    const langClass: string = `language-${lang}`;
+    const lang: string = CodeBlock.sanitizeLanguage(this.language);
+    const langClass: string = 'language-' + lang;
     const escaped: string = this.escapeHtml(this.code);
 
     return `<!DOCTYPE html><html><head>
@@ -80,6 +80,24 @@ window.addEventListener('load',function(){setTimeout(notifyHeight,50);});
 setTimeout(notifyHeight,200);
 </script>
 </body></html>`;
+  }
+
+  /**
+   * 清洗语言名，仅保留字母/数字/连字符/下划线，防止属性注入。
+   */
+  private static sanitizeLanguage(raw: string): string {
+    let out = '';
+    for (let i = 0; i < raw.length; i++) {
+      const ch = raw.charAt(i);
+      const code = ch.charCodeAt(0);
+      if ((code >= 48 && code <= 57) ||
+        (code >= 65 && code <= 90) ||
+        (code >= 97 && code <= 122) ||
+        ch === '-' || ch === '_') {
+        out += ch;
+      }
+    }
+    return out === '' ? 'plaintext' : out;
   }
 
   /**

@@ -17,6 +17,19 @@
     { "name": "danger", "value": "#DC2626" },
     { "name": "error", "value": "#DC2626" },
     { "name": "warning", "value": "#D97706" },
-    { "name": "success", "value": "#059669" }
+    { "name": "success", "value": "#059669" },
+    { "name": "marker_done", "value": "#059669" },
+    { "name": "marker_done_bg", "value": "#05966918" },
+    { "name": "marker_doing", "value": "#0458A6" },
+    { "name": "marker_doing_bg", "value": "#0458A618" },
+    { "name": "marker_todo", "value": "#DC2626" },
+    { "name": "marker_todo_bg", "value": "#DC262618" },
+    { "name": "marker_later", "value": "#D97706" },
+    { "name": "marker_later_bg", "value": "#D9770618" },
+    { "name": "marker_cancelled", "value": "#787B80" },
+    { "name": "marker_cancelled_bg", "value": "#787B8018" },
+    { "name": "inline_code", "value": "#C7254E" },
+    { "name": "math", "value": "#7C3AED" },
+    { "name": "mermaid", "value": "#0891B2" }
   ]
 }

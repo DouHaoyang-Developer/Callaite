@@ -1,32 +1,79 @@
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
+import { util } from '@kit.ArkTS';
+import { fileIo as fs } from '@kit.CoreFileKit';
+import { FileService } from './FileService';
 
 export class EncryptionService {
   private static key: cryptoFramework.SymKey | undefined;
+  private static readonly KEY_FILE_NAME = 'callaite_encryption.key';
 
   static async init(): Promise<void> {
     try {
       const symKeyGenerator = cryptoFramework.createSymKeyGenerator('AES256');
-      const keyData = new Uint8Array(32);
-      const seed = 'callaite_enc_key_v1_2026_xxxx';
-      for (let i = 0; i < 32; i++) {
-        keyData[i] = seed.charCodeAt(i % seed.length);
-      }
+      // 密钥持久化到应用沙箱文件，保证跨启动稳定，且不再使用硬编码种子。
+      const keyData = EncryptionService.loadOrCreateKeyMaterial();
       EncryptionService.key = await symKeyGenerator.convertKey({ data: keyData });
     } catch (e) {
       console.error('[Encryption] Key init failed', e);
     }
   }
 
+  /**
+   * 加载或生成密钥材料（32 字节）。
+   * 首次启动生成密码学安全随机密钥并写入沙箱文件，之后复用。
+   */
+  private static loadOrCreateKeyMaterial(): Uint8Array {
+    const ctx = FileService.getContext();
+    const keyPath = ctx ? ctx.filesDir + '/' + EncryptionService.KEY_FILE_NAME : '';
+    if (keyPath !== '') {
+      try {
+        if (fs.accessSync(keyPath)) {
+          const encoded = fs.readTextSync(keyPath).trim();
+          if (encoded !== '') {
+            const decoded = EncryptionService.base64ToUint8Array(encoded);
+            if (decoded.length === 32) {
+              return decoded;
+            }
+          }
+        }
+      } catch (_e) {
+        // 读取失败则重新生成
+      }
+    }
+
+    let keyBlob: cryptoFramework.DataBlob;
+    try {
+      const random = cryptoFramework.createRandom();
+      keyBlob = random.generateRandomSync(32);
+    } catch (_e) {
+      // 随机数生成失败时回退为空数组，convertKey 将失败并进入外层 catch
+      keyBlob = { data: new Uint8Array(0) };
+    }
+    if (keyPath !== '') {
+      try {
+        const file = fs.openSync(keyPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+        fs.writeSync(file.fd, EncryptionService.uint8ArrayToBase64(keyBlob.data));
+        fs.closeSync(file);
+      } catch (_e) {
+        // 写入失败不影响内存使用
+      }
+    }
+    return keyBlob.data;
+  }
+
   static async encrypt(plaintext: string): Promise<string | undefined> {
     if (!EncryptionService.key) return undefined;
     try {
       const cipher = cryptoFramework.createCipher('AES256|CBC|PKCS7');
-      const ivParams: cryptoFramework.IvParamsSpec = { iv: { data: EncryptionService.generateIv() }, algName: 'IvParamsSpec' };
+      // AES-CBC 要求 16 字节 IV，且解密时必须使用与加密相同的 IV。
+      const iv = EncryptionService.generateIv();
+      const ivParams: cryptoFramework.IvParamsSpec = { iv: { data: iv }, algName: 'IvParamsSpec' };
       await cipher.init(cryptoFramework.CryptoMode.ENCRYPT_MODE, EncryptionService.key, ivParams);
       const input = EncryptionService.stringToUint8Array(plaintext);
       const result = await cipher.doFinal({ data: input });
       if (result && result.data) {
-        return EncryptionService.uint8ArrayToBase64(result.data);
+        // 密文格式：base64(IV):base64(ciphertext)
+        return EncryptionService.uint8ArrayToBase64(iv) + ':' + EncryptionService.uint8ArrayToBase64(result.data);
       }
       return undefined;
     } catch (e) {
@@ -37,10 +84,18 @@ export class EncryptionService {
   static async decrypt(encryptedBase64: string): Promise<string | undefined> {
     if (!EncryptionService.key) return undefined;
     try {
+      const parts = encryptedBase64.split(':');
+      if (parts.length !== 2) {
+        return undefined;
+      }
+      const iv = EncryptionService.base64ToUint8Array(parts[0]);
+      if (iv.length !== 16) {
+        return undefined;
+      }
       const decipher = cryptoFramework.createCipher('AES256|CBC|PKCS7');
-      const ivParams: cryptoFramework.IvParamsSpec = { iv: { data: EncryptionService.generateIv() }, algName: 'IvParamsSpec' };
+      const ivParams: cryptoFramework.IvParamsSpec = { iv: { data: iv }, algName: 'IvParamsSpec' };
       await decipher.init(cryptoFramework.CryptoMode.DECRYPT_MODE, EncryptionService.key, ivParams);
-      const input = EncryptionService.base64ToUint8Array(encryptedBase64);
+      const input = EncryptionService.base64ToUint8Array(parts[1]);
       const result = await decipher.doFinal({ data: input });
       if (result && result.data) {
         return EncryptionService.uint8ArrayToString(result.data);
@@ -52,11 +107,14 @@ export class EncryptionService {
   }
 
   private static generateIv(): Uint8Array {
-    const iv = new Uint8Array(12);
-    for (let i = 0; i < 12; i++) {
-      iv[i] = Math.floor(Math.random() * 256);
+    // 使用密码学安全随机数生成 16 字节 IV（AES 块大小）。
+    try {
+      const random = cryptoFramework.createRandom();
+      const blob = random.generateRandomSync(16);
+      return blob.data;
+    } catch (_e) {
+      return new Uint8Array(16);
     }
-    return iv;
   }
 
   private static uint8ArrayToBase64(data: Uint8Array): string {
@@ -87,18 +145,13 @@ export class EncryptionService {
   }
 
   private static stringToUint8Array(str: string): Uint8Array {
-    const result = new Uint8Array(str.length);
-    for (let i = 0; i < str.length; i++) {
-      result[i] = str.charCodeAt(i) & 0xFF;
-    }
-    return result;
+    // 使用 UTF-8 编码，正确处理中文等多字节字符。
+    const encoder = new util.TextEncoder();
+    return encoder.encodeInto(str);
   }
 
   private static uint8ArrayToString(data: Uint8Array): string {
-    let result = '';
-    for (let i = 0; i < data.length; i++) {
-      result += String.fromCharCode(data[i]);
-    }
-    return result;
+    const decoder = new util.TextDecoder();
+    return decoder.decodeToString(data);
   }
 }

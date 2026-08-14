@@ -1,6 +1,7 @@
 import { EditorService } from '../../services/EditorService';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { AppState } from '../../state/AppState';
+import { TablerIcon } from '../common/Icons';
 
 /**
  * MobileToolbarButton — 工具栏按钮配置。
@@ -8,6 +9,7 @@ import { AppState } from '../../state/AppState';
 interface MobileToolbarButton {
   id: string;
   label: string;
+  icon: string;
 }
 
 /**
@@ -16,18 +18,18 @@ interface MobileToolbarButton {
  *  缩进(→) 反缩进(←) 上移(↑) 下移(↓) 撤销(↶) 重做(↷)
  */
 const MOBILE_TOOLBAR_BUTTONS: MobileToolbarButton[] = [
-  { id: 'bold', label: 'B' },
-  { id: 'italic', label: 'I' },
-  { id: 'strike', label: 'S' },
-  { id: 'code', label: '</>' },
-  { id: 'link', label: '[' },
-  { id: 'todo', label: '☐' },
-  { id: 'indent', label: '→' },
-  { id: 'outdent', label: '←' },
-  { id: 'up', label: '↑' },
-  { id: 'down', label: '↓' },
-  { id: 'undo', label: '↶' },
-  { id: 'redo', label: '↷' }
+  { id: 'bold', label: 'B', icon: '' },
+  { id: 'italic', label: 'I', icon: '' },
+  { id: 'strike', label: 'S', icon: '' },
+  { id: 'code', label: '</>', icon: '' },
+  { id: 'link', label: '[', icon: '' },
+  { id: 'todo', label: '', icon: 'checkbox' },
+  { id: 'indent', label: '', icon: 'indent-increase' },
+  { id: 'outdent', label: '', icon: 'indent-decrease' },
+  { id: 'up', label: '', icon: 'arrow-up' },
+  { id: 'down', label: '', icon: 'arrow-down' },
+  { id: 'undo', label: '', icon: 'arrow-back-up' },
+  { id: 'redo', label: '', icon: 'arrow-forward-up' }
 ];
 
 /**
@@ -51,10 +53,14 @@ export struct MobileToolbar {
           Row({ space: 8 }) {
             ForEach(MOBILE_TOOLBAR_BUTTONS, (btn: MobileToolbarButton) => {
               Button() {
-                Text(btn.label)
-                  .fontSize(16)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor($r('app.color.text'))
+                if (btn.icon !== '') {
+                  TablerIcon(btn.icon, 16, $r('app.color.text'))
+                } else {
+                  Text(btn.label)
+                    .fontSize(16)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor($r('app.color.text'))
+                }
               }
               .width(40)
               .height(40)

@@ -17,10 +17,9 @@ export struct MathRenderer {
   }
 
   buildHtml(): void {
-    const escaped = this.formula
-      .replace(new RegExp('\\\\', 'g'), '\\\\')
-      .replace(new RegExp('`', 'g'), '\\`')
-      .replace(new RegExp('\\$', 'g'), '\\$');
+    // 以 JSON 字符串字面量安全嵌入公式，避免 </script> 与模板字符串注入。
+    const json = JSON.stringify(this.formula)
+      .replace(new RegExp('<', 'g'), '\\u003c');
     const display = this.displayMode ? 'true' : 'false';
     const fontSize = this.displayMode ? '18px' : '15px';
     const padding = this.displayMode ? '12px' : '2px';
@@ -31,7 +30,7 @@ export struct MathRenderer {
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
 <style>body{margin:0;padding:${padding};background:transparent;font-size:${fontSize};}
 .katex{font-size:${fontSize};}.katex-display{margin:0;}</style></head><body>
-<script>try{katex.render(String.raw\`${escaped}\`,document.body,{displayMode:${display},throwOnError:false});}catch(e){document.body.innerText='[公式渲染失败]';}</script>
+<script>try{katex.render(JSON.parse(${json}),document.body,{displayMode:${display},throwOnError:false});}catch(e){document.body.innerText='[公式渲染失败]';}</script>
 </body></html>`;
   }
 

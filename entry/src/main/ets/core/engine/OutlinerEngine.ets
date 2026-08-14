@@ -108,6 +108,10 @@ export class OutlinerEngine {
     }
     this.undoStack.push(op);
     const result = this.dispatch(op);
+    // 修复：redo 后记录结果，保证再次 undo 能正确还原
+    if (result.success) {
+      this.lastOpResults.set(op, result.affectedUuids);
+    }
     this.persistForOp(op);
     return result;
   }
@@ -162,8 +166,8 @@ export class OutlinerEngine {
       const deleted = this.blockTree.deleteBlock(op.uuids[i]);
       for (let j = 0; j < deleted.length; j++) {
         this.dataStore.getIndexStore().removeBlock(deleted[j].uuid);
+        allDeleted.push(deleted[j].uuid);
       }
-      allDeleted.push(this.extractUuids(deleted).join(','));
     }
     return { success: true, message: 'Blocks deleted', affectedUuids: allDeleted };
   }
@@ -356,9 +360,11 @@ export class OutlinerEngine {
 
   private persistForOp(op: OutlinerOp): void {
     if (op.type === 'insert-block' || op.type === 'delete-block' ||
-        op.type === 'update-block' || op.type === 'move-block' ||
+        op.type === 'delete-blocks' || op.type === 'update-block' ||
+        op.type === 'move-block' || op.type === 'move-blocks' ||
         op.type === 'indent' || op.type === 'outdent' ||
         op.type === 'set-marker' || op.type === 'set-priority' ||
+        op.type === 'set-scheduled' || op.type === 'set-deadline' ||
         op.type === 'add-property' || op.type === 'remove-property') {
 
       // 找到受影响的 page 并保存
@@ -376,6 +382,18 @@ export class OutlinerEngine {
     if (op.type === 'delete-block') return this.dataStore.getPageUuidForBlock(op.uuid);
     if (op.type === 'update-block') return this.dataStore.getPageUuidForBlock(op.uuid);
     if (op.type === 'move-block') return this.dataStore.getPageUuidForBlock(op.uuid);
+    if (op.type === 'move-blocks') {
+      if (op.uuids.length > 0) {
+        return this.dataStore.getPageUuidForBlock(op.uuids[0]);
+      }
+      return undefined;
+    }
+    if (op.type === 'delete-blocks') {
+      if (op.uuids.length > 0) {
+        return this.dataStore.getPageUuidForBlock(op.uuids[0]);
+      }
+      return undefined;
+    }
     if (op.type === 'indent') return this.dataStore.getPageUuidForBlock(op.uuid);
     if (op.type === 'outdent') return this.dataStore.getPageUuidForBlock(op.uuid);
     if (op.type === 'set-marker') return this.dataStore.getPageUuidForBlock(op.uuid);

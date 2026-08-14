@@ -154,10 +154,10 @@ export struct Header {
           .onClick(() => { AppState.setCurrentPage('AllPages'); })
 
         MenuItem({ content: t('nav_export') })
-          .onClick(() => { /* 预留：导出 */ })
+          .onClick(() => { AppState.setExportDialogOpen(true); })
 
         MenuItem({ content: t('nav_import') })
-          .onClick(() => { /* 预留：导入 */ })
+          .onClick(() => { AppState.setImportDialogOpen(true); })
       }
 
       MenuItemGroup() {

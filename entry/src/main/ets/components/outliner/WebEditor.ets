@@ -32,7 +32,10 @@ export struct WebEditor {
   private bridgeObj: NativeBridge = new NativeBridge(this);
 
   aboutToAppear(): void {
-    const escaped = this.initialContent
+    // 先做 HTML 实体转义，防止块内容注入 <script>/<img onerror> 等 XSS 载荷；
+    // 再做 JS 模板字符串转义，避免破坏 WebEditorHTML 模板。
+    const htmlEscaped = WebEditor.escapeHtml(this.initialContent);
+    const escaped = htmlEscaped
       .replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
     this.htmlContent = WebEditorHTML
       .replace('__CONTENT__', escaped)
@@ -70,6 +73,30 @@ export struct WebEditor {
         this.controller.runJavaScript('focusEditor()');
       } catch (_e) { /* ignore */ }
     }
+  }
+
+  /**
+   * HTML 转义，防止块内容被 WebView 解析为可执行脚本。
+   */
+  private static escapeHtml(text: string): string {
+    let result = '';
+    for (let i = 0; i < text.length; i++) {
+      const ch = text.charAt(i);
+      if (ch === '&') {
+        result += '&amp;';
+      } else if (ch === '<') {
+        result += '&lt;';
+      } else if (ch === '>') {
+        result += '&gt;';
+      } else if (ch === '"') {
+        result += '&quot;';
+      } else if (ch === '\'') {
+        result += '&#39;';
+      } else {
+        result += ch;
+      }
+    }
+    return result;
   }
 }
 

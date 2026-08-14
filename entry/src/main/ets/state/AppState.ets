@@ -28,6 +28,8 @@ interface StorageKeys {
   recentPages: string;
   commandPaletteOpen: string;
   searchPanelOpen: string;
+  exportDialogOpen: string;
+  importDialogOpen: string;
   rightSidebarBlocks: string;
 }
 
@@ -40,6 +42,8 @@ const STORAGE_KEYS: StorageKeys = {
   recentPages: 'callaite_recentPages',
   commandPaletteOpen: 'callaite_commandPaletteOpen',
   searchPanelOpen: 'callaite_searchPanelOpen',
+  exportDialogOpen: 'callaite_exportDialogOpen',
+  importDialogOpen: 'callaite_importDialogOpen',
   rightSidebarBlocks: 'callaite_rightSidebarBlocks'
 };
 
@@ -148,6 +152,8 @@ export class AppState {
 
     AppStorage.setOrCreate(STORAGE_KEYS.commandPaletteOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.searchPanelOpen, false);
+    AppStorage.setOrCreate(STORAGE_KEYS.exportDialogOpen, false);
+    AppStorage.setOrCreate(STORAGE_KEYS.importDialogOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.rightSidebarBlocks, JSON.stringify([]));
 
     // 历史栈初始化
@@ -479,6 +485,22 @@ export class AppState {
 
   static setSearchPanelOpen(open: boolean): void {
     AppStorage.setOrCreate(STORAGE_KEYS.searchPanelOpen, open);
+  }
+
+  static isExportDialogOpen(): boolean {
+    return AppStorage.get<boolean>(STORAGE_KEYS.exportDialogOpen) ?? false;
+  }
+
+  static setExportDialogOpen(open: boolean): void {
+    AppStorage.setOrCreate(STORAGE_KEYS.exportDialogOpen, open);
+  }
+
+  static isImportDialogOpen(): boolean {
+    return AppStorage.get<boolean>(STORAGE_KEYS.importDialogOpen) ?? false;
+  }
+
+  static setImportDialogOpen(open: boolean): void {
+    AppStorage.setOrCreate(STORAGE_KEYS.importDialogOpen, open);
   }
 
   // ─── Blocks Version（用于触发 BlockList 刷新） ───

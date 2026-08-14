@@ -84,13 +84,15 @@ Callaite 的核心是 Logseq 风格的大纲树编辑器。每个 Block 是一�
 | `~~删除线~~` | ~~删除线~~ |
 | `==高亮==` | 黄色背景高亮 |
 | `` `代码` `` | 等宽字体代码 |
+| `[文本](url)` | 可点击链接（系统浏览器打开） |
 | `[[页面名]]` | 蓝色可点击页面链接 |
 | `((uuid))` | 蓝色可点击 Block 引用 |
-| `#标签` | 绿色可点击标签 |
+| `#标签` | 绿色可点击标签（点击打开搜索面板并按标签过滤） |
 | `![[页面]]` | 页面嵌入 |
 | `!((uuid))` | Block 嵌入（内联预览） |
 | `$E=mc^2$` | 行内 KaTeX 公式 |
 | `$$\sum x$$` | 块级 KaTeX 公式 |
+| `\| a \| b \|`（多行） | 可编辑 Markdown 表格（点击单元格编辑） |
 
 **Slash 命令面板**
 
@@ -125,6 +127,9 @@ Callaite 的核心是 Logseq 风格的大纲树编辑器。每个 Block 是一�
 **Block 引用 `((uuid))`**
 - 创建指向特定 Block 的引用链接
 - 嵌入 Block 显示内联预览卡片
+
+**页面嵌入 `![[page]]`**
+- 显示目标页面顶层 Block 的预览列表，可点击标题跳转
 
 **反向链接面板（右侧栏）**
 - 实时显示哪些页面引用了当前页面
@@ -173,6 +178,8 @@ Callaite 的核心是 Logseq 风格的大纲树编辑器。每个 Block 是一�
 | QueryEngine | `core/db/QueryEngine.ets` | 多条件筛选（marker/priority/date/tag/page/hasProperty/contentContains/notMarker/notTags） |
 | DatalogEngine | `core/db/DatalogEngine.ets` | S-表达式解析 + 逻辑运算（and/or/not/between/task/priority/tag） |
 | LogicEngine | `core/db/LogicEngine.ets` | 递归规则引擎（半朴素评估算法） |
+
+**内联查询**：Block 内容中的 `#+BEGIN_QUERY ... #+END_QUERY`（Datalog 表达式）与 `{{query ...}}`（简单标记/tag/property）会就地渲染结果列表，点击结果项跳转到对应页面。
 
 **LogicEngine 支持的递归规则**
 
@@ -247,12 +254,20 @@ Callaite 的核心是 Logseq 风格的大纲树编辑器。每个 Block 是一�
 ### 9. 白板（Whiteboard）
 
 Logseq Whiteboards 风格的无限画布白板，支持形状/连线/手写笔/页面引用。
+入口：左侧栏导航「白板」。
 
 **画布与手势**
 - 无限平移（PanGesture）+ 缩放（PinchGesture）
 - 6 种工具：选择 / 矩形 / 椭圆 / 菱形 / 文本 / 连线 / 手写笔
 - 撤销/重做栈（50 层，含 shapes / connectors / strokes 快照）
 - `.canvas` JSON 文件持久化（JSON Canvas 1.0 规范）
+
+### 10. PDF 阅读与标注（P2）
+
+入口：左侧栏导航「PDF」，列出知识库目录下的 `.pdf` 文件。
+- WebView + pdf.js 渲染，支持上一页/下一页
+- 文本层选中文字后自动在当前页追加 `PDF 标注 (文件名:页号)` Block
+- 选中文本即时高亮，并持久化到 `<pdf>.highlights.json`，重新打开后按页恢复高亮
 
 **形状与连线**
 - WbShape：矩形/椭圆/菱形/文本 + 命中测试 + 拖动/缩放
@@ -576,10 +591,29 @@ PluginManager.getInstance().register(new MyPlugin());
 | `insertTodayBlock(content, marker)` | 在今日日志插入 Block |
 | `searchPages(query)` | 搜索页面 |
 | `getAllTags()` | 获取所有标签 |
+| `listAllPages()` | 获取所有页面名 |
+| `getPageBlocks(pageName)` | 获取页面 Block 内容摘要 |
+| `getPageStats()` | 统计页面与 Block 数量 |
+| `getTemplateNames()` | 获取内置模板名列表 |
+| `insertTemplateByName(name)` | 按名称插入模板 |
+| `notify(message)` | 弹出通知 toast |
+
+**内置插件**：每日速记、待办统计、页面统计、模板插入共 4 个；设置页「插件」分区可查看 manifest 并启用/禁用，状态持久化到 `plugin_state.json`。
 
 ---
 
 ## 鸿蒙特性
+
+### 华为账号（Account）
+
+通过 `@kit.BasicServicesKit` 的 `distributedAccount` 查询当前系统华为账号（分布式账号）状态，并作为云同步与订阅的前置条件：
+
+- `HuaweiAccountService.refresh()` 获取账号 ID / 昵称 / 头像 / 登录状态
+- `CloudSyncService.syncAll()` 在未登录华为账号时直接跳过（端云协同依赖系统账号）
+- `SubscriptionService.refreshProStatus()` 在未登录时强制返回非 Pro，避免旧账号订阅状态串用
+- 设置页「账户」分区展示华为账号、云同步绑定状态，并提供「刷新账号状态」
+
+依赖权限：`ohos.permission.DISTRIBUTED_DATASYNC`（已在 `module.json5` 声明）。
 
 ### 分布式协同编辑
 
@@ -640,12 +674,24 @@ onRestoreData(want: Want): void {
 | 发起购买 | `iap.createPurchase(ctx, { productType: AUTORENEWABLE, productId: 'callaite_pro_monthly' })` |
 | 确认发货 | `iap.finishPurchase(ctx, { purchaseToken, productType, purchaseOrderId })` |
 
+Pro 状态缓存到沙箱文件，启动时先恢复未过期缓存，随后网络刷新；每 24 小时定时刷新一次。
+闪卡与 PDF 为 Pro 功能，Free 用户点击入口会跳转「Callaite Pro」升级页。
+
 ### Cloud Kit 云同步
 
+使用 Core File Kit `cloudSync` 能力：
+
 ```
-.md 文件 → /data/storage/el2/cloud/files/ → 系统自动上行同步
-                                        → 其他设备自动下行同步
+本地 .md → AES-256-CBC 加密 → context.cloudFileDir → FileSync.start() → 系统上云
+                                                                       → 其他设备自动下行
 ```
+
+- 云端文件使用 `EncryptionService` AES-256-CBC 加密后写入（IV + 密文 base64）
+- 文件名做路径穿越校验（拒绝 `/`、`\`、`..` 与非 `.md`）
+- 同步受 Free/Pro 配额门控：Free 最多 1 个文件、Pro 最多 10 个文件，仅阻止新增、放行已同步文件更新
+- 冲突解决：last-write-wins（按 mtime 比较，较旧一侧跳过）
+- Block 元数据索引经 `BlockMetadataSyncService` 序列化并加密同步到云目录（跨设备快速检索）
+- 入口：设置页「立即同步」、应用退后台自动触发 `syncAll()`
 
 ### 服务卡片（FormExtensionAbility）
 
@@ -677,7 +723,14 @@ onRestoreData(want: Want): void {
 ### 安全
 
 - **应用沙箱**：HarmonyOS 应用沙箱隔离
-- **AES-256-CBC 加密**：cryptoFramework + 随机 IV
+- **AES-256-CBC 加密**：cryptoFramework + 密码学安全随机 IV（16 字节）
+- **密钥持久化**：随机生成的 256 位密钥持久化到应用沙箱文件，跨启动复用，不使用硬编码种子
+- **UTF-8 安全**：加解密使用 UTF-8 编码，正确支持中文等多字节内容
+- **端云同步加密**：云端 `.md` 以 AES-256-CBC 加密后写入，避免云端明文泄露
+- **云同步路径校验**：拒绝文件名中的路径穿越片段（`/`、`\`、`..`）
+- **IAP JWS 解析**：订阅状态 JWS 使用 base64url 解码，状态码兼容数字/字符串
+- **WebView 防注入**：Block 内容进入编辑器前做 HTML 实体转义，阻断脚本注入
+- **路径穿越防护**：页面名转换为文件名时清洗 `/ \ ..` 等危险片段
 - **权限**：DISTRIBUTED_DATASYNC（分布式数据同步）
 
 ---
@@ -687,6 +740,7 @@ onRestoreData(want: Want): void {
 ### 导入导出
 
 **导出**（ExportService + ExportDialog）
+入口：Header 菜单「导出图谱」、设置页「数据 → 导出数据」。
 
 | 范围 | 格式 | 说明 |
 |------|------|------|
@@ -694,8 +748,10 @@ onRestoreData(want: Want): void {
 | 全部页 | Markdown | 批量复制所有 .md |
 | 当前页 | HTML | Block → `<ul><li>` 嵌套 + TODO/引用/代码/引用块 + 完整 HTML 文档 |
 | 全部页 | HTML | 批量导出 HTML |
+| 当前页/全部页 | OPML | 页面树导出为 `callaite.opml` |
 
 **导入**（ImportService + ImportDialog）
+入口：Header 菜单「导入」、设置页「数据 → 导入数据」。
 
 外部 .md 文件导入，自动解析为 Block 树：
 
@@ -762,18 +818,20 @@ WebView + mermaid.js 10 CDN，支持流程图/时序图/类图等，主题自动
 
 ### 图标系统
 
-使用 Tabler Icons v2.47（MIT 协议），97 个图标以 SVG Path 数据存储 → ArkTS `Shape` + `Path` 组件原生绘制（零字体加载）。
+使用 Tabler Icons v2.47（MIT 协议），共 123 个图标以 SVG Path 数据内联存储，经 ArkTS `Shape` + `Path` 组件原生绘制（零字体加载、无第三方依赖）。
 
-| 分类 | 数量 | 代表图标 |
-|------|------|---------|
-| 导航 | 10 | arrow-left/right/up/down, chevron-* |
-| 操作 | 12 | plus, check, x, trash, edit, copy, refresh |
-| 文件 | 7 | file, file-code, folder, file-upload |
-| 视图 | 12 | search, settings, layout-*, menu-2, dots |
-| 内容 | 21 | hash, home, bolt, bulb, calendar, lock, pin |
-| 状态 | 5 | check, circle-minus, alert-triangle |
-| 用户 | 7 | user, world, logout, message-* |
-| 系统 | 8 | server-cog, database-export, source-code |
+**渲染规范**：`IconRenderer` 通过 `viewPort({ x:0, y:0, width:24, height:24 })` 将 Tabler 的 24×24 设计坐标系映射到目标尺寸，并按 `strokeWidth = iconSize / 12` 等比缩放线宽，确保任意尺寸下图标不错位、不模糊、不产生过粗线条。
+
+| 分类 | 代表图标 |
+|------|---------|
+| 导航 | arrow-*, chevron-*, caret-*, menu-2 |
+| 操作 | plus, check, x, trash, edit, copy, refresh, download, upload |
+| 文件 | file, file-code, file-off, folder, folder-off, file-upload |
+| 视图 | search, settings, layout-*, layout-grid, table, list, filter |
+| 内容/标记 | hash, home, bolt, bulb, calendar-*, alarm, lock, pin, link |
+| 状态 | check, checkbox, circle-minus, alert-triangle, mood-empty |
+| 图谱/画布 | focus, focus-2, circle-dot, world, hierarchy, user |
+| 系统 | database, server-cog, source-code, keyboard, command, crown |
 
 ### 字体层级
 
@@ -844,7 +902,7 @@ EntryAbility.onWindowStageCreate
 | 云同步 | Core File Kit 端云协同 | 零服务器 |
 | 加密 | cryptoFramework AES-256-CBC | 随机 IV |
 | 闪卡 | FSRS-4.5 算法 | 稳定性/难度/可提取性 |
-| 图标 | 97 个 Tabler SVG → ArkTS Shape | MIT 协议 |
+| 图标 | 123 个 Tabler SVG → ArkTS Shape | MIT 协议 |
 | 插件 | 预编译 + 静态注册表 | ArkTS 安全兼容 |
 | i18n | 自定义 I18nDict class | 中/英双语 |
 
@@ -932,6 +990,96 @@ Callaite/entry/src/main/ets/
 - `ohos.permission.DISTRIBUTED_DATASYNC` — 分布式协同编辑
 
 **测试数据**: 首次启动自动创建 5 个页面（今日日志 / 项目文档 / dev/鸿蒙开发笔记 / HarmonyOS开发指南），含 TODO 标记、引用、嵌套 Block、KaTeX 公式、Mermaid 图表。
+
+---
+
+## 发布前检查清单
+
+> 以下清单覆盖「可发布」所需的全部前置条件、质量门禁、真机回归与上架产物，按顺序执行即可。
+
+### 0. 必须手动完成（签名/包名/云端配置，代码无法代填）
+
+- [ ] 将 `AppScope/app.json5` 中的占位 `bundleName: "com.example.callaite"` 替换为正式包名，并同步修改 `services/CollaborationService.ets` 中硬编码的 `bundleName`
+- [ ] 在 `build-profile.json5` 的 `signingConfigs` 中配置发布证书（目前为空，release HAP 不会签名）
+- [ ] 在 AppGallery Connect 创建项目并绑定应用，完成云端配置：IAP 商品、云同步/云数据库能力
+- [ ] 在 AGC「商品管理」中创建自动续期订阅商品 `callaite_pro_monthly`（月订阅，UI 标价 ¥12/月）
+- [ ] 确认发布设备的「系统设置 → 华为账号」已登录（云同步与 IAP 均依赖系统华为账号）
+
+### 1. 版本与元信息
+
+- [ ] 更新 `AppScope/app.json5` 的 `versionCode` / `versionName`（当前 `1000000` / `1.0.0`）
+- [ ] 检查 `oh-package.json5` 的 `description` 与应用说明一致
+- [ ] 检查 `AppScope/resources/base/element/string.json` 的 `app_name`（当前 `Callaite`）
+- [ ] 检查应用图标与启动图（`AppScope/resources/base/media/`）已替换为正式资源
+
+### 2. 权限与隐私
+
+当前仅声明一个普通权限：
+
+| 权限 | 用途 | 类型 |
+|------|------|------|
+| `ohos.permission.DISTRIBUTED_DATASYNC` | 分布式协同编辑 + 华为账号查询 | normal，无需动态申请 |
+
+- [ ] 确认隐私政策已说明：笔记经 AES-256-CBC 加密后写入华为云空间进行端云同步
+- [ ] 若后续引入位置/相册/文件等敏感权限，需在 `module.json5` 补充 `reason` 并做动态申请与合规声明
+
+### 3. 测试数据清理
+
+- [ ] 生产构建前关闭测试数据播种：移除或条件化 [EntryAbility.ets](entry/src/main/ets/entryability/EntryAbility.ets) 中 `TestDataService.seedIfEmpty()`（当前首次启动会自动创建 5 个示例页面）
+
+### 4. 构建与质量门禁
+
+```bash
+# 全量 clean 编译（目标 BUILD SUCCESSFUL，仅允许出现签名/弃用 WARN）
+node "D:\program files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.js" --mode module -p product=default clean assembleHap --analyze=normal
+
+# 静态检查（CodeLinter）
+node "D:\program files\Huawei\DevEco Studio\plugins\codelinter\run\index.js" -c code-linter.json5 -f json -o lint-result.json .
+```
+
+- [ ] CodeLinter 结果：0 error、0 security；当前存在 12 条 performance `warn`（非阻断，可后续清理）
+- [ ] 确认无 `any`/`unknown`/`Record`/索引签名等 ArkTS 违例（仅 `onContinue` 签名与 JSON 解析处保留 SDK 要求的 `Record`）
+
+### 5. 安全自查要点
+
+- WebView 内容渲染已做 HTML 转义/JSON 安全嵌入，阻断 `<script>` 注入
+- 文件名与云同步已做路径穿越校验（`/`、`\`、`..`）
+- 端云同步文件以 AES-256-CBC 加密写入
+- 依赖无第三方运行时库；仅使用 HarmonyOS 官方 Kit
+
+### 6. 功能回归清单（真机）
+
+**编辑器**
+- [ ] Block 树/缩进/上下移/折叠/拖拽/多选
+- [ ] Slash 命令、`[[`/`((`/`#` 补全
+- [ ] 行内格式、代码块、引用块、Markdown 表格单元格编辑、`[文本](url)` 链接
+- [ ] 中文 IME 输入、粘贴 Markdown 拆分
+
+**引用/查询/任务**
+- [ ] 页面/块引用、页面/块嵌入、反链与筛选
+- [ ] `{{query}}` 与 `#+BEGIN_QUERY` 内联查询、查询构建器三视图
+- [ ] TODO/DOING/DONE、优先级、SCHEDULED/DEADLINE、日志页任务面板
+
+**其他**
+- [ ] 全局搜索、命令面板、图谱、白板（含手写笔）、模板、导入/导出（MD/HTML/OPML）、回收站、主题、多语言、快捷键
+
+**鸿蒙特性**
+- [ ] 华为账号展示与刷新
+- [ ] 云同步（加密、配额 Free 1/Pro 10、冲突 last-write-wins、退后台自动同步）
+- [ ] 分布式协同编辑（多设备）
+- [ ] 多端流转、分享接收、备份恢复、服务卡片
+- [ ] PenKit 压感手写（真机）
+
+**Pro 订阅**
+- [ ] 沙箱购买/恢复购买、Pro 状态持久化与 24h 刷新
+- [ ] Free 用户访问闪卡/PDF 跳转升级页、云同步配额拦截
+- [ ] PDF 选中文字 → 页内高亮持久化 → 生成标注 Block
+
+### 7. 上架产物
+
+- [ ] 配置签名后重新构建，确认产物为 `entry/build/default/outputs/default/entry-default-signed.hap`（当前为 `entry-default-unsigned.hap`）
+- [ ] 在 AppGallery Connect 上传签名 HAP，填写审核材料（应用描述、截图、隐私政策 URL、订阅定价与说明）
+- [ ] 提交审核前复核包名、版本号与签名证书与上架信息一致
 
 ---
 

@@ -347,8 +347,10 @@ export class MarkdownParser {
     let match = regex.exec(text);
     while (match) {
       const ref = match[1];
-      // 排除 ![[embed]] 嵌入
-      if (!ref.startsWith('!') && refs.findIndex((r) => r === ref) === -1) {
+      // 排除 ![[embed]] 嵌入：检查匹配起始位置的前一个字符是否为 '!'
+      const startIdx = match.index;
+      const isEmbed = startIdx > 0 && text.charAt(startIdx - 1) === '!';
+      if (!isEmbed && refs.findIndex((r) => r === ref) === -1) {
         refs.push(ref);
       }
       match = regex.exec(text);

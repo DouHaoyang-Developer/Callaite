@@ -69,9 +69,9 @@ export struct PageContextMenu {
       danger: false
     };
     items[4] = {
-      key: 'newtab',
-      label: '在新标签打开',
-      iconName: 'plus',
+      key: 'sidebar',
+      label: '在右侧栏打开',
+      iconName: 'layout-sidebar-right',
       iconColor: $r('app.color.muted_text'),
       danger: false
     };
@@ -106,8 +106,14 @@ export struct PageContextMenu {
         this.copyToClipboard(this.pageName);
         this.onClose();
         break;
-      case 'newtab':
-        // 预留：新标签打开
+      case 'sidebar':
+        AppState.addRightSidebarBlock({
+          id: 'page-' + this.pageName,
+          type: 'page',
+          title: this.pageName,
+          pageName: this.pageName,
+          collapsed: false
+        });
         this.onClose();
         break;
       case 'delete':
@@ -130,7 +136,7 @@ export struct PageContextMenu {
 
   confirmDelete(): void {
     this.onClose();
-    AlertDialog.show({
+    this.getUIContext().showAlertDialog({
       title: t('delete'),
       message: `确认删除页面 "${this.pageName}"？此操作不可撤销。`,
       primaryButton: {

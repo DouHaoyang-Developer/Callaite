@@ -1,14 +1,19 @@
 import { Header } from '../layout/Header';
 import { PageView } from './PageView';
 import { CommandPalette } from '../commandpalette/CommandPalette';
+import { ExportDialog } from '../common/ExportDialog';
+import { ImportDialog } from '../common/ImportDialog';
 import { Toolbar } from '../outliner/Toolbar';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { EditorService } from '../../services/EditorService';
+import { AppState } from '../../state/AppState';
 
 @Component
 export struct ContentArea {
   @StorageLink('callaite_searchPanelOpen') searchPanelOpen: boolean = false;
   @StorageLink('callaite_currentPage') currentPage: string = 'Journal';
+  @StorageLink('callaite_exportDialogOpen') exportDialogOpen: boolean = false;
+  @StorageLink('callaite_importDialogOpen') importDialogOpen: boolean = false;
 
   build() {
     Stack() {
@@ -74,6 +79,34 @@ export struct ContentArea {
         .width('100%')
         .height('100%')
         .backgroundColor($r('app.color.surface0'))
+      }
+
+      if (this.exportDialogOpen) {
+        Column() {
+          ExportDialog({
+            pageName: ContentArea.resolvePageName(this.currentPage),
+            onClose: () => { AppState.setExportDialogOpen(false); }
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+      }
+
+      if (this.importDialogOpen) {
+        Column() {
+          ImportDialog({
+            pageName: ContentArea.resolvePageName(this.currentPage),
+            onClose: () => { AppState.setImportDialogOpen(false); }
+          })
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor('rgba(0,0,0,0.45)')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
       }
     }
     .width('100%')

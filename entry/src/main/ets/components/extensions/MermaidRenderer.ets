@@ -17,10 +17,8 @@ export struct MermaidRenderer {
   }
 
   buildHtml(): void {
-    const escaped = this.diagram
-      .replace(new RegExp('\\\\', 'g'), '\\\\')
-      .replace(new RegExp('`', 'g'), '\\`')
-      .replace(new RegExp('\\$', 'g'), '\\$');
+    // HTML 实体转义，阻断 <script>/</div> 等 XSS 注入；浏览器解析文本节点时自动还原。
+    const escaped = MermaidRenderer.escapeHtml(this.diagram);
 
     const isDark = ThemeManager.isDarkMode();
     const theme = isDark ? 'dark' : 'default';
@@ -35,7 +33,7 @@ export struct MermaidRenderer {
 <div class="mermaid" id="diagram">${escaped}</div>
 <script>
 try{
-  mermaid.initialize({startOnLoad:true,theme:'${theme}',securityLevel:'loose'});
+  mermaid.initialize({startOnLoad:true,theme:'${theme}',securityLevel:'strict'});
   setTimeout(function(){
     var svg=document.querySelector('#diagram svg');
     if(!svg){
@@ -53,6 +51,27 @@ try{
 }
 </script>
 </body></html>`;
+  }
+
+  private static escapeHtml(text: string): string {
+    let result = '';
+    for (let i = 0; i < text.length; i++) {
+      const ch = text.charAt(i);
+      if (ch === '&') {
+        result += '&amp;';
+      } else if (ch === '<') {
+        result += '&lt;';
+      } else if (ch === '>') {
+        result += '&gt;';
+      } else if (ch === '"') {
+        result += '&quot;';
+      } else if (ch === '\'') {
+        result += '&#39;';
+      } else {
+        result += ch;
+      }
+    }
+    return result;
   }
 
   build() {

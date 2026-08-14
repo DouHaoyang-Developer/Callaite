@@ -3,6 +3,7 @@ import { AppState } from '../../state/AppState';
 import { t } from '../../utils/i18n';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData } from '../../core/models/Page';
+import { SubscriptionService } from '../../services/SubscriptionService';
 
 interface NavItem {
   key: string;          // 唯一标识，对应 AppState.currentPage 值
@@ -95,6 +96,8 @@ export struct LeftSidebar {
     items[1] = { key: 'AllPages', label: t('nav_all_pages'), iconName: 'apps' };
     items[2] = { key: 'Graph', label: t('nav_graph_view'), iconName: 'world' };
     items[3] = { key: 'Flashcards', label: t('nav_flashcards'), iconName: 'book' };
+    items[4] = { key: 'Whiteboards', label: t('whiteboards'), iconName: 'layout-grid' };
+    items[5] = { key: 'Pdf', label: 'PDF', iconName: 'file' };
     return items;
   }
 
@@ -241,7 +244,14 @@ export struct LeftSidebar {
     .backgroundColor(this.currentPage === item.key
       ? $r('app.color.surface2')
       : Color.Transparent)
-    .onClick(() => { AppState.setCurrentPage(item.key); })
+    .onClick(() => {
+      if ((item.key === 'Flashcards' && !SubscriptionService.canUseFeature('flashcard')) ||
+        (item.key === 'Pdf' && !SubscriptionService.canUseFeature('pdf'))) {
+        AppState.setCurrentPage('ProUpgrade');
+      } else {
+        AppState.setCurrentPage(item.key);
+      }
+    })
   }
 
   /**

@@ -18,7 +18,7 @@ interface WbExportData {
  * 工具栏按钮配置。
  */
 interface ToolConfig {
-  symbol: string;
+  icon: string;
   tool: string;
 }
 
@@ -103,13 +103,13 @@ export struct Whiteboard {
 
   // ─── 工具栏配置 ───
   private tools: ToolConfig[] = [
-    { symbol: '⌖', tool: 'select' },
-    { symbol: '▭', tool: 'rect' },
-    { symbol: '◯', tool: 'ellipse' },
-    { symbol: '◇', tool: 'diamond' },
-    { symbol: 'T', tool: 'text' },
-    { symbol: '─', tool: 'line' },
-    { symbol: '✎', tool: 'pen' }
+    { icon: 'mouse', tool: 'select' },
+    { icon: 'rectangle', tool: 'rect' },
+    { icon: 'circle', tool: 'ellipse' },
+    { icon: 'diamond', tool: 'diamond' },
+    { icon: 'text-caption', tool: 'text' },
+    { icon: 'line', tool: 'line' },
+    { icon: 'pencil', tool: 'pen' }
   ];
 
   aboutToAppear(): void {
@@ -706,26 +706,41 @@ export struct Whiteboard {
    * 工具栏按钮。
    * pen 工具点击时切换笔刷面板。
    */
-  @Builder ToolButton(symbol: string, tool: string) {
-    Text(symbol)
-      .fontSize(18)
-      .fontColor(this.currentTool === tool ? $r('app.color.primary') : $r('app.color.muted_text'))
-      .width(36)
-      .height(36)
-      .textAlign(TextAlign.Center)
-      .borderRadius(6)
-      .backgroundColor(this.currentTool === tool ? $r('app.color.surface2') : Color.Transparent)
-      .onClick(() => {
-        if (tool === 'pen' && this.currentTool === 'pen') {
-          // 已选中手写笔时切换面板显隐
-          this.showBrushPanel = !this.showBrushPanel;
-        } else {
-          this.currentTool = tool;
-          this.showBrushPanel = (tool === 'pen');
-        }
-        this.selectedShapeId = '';
-        this.editingShapeId = '';
-      })
+  @Builder ToolButton(icon: string, tool: string) {
+    Row() {
+      TablerIcon(icon, 18,
+        this.currentTool === tool ? $r('app.color.primary') : $r('app.color.muted_text'))
+    }
+    .width(36)
+    .height(36)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(6)
+    .backgroundColor(this.currentTool === tool ? $r('app.color.surface2') : Color.Transparent)
+    .onClick(() => {
+      if (tool === 'pen' && this.currentTool === 'pen') {
+        // 已选中手写笔时切换面板显隐
+        this.showBrushPanel = !this.showBrushPanel;
+      } else {
+        this.currentTool = tool;
+        this.showBrushPanel = (tool === 'pen');
+      }
+      this.selectedShapeId = '';
+      this.editingShapeId = '';
+    })
+  }
+
+  private brushIcon(type: PenBrushType): string {
+    if (type === PenBrushType.PEN) {
+      return 'ballpen';
+    }
+    if (type === PenBrushType.PENCIL) {
+      return 'pencil';
+    }
+    if (type === PenBrushType.MARKER) {
+      return 'highlight';
+    }
+    return 'eraser';
   }
 
   /**
@@ -737,9 +752,8 @@ export struct Whiteboard {
       Row({ space: 8 }) {
         ForEach(this.brushPresets, (preset: BrushPresetItem) => {
           Column({ space: 2 }) {
-            Text(preset.symbol)
-              .fontSize(16)
-              .fontColor(this.currentBrushType === preset.type ? $r('app.color.primary') : $r('app.color.text'))
+            TablerIcon(this.brushIcon(preset.type), 16,
+              this.currentBrushType === preset.type ? $r('app.color.primary') : $r('app.color.text'))
             Text(preset.label)
               .fontSize(9)
               .fontColor(this.currentBrushType === preset.type ? $r('app.color.primary') : $r('app.color.muted_text'))
@@ -860,9 +874,9 @@ export struct Whiteboard {
           .margin({ left: 4, right: 4 })
 
         // 工具按钮组
-        ForEach(this.tools, (tc: ToolConfig) => {
-          this.ToolButton(tc.symbol, tc.tool)
-        }, (tc: ToolConfig) => tc.tool)
+          ForEach(this.tools, (tc: ToolConfig) => {
+            this.ToolButton(tc.icon, tc.tool)
+          }, (tc: ToolConfig) => tc.tool)
 
         // 分隔线
         Divider()

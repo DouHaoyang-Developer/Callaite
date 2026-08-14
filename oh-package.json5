@@ -1,6 +1,6 @@
 {
   "modelVersion": "6.1.1",
-  "description": "Please describe the basic information.",
+  "description": "Callaite — Logseq 风格的 HarmonyOS 知识管理应用（大纲编辑 / 双向链接 / 图谱 / 白板 / 端云同步）",
   "dependencies": {
   },
   "devDependencies": {

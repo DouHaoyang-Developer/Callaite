@@ -34,7 +34,7 @@ interface ViewModeOption {
 
 const VIEW_MODES: ViewModeOption[] = [
   { key: 'list', label: '列表', icon: 'list' },
-  { key: 'card', label: '卡片', icon: 'grid' },
+  { key: 'card', label: '卡片', icon: 'layout-grid' },
   { key: 'table', label: '表格', icon: 'table' }
 ];
 

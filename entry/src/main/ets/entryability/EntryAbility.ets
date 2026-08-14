@@ -12,6 +12,8 @@ import { EncryptionService } from '../services/EncryptionService';
 import { CloudSyncService } from '../services/CloudSyncService';
 import { registerBuiltinPlugins } from '../plugins/BuiltinPlugins';
 import { ContinuationManager } from '../services/ContinuationManager';
+import { HuaweiAccountService } from '../services/HuaweiAccountService';
+import { BlockMetadataSyncService } from '../services/BlockMetadataSyncService';
 
 const DOMAIN = 0x0001;
 
@@ -46,8 +48,16 @@ export default class EntryAbility extends UIAbility {
     // 1.6 初始化分布式协同
     CollaborationService.getInstance().init(this.context);
 
-    // 1.7 异步刷新 Pro 订阅状态
+    // 1.7 恢复缓存 + 启动 24h 定时刷新 + 网络刷新 Pro 订阅状态
+    SubscriptionService.initCachedProState();
+    SubscriptionService.startPeriodicRefresh();
     SubscriptionService.refreshProStatus();
+
+    // 1.75 刷新华为账号状态（云同步与 IAP 依赖）
+    HuaweiAccountService.refresh().then(() => {
+      hilog.info(DOMAIN, 'EntryAbility', 'Huawei account refreshed: %{public}s',
+        HuaweiAccountService.displayName());
+    }).catch(() => {});
 
     // 1.8 初始化加密服务
     EncryptionService.init();
@@ -87,6 +97,17 @@ export default class EntryAbility extends UIAbility {
       WorkspaceService.getInstance().saveAll();
     } catch (_e) {
       // 保存失败不阻塞
+    }
+
+    // 保存后触发端云协同同步
+    try {
+      CloudSyncService.syncAll().then((count: number) => {
+        hilog.info(DOMAIN, 'EntryAbility', 'Cloud sync done: %{public}d files', count);
+        // 文件同步完成后同步 Block 元数据索引
+        BlockMetadataSyncService.syncToCloud().catch(() => {});
+      }).catch(() => {});
+    } catch (_e) {
+      // 云同步失败不阻塞
     }
   }
 

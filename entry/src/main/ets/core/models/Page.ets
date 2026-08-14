@@ -63,7 +63,7 @@ export interface PageData {
 export function createPageData(uuid: string, name: string, originalName: string): PageData {
   const now = Date.now();
   const ns = extractNamespace(name);
-  const filePathStr = name.replace('/', '_') + '.md';
+  const filePathStr = pageNameToFileName(name);
   const page: PageData = {
     uuid: uuid,
     name: name,
@@ -80,6 +80,52 @@ export function createPageData(uuid: string, name: string, originalName: string)
     updatedAt: now
   };
   return page;
+}
+
+/**
+ * 将页面名安全地转换为 .md 文件名，防止路径穿越。
+ * 规则：
+ *  - 统一将 / 与 \ 替换为 _（与命名空间扁平化存储保持一致）
+ *  - 移除或替换 ..、空段、控制字符等危险片段
+ *  - 确保结果不为空、不以 . 开头（避免隐藏文件）
+ */
+export function pageNameToFileName(name: string): string {
+  let sanitized = '';
+  for (let i = 0; i < name.length; i++) {
+    const code = name.charCodeAt(i);
+    const ch = name.charAt(i);
+    if (ch === '/' || ch === '\\' || ch === ':' || ch === '*' ||
+        ch === '?' || ch === '"' || ch === '<' || ch === '>' || ch === '|') {
+      sanitized += '_';
+    } else if (code < 32) {
+      // 控制字符直接丢弃
+    } else {
+      sanitized += ch;
+    }
+  }
+
+  // 处理路径穿越片段 ..（可能被替换为 _ 后残留，如 a..b 保留，但纯 .. 段替换）
+  // 由于 / 已替换为 _，此处再防御性处理连续点号段
+  const segments = sanitized.split('_');
+  const cleaned: string[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (seg === '' || seg === '.' || seg === '..') {
+      cleaned.push('_');
+    } else {
+      cleaned.push(seg);
+    }
+  }
+  let result = cleaned.join('_');
+
+  // 去除开头点号，避免生成隐藏文件
+  while (result.startsWith('.')) {
+    result = result.substring(1);
+  }
+  if (result === '') {
+    result = 'Untitled';
+  }
+  return result + '.md';
 }
 
 /**

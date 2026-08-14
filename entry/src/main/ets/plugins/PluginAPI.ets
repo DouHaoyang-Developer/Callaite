@@ -1,5 +1,12 @@
 import { WorkspaceService } from '../services/WorkspaceService';
 import { AppState } from '../state/AppState';
+import { TemplateService, TemplateInfo } from '../services/TemplateService';
+import { promptAction } from '@kit.ArkUI';
+
+export interface PluginStats {
+  pages: number;
+  blocks: number;
+}
 
 /**
  * PluginAPI — 插件能力代理。
@@ -64,5 +71,70 @@ export class PluginAPI {
   /** 获取所有标签 */
   static getAllTags(): string[] {
     return WorkspaceService.getInstance().getAllTags();
+  }
+
+  /** 获取所有页面名 */
+  static listAllPages(): string[] {
+    const pages = WorkspaceService.getInstance().getAllPages();
+    const names: string[] = [];
+    for (let i = 0; i < pages.length; i++) {
+      names.push(pages[i].originalName);
+    }
+    return names;
+  }
+
+  /** 获取页面 Block 内容摘要 */
+  static getPageBlocks(pageName: string): string[] {
+    const ws = WorkspaceService.getInstance();
+    const page = ws.getPageByName(pageName);
+    if (!page) {
+      return [];
+    }
+    const blocks = ws.getPageBlocks(page.uuid);
+    const result: string[] = [];
+    for (let i = 0; i < blocks.length; i++) {
+      result.push(blocks[i].content.substring(0, 80));
+    }
+    return result;
+  }
+
+  /** 统计页面与 Block 数量 */
+  static getPageStats(): PluginStats {
+    const ws = WorkspaceService.getInstance();
+    const pages = ws.getAllPages();
+    let blocks = 0;
+    for (let i = 0; i < pages.length; i++) {
+      blocks = blocks + ws.getPageBlocks(pages[i].uuid).length;
+    }
+    const stats: PluginStats = { pages: pages.length, blocks: blocks };
+    return stats;
+  }
+
+  /** 获取内置模板名列表 */
+  static getTemplateNames(): string[] {
+    const templates = TemplateService.getBuiltinTemplates();
+    const names: string[] = [];
+    for (let i = 0; i < templates.length; i++) {
+      names.push(templates[i].name);
+    }
+    return names;
+  }
+
+  /** 按名称插入模板到今日日志 */
+  static insertTemplateByName(name: string): boolean {
+    const templates = TemplateService.getBuiltinTemplates();
+    for (let i = 0; i < templates.length; i++) {
+      if (templates[i].name === name) {
+        const expanded = TemplateService.expand(templates[i].content, PluginAPI.getCurrentPage());
+        PluginAPI.insertTodayBlock(expanded, '');
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 弹出通知 toast */
+  static notify(message: string): void {
+    promptAction.openToast({ message: message }).catch(() => {});
   }
 }
