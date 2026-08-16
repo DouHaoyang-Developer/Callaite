@@ -804,31 +804,44 @@ WebView + mermaid.js 10 CDN，支持流程图/时序图/类图等，主题自动
 
 ### 配色方案
 
-| Token | 浅色 | 暗色 | 用途 |
+浅色对齐 Logseq light，暗色为 Logseq Solarized 深色（`vars-classic.css` `[data-theme=dark]`）。
+
+| Token | 浅色 | 暗色（Solarized） | 用途 |
 |-------|------|------|------|
-| primary | `#0458A6` | `#5B9BD5` | 主色调（链接、选中态） |
-| text | `#1A1A1A` | `#E0E0E0` | 正文 |
-| surface0 | `#FCFCFC` | `#1C1C1D` | 主背景 |
-| surface1 | `#F3F3F4` | `#242425` | 侧栏背景 |
-| border | `#E8E9EA` | `#38383A` | 分割线 |
-| bullet | `#A0A3A8` | `#6B6F74` | Block 圆点 |
-| muted | `#787B80` | `#8B8F94` | 辅助文字 |
+| primary | `#106BA3` | `#268BD2` | 主色调（链接、选中态、交互强调） |
+| text | `#433F38` | `#A4B5B6` | 正文 |
+| surface0 | `#FFFFFF` | `#002B36` | 主背景 |
+| surface1 | `#F7F7F5` | `#023643` | 侧栏背景 |
+| surface2 | `#F0F1F2` | `#08404F` | 选中态/hover 背景 |
+| border | `#E8E9EA` | `#0E5263` | 分割线 |
+| bullet | `#B9BEC7` | `#608E91` | Block 圆点 |
+| muted_text | `#8A94A6` | `#5E7A7E` | 辅助文字 |
+| icon_color | `#646464` | `#5E7A7E` | 工具图标（--ls-icon-color） |
+| link | `#106BA3` | `#8ABBBB` | 链接文字 |
 | success | `#059669` | `#34D399` | DONE / 成功 |
 | danger | `#DC2626` | `#F87171` | TODO / 危险 |
 
+### 布局规范
+
+- 主内容区限宽 960vp 并水平居中（`--ls-main-content-max-width`），宽屏两侧留白；窄屏（<768vp）左右内边距 20vp，宽屏 48vp。
+- Journal 首页为日志流 feed：最近日期在上，初始 7 天，滚动到底追加 7 天；点击日期标题进入单日页。
+- 左侧栏 FAVORITES / RECENT / ALL PAGES 为可折叠分组（chevron 切换，折叠态持久化到 `callaite_collapsed_*`）。
+
 ### 图标系统
 
-使用 Tabler Icons v2.47（MIT 协议），共 123 个图标以 SVG Path 数据内联存储，经 ArkTS `Shape` + `Path` 组件原生绘制（零字体加载、无第三方依赖）。
+使用 Tabler Icons v2.47（MIT 协议），以 SVG Path 数据内联存储，经 ArkTS `Shape` + `Path` 组件原生绘制（零字体加载、无第三方依赖）。
 
 **渲染规范**：`IconRenderer` 通过 `viewPort({ x:0, y:0, width:24, height:24 })` 将 Tabler 的 24×24 设计坐标系映射到目标尺寸，并按 `strokeWidth = iconSize / 12` 等比缩放线宽，确保任意尺寸下图标不错位、不模糊、不产生过粗线条。
+
+**尺寸与用色分级**：Header 工具图标 20vp（48vp 触控容器）、左侧栏导航 20vp、分段标题 14vp、行内操作 16vp；工具图标统一使用 `icon_color`，激活态用 `primary`，禁用态用 `muted_text`。
 
 | 分类 | 代表图标 |
 |------|---------|
 | 导航 | arrow-*, chevron-*, caret-*, menu-2 |
 | 操作 | plus, check, x, trash, edit, copy, refresh, download, upload |
-| 文件 | file, file-code, file-off, folder, folder-off, file-upload |
+| 文件 | file, files, file-code, file-off, folder, folder-off, file-upload |
 | 视图 | search, settings, layout-*, layout-grid, table, list, filter |
-| 内容/标记 | hash, home, bolt, bulb, calendar-*, alarm, lock, pin, link |
+| 内容/标记 | hash, home, bolt, bulb, calendar-*, alarm, lock, pin, link, stack-2 |
 | 状态 | check, checkbox, circle-minus, alert-triangle, mood-empty |
 | 图谱/画布 | focus, focus-2, circle-dot, world, hierarchy, user |
 | 系统 | database, server-cog, source-code, keyboard, command, crown |
@@ -852,7 +865,7 @@ WebView + mermaid.js 10 CDN，支持流程图/时序图/类图等，主题自动
 | Block 缩进/级 | 24px |
 | Block 行高 | 28px |
 | 圆点直径 | 6px |
-| Header 高度 | 44px |
+| Header 高度 | 48px |
 | 侧栏宽度 | 260px / 280px |
 | 页面左右内边距 | 48px |
 

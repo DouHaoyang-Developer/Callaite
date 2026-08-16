@@ -63,6 +63,8 @@ class BlockDataSource implements IDataSource {
 export struct BlockList {
   @Prop pageId: string = '';
   @Prop pageName: string = '';
+  // embedded=true 时用于日志流 feed 内嵌：高度自适应内容、不渲染多选浮动栏
+  @Prop embedded: boolean = false;
   @State blocks: BlockData[] = [];
   @State slashMenuVisible: boolean = false;
   @State slashMenuBlockUuid: string = '';
@@ -130,13 +132,15 @@ export struct BlockList {
         }
       }
       .width('100%')
-      .height('100%')
+      .height(this.embedded ? 'auto' : '100%')
 
-      // 多选批量操作浮动栏
-      BlockSelection({ pageId: this.pageId })
+      // 多选批量操作浮动栏（feed 内嵌模式不渲染，避免每个日期节叠一层）
+      if (!this.embedded) {
+        BlockSelection({ pageId: this.pageId })
+      }
     }
     .width('100%')
-    .height('100%')
+    .height(this.embedded ? 'auto' : '100%')
   }
 
   // ─── 空页面状态 ───

@@ -1,4 +1,5 @@
 import { BlockList } from '../outliner/BlockList';
+import { JournalFeed } from './JournalFeed';
 import { JournalService } from '../../services/JournalService';
 import { SettingsPage } from '../settings/SettingsPage';
 import { QueryBuilder } from '../query/QueryBuilder';
@@ -7,7 +8,6 @@ import { Whiteboard } from '../whiteboard/Whiteboard';
 import { FlashcardPage } from '../flashcard/FlashcardPage';
 import { PdfPage } from '../extensions/PdfPage';
 import { ProUpgradePage } from '../settings/ProUpgradePage';
-import { TaskDashboard } from '../search/TaskDashboard';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { t } from '../../utils/i18n';
 import { TablerIcon } from '../common/Icons';
@@ -89,6 +89,9 @@ export struct PageView {
   build() {
     if (this.currentPage === 'Settings') {
       SettingsPage()
+    } else if (this.currentPage === 'Journal') {
+      // 日志首页 = 时间流 feed（Logseq all-journals）
+      JournalFeed()
     } else if (this.currentPage === 'Graph') {
       GraphView()
     } else if (this.currentPage === 'Whiteboards') {
@@ -106,7 +109,9 @@ export struct PageView {
     } else if (this.currentPage === 'About') {
       this.AboutView()
     } else {
+      // 外层容器：内容列限宽 960vp 并水平居中（--ls-main-content-max-width）
       Column({ space: 0 }) {
+        Column({ space: 0 }) {
         // 页面标题（Logseq 风格: 大号粗体）
         Text(this.displayName)
           .fontSize(36)
@@ -176,11 +181,6 @@ export struct PageView {
           .padding({ top: 4, bottom: 8 })
         }
 
-        // 任务面板（仅日志页）
-        if (this.currentPage === 'Journal') {
-          TaskDashboard({ pageName: this.displayName })
-        }
-
         // Block 列表
         Scroll() {
           BlockList({ pageName: this.displayName })
@@ -193,8 +193,13 @@ export struct PageView {
       }
       .width('100%')
       .height('100%')
-      .padding({ left: this.getContentPadding(), right: this.getContentPadding() })
+      .constraintSize({ maxWidth: 960 })
       .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ left: this.getContentPadding(), right: this.getContentPadding() })
+    .alignItems(HorizontalAlign.Center)
     }
   }
 

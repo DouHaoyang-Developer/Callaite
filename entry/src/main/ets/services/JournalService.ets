@@ -20,15 +20,24 @@ export class JournalService {
   }
 
   /**
+   * 确保指定日期的日志页存在，如果不存在则自动创建。
+   * 日志流 feed 渲染每一天前调用，保证空日期页也可编辑。
+   */
+  static ensureJournal(dateStr: string): string {
+    const ws = WorkspaceService.getInstance();
+    let page = ws.getPageByName(dateStr);
+    if (!page) {
+      page = ws.createJournalPage(dateStr);
+    }
+    return dateStr;
+  }
+
+  /**
    * 确保今天的日志页存在，如果不存在则自动创建。
    */
   static ensureTodayJournal(): string {
     const today = JournalService.getTodayDateString();
-    const ws = WorkspaceService.getInstance();
-    let page = ws.getPageByName(today);
-    if (!page) {
-      page = ws.createJournalPage(today);
-    }
+    JournalService.ensureJournal(today);
     return today;
   }
 

@@ -63,7 +63,7 @@ export struct Header {
         if (this.currentPage === 'Journal') {
           Row({ space: 0 }) {
             Row() {
-              TablerIcon('chevron-left', 18, $r('app.color.muted_text'))
+              TablerIcon('chevron-left', 18, $r('app.color.icon_color'))
             }
             .width(32).height(32).borderRadius(4)
             .onClick(() => {
@@ -71,7 +71,7 @@ export struct Header {
             })
 
             Row() {
-              TablerIcon('chevron-right', 18, $r('app.color.muted_text'))
+              TablerIcon('chevron-right', 18, $r('app.color.icon_color'))
             }
             .width(32).height(32).borderRadius(4)
             .onClick(() => {
@@ -92,7 +92,7 @@ export struct Header {
 
       // 三点菜单（logseq toolbar-dots-menu）
       Row() {
-        TablerIcon('dots-vertical', 24, $r('app.color.text'))
+        TablerIcon('dots-vertical', 20, $r('app.color.icon_color'))
       }
       .width(48).height(48).borderRadius(4)
       .bindMenu(this.DotsMenu)
@@ -109,15 +109,15 @@ export struct Header {
 
   /**
    * 通用图标按钮 Builder。
-   * 华为规范：触控目标 ≥ 44vp；导航图标 24vp。
+   * 华为规范：触控目标 ≥ 44vp；Logseq headbar 图标约 20vp。
    * active 参数用于在按钮处于激活态时使用主色高亮（如右侧栏已打开）。
    */
   @Builder
   IconButton(name: string, enabled: boolean, onClick: () => void, active: boolean = false) {
     Row() {
-      TablerIcon(name, 24,
+      TablerIcon(name, 20,
         enabled
-          ? (active ? $r('app.color.primary') : $r('app.color.text'))
+          ? (active ? $r('app.color.primary') : $r('app.color.icon_color'))
           : $r('app.color.muted_text'))
     }
     .width(48).height(48).borderRadius(4)

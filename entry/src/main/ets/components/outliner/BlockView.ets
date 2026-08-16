@@ -197,36 +197,41 @@ export struct BlockView {
   @Builder
   BulletControl() {
     Row({ space: 2 }) {
-      // 折叠箭头（有子 Block 时显示）
+      // 折叠箭头（有子 Block 时显示，Logseq block-control：半透明 + 展开时旋转 90°）
       if (this.hasChildrenFlag) {
         Row() {
-          TablerIcon(
-            this.isCollapsed ? 'chevron-right' : 'chevron-down',
-            10,
-            $r('app.color.muted_text')
-          )
+          TablerIcon('chevron-right', 10, $r('app.color.muted_text'))
         }
         .width(14).height(14)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
+        .opacity(0.4)
+        .rotate({ angle: this.isCollapsed ? 0 : 90 })
+        .animation({ duration: 150, curve: Curve.EaseOut })
         .onClick(() => {
           this.toggleCollapse();
         })
       }
 
-      // Bullet 圆点
-      Circle({ width: 6, height: 6 })
-        .fill(this.bulletColor)
-        .margin({ top: 5 })
-        .animation({ duration: 150, curve: Curve.EaseOut })
-        .onClick(() => {
-          // 有子 Block 时点击 bullet 切换折叠
-          if (this.hasChildrenFlag) {
-            this.toggleCollapse();
-          } else {
-            this.enterEdit();
-          }
-        })
+      // Bullet 圆点（Logseq bullet-container：hover 显示圆环 + 圆点放大）
+      Row() {
+        Circle({ width: this.isHovered ? 7 : 6, height: this.isHovered ? 7 : 6 })
+          .fill(this.bulletColor)
+      }
+      .width(16).height(16)
+      .justifyContent(FlexAlign.Center)
+      .borderRadius(8)
+      .border({ width: 1, color: this.isHovered ? this.bulletColor : Color.Transparent })
+      .margin({ top: 3 })
+      .animation({ duration: 150, curve: Curve.EaseOut })
+      .onClick(() => {
+        // 有子 Block 时点击 bullet 切换折叠
+        if (this.hasChildrenFlag) {
+          this.toggleCollapse();
+        } else {
+          this.enterEdit();
+        }
+      })
     }
   }
 

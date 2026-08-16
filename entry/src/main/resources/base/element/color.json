@@ -14,6 +14,7 @@
     { "name": "border", "value": "#E8E9EA" },
     { "name": "toolbar", "value": "#F7F7F5" },
     { "name": "muted_text", "value": "#8A94A6" },
+    { "name": "icon_color", "value": "#646464" },
     { "name": "danger", "value": "#DC2626" },
     { "name": "error", "value": "#DC2626" },
     { "name": "warning", "value": "#D97706" },

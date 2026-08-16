@@ -29,7 +29,7 @@ export struct Toolbar {
       Row({ space: 4 }) {
         Button() {
           Row({ space: 4 }) {
-            TablerIcon('arrow-left', 18, this.canUndo ? $r('app.color.text') : '#D1D5DB')
+            TablerIcon('arrow-left', 18, this.canUndo ? $r('app.color.icon_color') : $r('app.color.muted_text'))
           }
         }
         .width(36).height(36).type(ButtonType.Circle).backgroundColor($r('app.color.surface2'))
@@ -42,7 +42,7 @@ export struct Toolbar {
 
         Button() {
           Row({ space: 4 }) {
-            TablerIcon('arrow-right', 18, this.canRedo ? $r('app.color.text') : '#D1D5DB')
+            TablerIcon('arrow-right', 18, this.canRedo ? $r('app.color.icon_color') : $r('app.color.muted_text'))
           }
         }
         .width(36).height(36).type(ButtonType.Circle).backgroundColor($r('app.color.surface2'))
