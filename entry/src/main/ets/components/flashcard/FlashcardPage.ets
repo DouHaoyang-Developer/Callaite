@@ -57,7 +57,7 @@ export struct FlashcardPage {
     Column({ space: 16 }) {
       // 顶部导航 + 进度
       Row({ space: 12 }) {
-        Row() { TablerIcon('arrow-left', 18, $r('app.color.text')) }
+        Row() { TablerIcon('arrow-left', 20, $r('app.color.text')) }
         .width(36).height(36)
         .onClick(() => { AppState.setCurrentPage('Journal'); })
 

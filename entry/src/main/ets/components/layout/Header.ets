@@ -23,8 +23,9 @@ export struct Header {
 
   /**
    * 显示标题：Journal → 今日日期；其他 → 页面名。
+   * 注意：必须是普通方法 —— struct 上的 getter 会被 ArkTS 编译器静默丢弃。
    */
-  get displayTitle(): string {
+  getDisplayTitle(): string {
     if (this.currentPage === 'Journal') {
       return JournalService.getTodayDateString();
     }
@@ -32,10 +33,12 @@ export struct Header {
   }
 
   build() {
-    Row({ space: 4 }) {
+    Row({ space: 0 }) {
       // ─── 左侧：菜单 + 后退 + 前进 + 搜索 ───
-      this.IconButton('menu-2', this.leftSidebarOpen,
-        () => { AppState.toggleLeftSidebar(); })
+      // 菜单按钮必须始终可点击（enabled=true），否则抽屉关闭后无法再打开；
+      // 打开状态通过 active 参数高亮表达。
+      this.IconButton('menu-2', true,
+        () => { AppState.toggleLeftSidebar(); }, this.leftSidebarOpen)
 
       this.IconButton('arrow-left', AppState.canGoBack(),
         () => { AppState.goBack(); })
@@ -48,7 +51,7 @@ export struct Header {
 
       // ─── 中间：页面标题（含日志页前后日期导航）───
       Row({ space: 6 }) {
-        Text(this.displayTitle)
+        Text(this.getDisplayTitle())
           .fontSize(15)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text'))
@@ -58,19 +61,19 @@ export struct Header {
 
         // 日志页：显示前后日期导航箭头（logseq journal 风格）
         if (this.currentPage === 'Journal') {
-          Row({ space: 2 }) {
+          Row({ space: 0 }) {
             Row() {
-              TablerIcon('chevron-left', 14, $r('app.color.muted_text'))
+              TablerIcon('chevron-left', 18, $r('app.color.muted_text'))
             }
-            .width(22).height(22).borderRadius(4)
+            .width(32).height(32).borderRadius(4)
             .onClick(() => {
               AppState.setCurrentPage(JournalService.getYesterdayDateString());
             })
 
             Row() {
-              TablerIcon('chevron-right', 14, $r('app.color.muted_text'))
+              TablerIcon('chevron-right', 18, $r('app.color.muted_text'))
             }
-            .width(22).height(22).borderRadius(4)
+            .width(32).height(32).borderRadius(4)
             .onClick(() => {
               AppState.setCurrentPage(JournalService.getTomorrowDateString());
             })
@@ -89,34 +92,35 @@ export struct Header {
 
       // 三点菜单（logseq toolbar-dots-menu）
       Row() {
-        TablerIcon('dots-vertical', 18, $r('app.color.text'))
+        TablerIcon('dots-vertical', 24, $r('app.color.text'))
       }
-      .width(32).height(32).borderRadius(4)
+      .width(48).height(48).borderRadius(4)
       .bindMenu(this.DotsMenu)
 
       this.IconButton('layout-sidebar-right', true,
         () => { AppState.toggleRightSidebar(); }, this.rightSidebarOpen)
     }
     .width('100%')
-    .height(44)
-    .padding({ left: 10, right: 10 })
+    .height(48)
+    .padding({ left: 8, right: 8 })
     .backgroundColor($r('app.color.surface0'))
     .border({ width: { bottom: 1 }, color: $r('app.color.border') })
   }
 
   /**
    * 通用图标按钮 Builder。
+   * 华为规范：触控目标 ≥ 44vp；导航图标 24vp。
    * active 参数用于在按钮处于激活态时使用主色高亮（如右侧栏已打开）。
    */
   @Builder
   IconButton(name: string, enabled: boolean, onClick: () => void, active: boolean = false) {
     Row() {
-      TablerIcon(name, 18,
+      TablerIcon(name, 24,
         enabled
           ? (active ? $r('app.color.primary') : $r('app.color.text'))
           : $r('app.color.muted_text'))
     }
-    .width(32).height(32).borderRadius(4)
+    .width(48).height(48).borderRadius(4)
     .opacity(enabled ? 1 : 0.4)
     .onClick(() => {
       if (enabled) {

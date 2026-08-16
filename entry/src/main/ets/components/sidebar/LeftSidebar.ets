@@ -89,8 +89,10 @@ export struct LeftSidebar {
 
   /**
    * 导航项列表 — 对应 logseq sidebar 顶部 nav 区。
+   * 注意：必须是普通方法 —— ArkTS 编译器会静默丢弃 @Component struct 上的
+   * getter（导致 navItems 为 undefined，导航区整体不渲染）。
    */
-  get navItems(): NavItem[] {
+  getNavItems(): NavItem[] {
     const items: NavItem[] = [];
     items[0] = { key: 'Journal', label: t('nav_journals'), iconName: 'calendar' };
     items[1] = { key: 'AllPages', label: t('nav_all_pages'), iconName: 'apps' };
@@ -105,7 +107,7 @@ export struct LeftSidebar {
     Column({ space: 0 }) {
       // ─── App Name Header ───
       Row({ space: 10 }) {
-        TablerIcon('bolt', 18, $r('app.color.primary'))
+        TablerIcon('bolt', 20, $r('app.color.primary'))
         Text(t('app_name'))
           .fontSize(17)
           .fontWeight(FontWeight.Bold)
@@ -123,7 +125,7 @@ export struct LeftSidebar {
         Column({ space: 0 }) {
           // 导航区（logseq sidebar 顶部）
           this.SectionHeader(t('sidebar_navigations'), 'menu-2')
-          ForEach(this.navItems, (item: NavItem) => {
+          ForEach(this.getNavItems(), (item: NavItem) => {
             this.NavRow(item)
           }, (item: NavItem) => item.key)
           this.SectionSpacer()
@@ -145,7 +147,7 @@ export struct LeftSidebar {
           ForEach(this.getNamespaceGroups(), (ns: string) => {
             if (ns !== '') {
               Row({ space: 6 }) {
-                TablerIcon('folder', 12, $r('app.color.muted_text'))
+                TablerIcon('folder', 16, $r('app.color.muted_text'))
                 Text(ns)
                   .fontSize(11)
                   .fontWeight(FontWeight.Medium)
@@ -168,13 +170,16 @@ export struct LeftSidebar {
       // ─── Footer：设置 ───
       Divider().color($r('app.color.border')).width('100%')
       Row({ space: 8 }) {
-        TablerIcon('settings', 15, $r('app.color.muted_text'))
-        Text(t('settings')).fontSize(13).fontColor($r('app.color.muted_text'))
+        TablerIcon('settings', 18, $r('app.color.muted_text'))
+        Text(t('settings')).fontSize(14).fontColor($r('app.color.muted_text'))
       }
       .width('100%')
       .height(40)
       .padding({ left: 18, right: 16 })
-      .onClick(() => { AppState.setCurrentPage('Settings'); })
+      .onClick(() => {
+        AppState.setLeftSidebarOpen(false);
+        AppState.setCurrentPage('Settings');
+      })
     }
     .width('100%')
     .height('100%')
@@ -189,11 +194,12 @@ export struct LeftSidebar {
   @Builder
   SectionHeader(title: string, iconName: string) {
     Row({ space: 6 }) {
-      TablerIcon(iconName, 13, $r('app.color.muted_text'))
+      TablerIcon(iconName, 14, $r('app.color.muted_text'))
       Text(title.toUpperCase())
         .fontSize(11)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.muted_text'))
+        .letterSpacing(0.6)
     }
     .width('100%')
     .padding({ left: 20, right: 16, top: 14, bottom: 6 })
@@ -223,12 +229,12 @@ export struct LeftSidebar {
   @Builder
   NavRow(item: NavItem) {
     Row({ space: 10 }) {
-      TablerIcon(item.iconName, 15,
+      TablerIcon(item.iconName, 20,
         this.currentPage === item.key
           ? $r('app.color.primary')
-          : $r('app.color.text'))
+          : $r('app.color.muted_text'))
       Text(item.label)
-        .fontSize(13)
+        .fontSize(14)
         .fontColor(this.currentPage === item.key
           ? $r('app.color.primary')
           : $r('app.color.text'))
@@ -238,13 +244,15 @@ export struct LeftSidebar {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .width('100%')
-    .height(30)
+    .height(40)
     .padding({ left: 20, right: 14 })
     .borderRadius(4)
     .backgroundColor(this.currentPage === item.key
       ? $r('app.color.surface2')
       : Color.Transparent)
     .onClick(() => {
+      // 导航后关闭抽屉（窄屏模式），避免遮挡目标页面
+      AppState.setLeftSidebarOpen(false);
       if ((item.key === 'Flashcards' && !SubscriptionService.canUseFeature('flashcard')) ||
         (item.key === 'Pdf' && !SubscriptionService.canUseFeature('pdf'))) {
         AppState.setCurrentPage('ProUpgrade');
@@ -270,7 +278,7 @@ export struct LeftSidebar {
           .onSubmit(() => { this.commitRename(); })
       } else {
         Text(name)
-          .fontSize(13)
+          .fontSize(14)
           .fontColor(this.currentPage === name
             ? $r('app.color.primary')
             : $r('app.color.text'))
@@ -280,19 +288,19 @@ export struct LeftSidebar {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .onClick(() => { AppState.setCurrentPage(name); })
       }
-      Row() { TablerIcon('edit', 12, $r('app.color.muted_text')) }
-        .width(16)
-        .height(16)
+      Row() { TablerIcon('edit', 16, $r('app.color.muted_text')) }
+        .width(28)
+        .height(28)
         .opacity(0.4)
         .onClick(() => { this.startRename(name); })
-      Row() { TablerIcon('trash', 12, $r('app.color.danger')) }
-        .width(16)
-        .height(16)
+      Row() { TablerIcon('trash', 16, $r('app.color.danger')) }
+        .width(28)
+        .height(28)
         .opacity(0.4)
         .onClick(() => { this.deletePage(name); })
     }
     .width('100%')
-    .height(30)
+    .height(40)
     .padding({ left: 20, right: 14 })
     .borderRadius(4)
     .backgroundColor(this.currentPage === name

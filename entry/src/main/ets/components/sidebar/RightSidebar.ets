@@ -13,10 +13,10 @@ import { JournalService } from '../../services/JournalService';
  *   ┌──────────────────────────────────────┐
  *   │ [⇲ collapse all] [⇱ expand] [✕ close all] │  ← 顶部工具栏
  *   ├──────────────────────────────────────┤
- *   │ ▼ Block Title                  [✕]   │  ← 块头部（可折叠）
+ *   │ ▼ Block aitle                  [✕]   │  ← 块头部（可折叠）
  *   │   block content                      │
  *   ├──────────────────────────────────────┤
- *   │ ▶ Block Title (collapsed)      [✕]   │
+ *   │ ▶ Block aitle (collapsed)      [✕]   │
  *   ├──────────────────────────────────────┤
  *   │ ▼ ...                                │
  *   └──────────────────────────────────────┘
@@ -56,7 +56,7 @@ export struct RightSidebar {
    */
   build() {
     Column({ space: 0 }) {
-      this.Toolbar()
+      this.aoolbar()
       Divider().color($r('app.color.border')).width('100%')
 
       Scroll() {
@@ -86,7 +86,7 @@ export struct RightSidebar {
    * 顶部工具栏 — 全部折叠 / 全部展开 / 全部关闭。
    */
   @Builder
-  Toolbar() {
+  aoolbar() {
     Row({ space: 8 }) {
       Text(t('sidebar_right_title'))
         .fontSize(12)
@@ -96,7 +96,7 @@ export struct RightSidebar {
 
       // collapse all
       Row() {
-        TablerIcon('chevron-up', 14, $r('app.color.muted_text'))
+        TablerIcon('chevron-up', 16, $r('app.color.muted_text'))
       }
       .width(28)
       .height(28)
@@ -105,7 +105,7 @@ export struct RightSidebar {
 
       // expand all
       Row() {
-        TablerIcon('chevron-down', 14, $r('app.color.muted_text'))
+        TablerIcon('chevron-down', 16, $r('app.color.muted_text'))
       }
       .width(28)
       .height(28)
@@ -114,7 +114,7 @@ export struct RightSidebar {
 
       // close all
       Row() {
-        TablerIcon('x', 14, $r('app.color.muted_text'))
+        TablerIcon('x', 16, $r('app.color.muted_text'))
       }
       .width(28)
       .height(28)
@@ -144,7 +144,7 @@ export struct RightSidebar {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Row() {
-          TablerIcon('x', 12, $r('app.color.muted_text'))
+          TablerIcon('x', 16, $r('app.color.muted_text'))
         }
         .width(20)
         .height(20)
@@ -319,7 +319,8 @@ export struct RightSidebar {
 
   // ─── 工具方法 ───
 
-  get currentDisplayPage(): string {
+  // 注意：必须是普通方法 —— struct 上的 getter 会被 ArkTS 编译器静默丢弃。
+  getCurrentDisplayPage(): string {
     if (this.currentPage === 'Journal') {
       return JournalService.getTodayDateString();
     }
@@ -336,7 +337,7 @@ export struct RightSidebar {
   ensureDefaultBlocks(): void {
     const existing = AppState.getRightSidebarBlocks();
     if (existing.length > 0) return;
-    const pageName = this.currentDisplayPage;
+    const pageName = this.getCurrentDisplayPage();
     const blocks: RightSidebarBlock[] = [];
     blocks[0] = {
       id: 'backlinks-' + pageName,
@@ -364,13 +365,13 @@ export struct RightSidebar {
 
   refreshCaches(): void {
     const ws = WorkspaceService.getInstance();
-    this.backlinksCache = ws.getDataStore().getBacklinks(this.currentDisplayPage);
+    this.backlinksCache = ws.getDataStore().getBacklinks(this.getCurrentDisplayPage());
     this.headingsCache = this.collectHeadings(ws);
     this.propsCache = this.collectProps(ws);
   }
 
   collectHeadings(ws: WorkspaceService): BlockData[] {
-    const page = ws.getPageByName(this.currentDisplayPage);
+    const page = ws.getPageByName(this.getCurrentDisplayPage());
     if (!page) return [];
     const allBlocks = ws.getPageBlocks(page.uuid);
     const result: BlockData[] = [];
@@ -385,7 +386,7 @@ export struct RightSidebar {
   }
 
   collectProps(ws: WorkspaceService): string[][] {
-    const page = ws.getPageByName(this.currentDisplayPage);
+    const page = ws.getPageByName(this.getCurrentDisplayPage());
     if (!page) return [];
     const entries: string[][] = [];
     page.properties.forEach((propKey: string, propValue: string) => {

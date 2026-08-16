@@ -1,5 +1,6 @@
 import { SupportedLanguage, I18n } from '../utils/i18n';
 import { ThemeManager, ThemeMode } from '../components/common/ThemeManager';
+import { display } from '@kit.ArkUI';
 
 export interface AppConfig {
   preferredLanguage: SupportedLanguage;
@@ -111,27 +112,75 @@ function mergeConfig(base: AppConfig, override: AppConfigPartial): AppConfig {
   return result;
 }
 
+/**
+ * 用字面量键序列化配置。
+ * 注意：不能用 JSON.stringify(config) —— release 属性混淆会把字段名重命名，
+ * 导致持久化的配置在跨版本/跨启动时无法解析。字面量键不受混淆影响。
+ */
+function serializeConfig(c: AppConfig): string {
+  let s = '{"preferredLanguage":"' + c.preferredLanguage + '"';
+  s += ',"themeMode":"' + c.themeMode + '"';
+  s += ',"leftSidebarOpen":' + (c.leftSidebarOpen ? 'true' : 'false');
+  s += ',"rightSidebarOpen":' + (c.rightSidebarOpen ? 'true' : 'false');
+  s += ',"showBullets":' + (c.showBullets ? 'true' : 'false');
+  s += ',"enableShortcuts":' + (c.enableShortcuts ? 'true' : 'false') + '}';
+  return s;
+}
+
+/**
+ * 用字面量键解析配置（与 serializeConfig 对应，混淆安全）。
+ */
+function parseConfig(raw: string): AppConfigPartial {
+  const part: AppConfigPartial = {};
+  try {
+    const o = JSON.parse(raw) as Record<string, Object>;
+    const pl = o['preferredLanguage'];
+    if (typeof pl === 'string' && (pl === 'zh-CN' || pl === 'en-US')) {
+      part.preferredLanguage = pl as SupportedLanguage;
+    }
+    const tm = o['themeMode'];
+    if (typeof tm === 'string' && (tm === 'light' || tm === 'dark' || tm === 'system')) {
+      part.themeMode = tm as ThemeMode;
+    }
+    const lo = o['leftSidebarOpen'];
+    if (typeof lo === 'boolean') {
+      part.leftSidebarOpen = lo;
+    }
+    const ro = o['rightSidebarOpen'];
+    if (typeof ro === 'boolean') {
+      part.rightSidebarOpen = ro;
+    }
+    const sb = o['showBullets'];
+    if (typeof sb === 'boolean') {
+      part.showBullets = sb;
+    }
+    const es = o['enableShortcuts'];
+    if (typeof es === 'boolean') {
+      part.enableShortcuts = es;
+    }
+  } catch (_e) {
+    // 解析失败返回空 partial（全默认）
+  }
+  return part;
+}
+
 export class AppState {
   static initialize(): void {
     ThemeManager.initDefault();
     I18n.initDefault();
 
     if (!AppStorage.has(STORAGE_KEYS.config)) {
-      AppStorage.setOrCreate(STORAGE_KEYS.config, JSON.stringify(DEFAULT_CONFIG));
+      AppStorage.setOrCreate(STORAGE_KEYS.config, serializeConfig(DEFAULT_CONFIG));
     }
 
     const storedConfig = AppStorage.get<string>(STORAGE_KEYS.config);
     let config = DEFAULT_CONFIG;
     if (storedConfig) {
-      try {
-        const parsed: AppConfigPartial = JSON.parse(storedConfig) as AppConfigPartial;
-        config = mergeConfig(DEFAULT_CONFIG, parsed);
-      } catch (e) {
-        console.error('[AppState] Failed to parse config', e);
-      }
+      const parsed: AppConfigPartial = parseConfig(storedConfig);
+      config = mergeConfig(DEFAULT_CONFIG, parsed);
     }
 
-    AppStorage.setOrCreate(STORAGE_KEYS.config, JSON.stringify(config));
+    AppStorage.setOrCreate(STORAGE_KEYS.config, serializeConfig(config));
     AppStorage.setOrCreate('language', config.preferredLanguage);
     AppStorage.setOrCreate('themeMode', config.themeMode);
 
@@ -139,7 +188,19 @@ export class AppState {
     AppStorage.setOrCreate(STORAGE_KEYS.currentPage, storedPage ?? 'Journal');
 
     const storedLeft = AppStorage.get<boolean>(STORAGE_KEYS.leftSidebarOpen);
-    AppStorage.setOrCreate(STORAGE_KEYS.leftSidebarOpen, storedLeft ?? config.leftSidebarOpen);
+    let leftDefault = storedLeft ?? config.leftSidebarOpen;
+    // 窄屏（手机）首次进入不自动弹出抽屉，避免遮挡主内容；用户可点菜单按钮打开。
+    // 必须在页面挂载前设置（EntryAbility 在 loadContent 前调用 initialize），
+    // 否则与 bindSheet 初始绑定产生框架竞态导致抽屉打开后立即关闭。
+    try {
+      const disp = display.getDefaultDisplaySync();
+      if (disp.width / disp.densityPixels < 768) {
+        leftDefault = false;
+      }
+    } catch (_e) {
+      // 取不到显示信息时保持默认值
+    }
+    AppStorage.setOrCreate(STORAGE_KEYS.leftSidebarOpen, leftDefault);
 
     const storedRight = AppStorage.get<boolean>(STORAGE_KEYS.rightSidebarOpen);
     AppStorage.setOrCreate(STORAGE_KEYS.rightSidebarOpen, storedRight ?? config.rightSidebarOpen);
@@ -170,18 +231,14 @@ export class AppState {
     if (!raw) {
       return DEFAULT_CONFIG;
     }
-    try {
-      const parsed: AppConfigPartial = JSON.parse(raw) as AppConfigPartial;
-      return mergeConfig(DEFAULT_CONFIG, parsed);
-    } catch (e) {
-      return DEFAULT_CONFIG;
-    }
+    const parsed: AppConfigPartial = parseConfig(raw);
+    return mergeConfig(DEFAULT_CONFIG, parsed);
   }
 
   static setConfig(config: AppConfigPartial): void {
     const current = AppState.getConfig();
     const merged = mergeConfig(current, config);
-    AppStorage.setOrCreate(STORAGE_KEYS.config, JSON.stringify(merged));
+    AppStorage.setOrCreate(STORAGE_KEYS.config, serializeConfig(merged));
     if (config.preferredLanguage !== undefined) {
       AppStorage.setOrCreate('language', config.preferredLanguage);
       I18n.setLanguage(config.preferredLanguage);

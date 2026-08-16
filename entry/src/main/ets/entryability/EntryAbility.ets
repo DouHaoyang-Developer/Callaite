@@ -5,7 +5,6 @@ import { AppState } from '../state/AppState';
 import { ThemeManager } from '../components/common/ThemeManager';
 import { FileService } from '../services/FileService';
 import { WorkspaceService } from '../services/WorkspaceService';
-import { TestDataService } from '../services/TestDataService';
 import { CollaborationService } from '../services/CollaborationService';
 import { SubscriptionService } from '../services/SubscriptionService';
 import { EncryptionService } from '../services/EncryptionService';
@@ -15,6 +14,7 @@ import { ContinuationManager } from '../services/ContinuationManager';
 import { HuaweiAccountService } from '../services/HuaweiAccountService';
 import { BlockMetadataSyncService } from '../services/BlockMetadataSyncService';
 import { ErrorRecoveryService } from '../services/ErrorRecoveryService';
+import { StatePersistence } from '../state/StatePersistence';
 
 const DOMAIN = 0x0001;
 
@@ -25,10 +25,14 @@ export default class EntryAbility extends UIAbility {
     // 设置应用上下文（FileService 需要 context 获取沙箱路径）
     FileService.setContext(this.context);
 
+    // 恢复跨进程状态（引导标志/主题/语言/配置等），必须在任何 UI 加载前执行
+    StatePersistence.load();
+
     // 启用崩溃恢复与全局异常捕获
     ErrorRecoveryService.init();
 
     try {
+      // 启动初期先跟随系统，持久化主题在 AppState.initialize 之后由 applyPersistedTheme 应用
       this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (err) {
       hilog.error(DOMAIN, 'EntryAbility', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
@@ -59,9 +63,6 @@ export default class EntryAbility extends UIAbility {
     // 1. 初始化文件服务并加载 Graph
     FileService.initGraph();
 
-    // 1.5 播种测试数据
-    TestDataService.seedIfEmpty();
-
     // 1.6 初始化分布式协同
     CollaborationService.getInstance().init(this.context);
 
@@ -87,6 +88,10 @@ export default class EntryAbility extends UIAbility {
 
     // 2. 初始化全局状态（主题、i18n、AppStorage 默认值）
     AppState.initialize();
+
+    // 2.5 应用持久化主题（必须在 AppStorage 初始化后、loadContent 前执行，
+    //     否则 dark/light 资源限定符不会切换，主题设置形同虚设）
+    ThemeManager.applyPersistedTheme();
 
     // 3. 加载主页面
     windowStage.loadContent('pages/Index', (err) => {
@@ -115,6 +120,9 @@ export default class EntryAbility extends UIAbility {
     } catch (_e) {
       // 保存失败不阻塞
     }
+
+    // 保存跨进程状态（引导标志/主题/语言/配置/收藏等）
+    StatePersistence.save();
 
     // 保存后触发端云协同同步
     try {

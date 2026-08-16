@@ -37,8 +37,9 @@ export struct PageContextMenu {
 
   /**
    * 菜单项列表。
+   * 注意：必须是普通方法 —— struct 上的 getter 会被 ArkTS 编译器静默丢弃。
    */
-  get menuItems(): ContextMenuItem[] {
+  getMenuItems(): ContextMenuItem[] {
     const items: ContextMenuItem[] = [];
     items[0] = {
       key: 'open',
@@ -208,7 +209,7 @@ export struct PageContextMenu {
             .border({ width: { bottom: 1 }, color: $r('app.color.border') })
 
             // 菜单项
-            ForEach(this.menuItems, (item: ContextMenuItem) => {
+            ForEach(this.getMenuItems(), (item: ContextMenuItem) => {
               this.MenuItemRow(item)
             }, (item: ContextMenuItem) => item.key)
           }

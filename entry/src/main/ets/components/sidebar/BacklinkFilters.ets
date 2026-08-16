@@ -240,7 +240,7 @@ export struct BacklinkFilters {
 
       // ─── 反链计数 ───
       Row({ space: 6 }) {
-        TablerIcon('link', 12, $r('app.color.muted_text'))
+        TablerIcon('link', 14, $r('app.color.muted_text'))
         Text('共 ' + this.getFilteredBacklinks().length.toString() + ' 条反链')
           .fontSize(11)
           .fontColor($r('app.color.muted_text'))

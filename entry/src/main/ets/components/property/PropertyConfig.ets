@@ -321,7 +321,7 @@ export struct PropertyConfig {
             .layoutWeight(1)
 
           Row() {
-            TablerIcon('plus', 18, $r('app.color.primary'))
+            TablerIcon('plus', 16, $r('app.color.primary'))
           }
           .width(36).height(36)
           .onClick(() => {

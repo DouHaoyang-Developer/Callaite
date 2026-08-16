@@ -49,7 +49,7 @@ export struct PdfPage {
       Column() {
         Row({ space: 8 }) {
           Row() {
-            TablerIcon('arrow-left', 18, $r('app.color.text'))
+            TablerIcon('arrow-left', 20, $r('app.color.text'))
           }
           .width(32).height(32)
           .justifyContent(FlexAlign.Center)
@@ -72,7 +72,7 @@ export struct PdfPage {
       Column({ space: 0 }) {
         Row({ space: 8 }) {
           Row() {
-            TablerIcon('arrow-left', 18, $r('app.color.text'))
+            TablerIcon('arrow-left', 20, $r('app.color.text'))
           }
           .width(32).height(32)
           .justifyContent(FlexAlign.Center)

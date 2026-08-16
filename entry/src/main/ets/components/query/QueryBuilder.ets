@@ -23,7 +23,7 @@ export struct QueryBuilder {
     Column({ space: 12 }) {
       // 标题
       Row({ space: 8 }) {
-        TablerIcon('search', 18, $r('app.color.primary'))
+        TablerIcon('search', 16, $r('app.color.primary'))
         Text('查询构建器')
           .fontSize(16)
           .fontWeight(FontWeight.Bold)

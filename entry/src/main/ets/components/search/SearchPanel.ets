@@ -226,7 +226,7 @@ export struct SearchPanel {
         Column({ space: 0 }) {
           // 搜索框
           Row({ space: 10 }) {
-            TablerIcon('search', 18, $r('app.color.muted_text'))
+            TablerIcon('search', 20, $r('app.color.muted_text'))
 
             TextInput({ text: this.searchQuery, controller: this.inputController, placeholder: '搜索页面或内容...' })
               .fontSize(14)
@@ -274,7 +274,7 @@ export struct SearchPanel {
                 // 空搜索词时显示"最近访问"标题
                 if (this.searchQuery === '') {
                   Row({ space: 6 }) {
-                    TablerIcon('refresh', 12, $r('app.color.muted_text'))
+                    TablerIcon('refresh', 14, $r('app.color.muted_text'))
                     Text(t('recent').toUpperCase())
                       .fontSize(11)
                       .fontWeight(FontWeight.Bold)
@@ -348,7 +348,7 @@ export struct SearchPanel {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
           Row({ space: 4 }) {
-            TablerIcon('file', 10, $r('app.color.muted_text'))
+            TablerIcon('file', 14, $r('app.color.muted_text'))
             Text(result.pageName)
               .fontSize(11)
               .fontColor($r('app.color.muted_text'))

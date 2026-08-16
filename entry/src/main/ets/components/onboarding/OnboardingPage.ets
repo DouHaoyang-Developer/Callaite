@@ -1,5 +1,6 @@
 import { TablerIcon } from '../common/Icons';
 import { AppState } from '../../state/AppState';
+import { StatePersistence } from '../../state/StatePersistence';
 
 interface ShortcutItem {
   keys: string;
@@ -141,9 +142,9 @@ export struct OnboardingPage {
   StepSample() {
     Column({ space: 20 }) {
       TablerIcon('check', 40, $r('app.color.primary'))
-      Text('示例页面已就绪')
+      Text('一切就绪')
         .fontSize(24).fontWeight(FontWeight.Bold).fontColor($r('app.color.text'))
-      Text('我们已为你创建示例页面，包含基础用法演示。点击「开始使用」进入应用，开始你的知识管理之旅。')
+      Text('现在开始记录你的第一条笔记。点击「开始使用」进入应用，开启你的知识管理之旅。')
         .fontSize(15).fontColor($r('app.color.muted_text'))
         .textAlign(TextAlign.Center)
     }
@@ -192,6 +193,8 @@ export struct OnboardingPage {
           .onClick(() => {
             AppStorage.setOrCreate('callaite_onboarded', true);
             AppState.setCurrentPage('Journal');
+            // 立即持久化引导完成标志（若应用在此刻被杀死，下次启动不再显示引导）
+            StatePersistence.save();
           })
       }
     }

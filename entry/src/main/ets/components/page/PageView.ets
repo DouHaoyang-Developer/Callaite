@@ -13,6 +13,8 @@ import { t } from '../../utils/i18n';
 import { TablerIcon } from '../common/Icons';
 import { AppState } from '../../state/AppState';
 import { PageData } from '../../core/models/Page';
+import { bundleManager } from '@kit.AbilityKit';
+import { display } from '@kit.ArkUI';
 
 @Component
 export struct PageView {
@@ -21,9 +23,34 @@ export struct PageView {
   @State showProperties: boolean = false;
   @State pagePropKeys: string[] = [];
   @State pagePropValues: string[] = [];
+  @State versionText: string = '';
 
   aboutToAppear(): void {
     this.resolvePage();
+    // 从 bundle 读取真实版本号（不再硬编码）
+    bundleManager.getBundleInfoForSelf(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION)
+      .then((info: bundleManager.BundleInfo) => {
+        this.versionText = 'v' + info.versionName;
+      })
+      .catch(() => {
+        this.versionText = '';
+      });
+  }
+
+  /**
+   * 响应式内容留白：窄屏（手机）20vp，宽屏（平板/2in1）48vp。
+   * Logseq 桌面端内容区更宽，移动端更紧凑。
+   */
+  getContentPadding(): number {
+    try {
+      const d = display.getDefaultDisplaySync();
+      if (d.width / d.densityPixels < 768) {
+        return 20;
+      }
+    } catch (_e) {
+      // 取不到显示信息时用窄屏值
+    }
+    return 48;
   }
 
   /**
@@ -80,13 +107,13 @@ export struct PageView {
       this.AboutView()
     } else {
       Column({ space: 0 }) {
-        // 页面标题（Logseq 风格: 大号粗体, 可点击编辑）
+        // 页面标题（Logseq 风格: 大号粗体）
         Text(this.displayName)
           .fontSize(36)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text'))
           .width('100%')
-          .padding({ top: 32, bottom: 4, left: 4, right: 4 })
+          .padding({ top: 20, bottom: 8 })
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
@@ -101,6 +128,7 @@ export struct PageView {
             .fontSize(11)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.muted_text'))
+            .letterSpacing(0.8)
           if (this.pagePropKeys.length > 0) {
             Text('· ' + this.pagePropKeys.length.toString())
               .fontSize(11)
@@ -165,7 +193,7 @@ export struct PageView {
       }
       .width('100%')
       .height('100%')
-      .padding({ left: 48, right: 48 })
+      .padding({ left: this.getContentPadding(), right: this.getContentPadding() })
       .alignItems(HorizontalAlign.Start)
     }
   }
@@ -287,9 +315,11 @@ export struct PageView {
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text'))
-        Text('v1.0.0')
-          .fontSize(13)
-          .fontColor($r('app.color.muted_text'))
+        if (this.versionText !== '') {
+          Text(this.versionText)
+            .fontSize(13)
+            .fontColor($r('app.color.muted_text'))
+        }
         Text(t('onboarding_desc'))
           .fontSize(13)
           .fontColor($r('app.color.muted_text'))

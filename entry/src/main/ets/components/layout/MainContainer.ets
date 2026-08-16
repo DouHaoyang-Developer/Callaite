@@ -60,14 +60,16 @@ export struct MainContainer {
     }
   }
 
-  get isCompact(): boolean {
+  // 注意：必须是普通方法 —— struct 上的 getter 会被 ArkTS 编译器静默丢弃，
+  // 导致 isCompact 恒为 undefined（内联侧栏永远显示、抽屉永远打不开）。
+  getIsCompact(): boolean {
     return this.windowWidth < 768;
   }
 
   build() {
     Row() {
       // ─── 左侧栏 ───
-      if (!this.isCompact && this.leftSidebarOpen) {
+      if (!this.getIsCompact() && this.leftSidebarOpen) {
         LeftSidebar()
           .width(this.leftWidth)
           .height('100%')
@@ -105,12 +107,22 @@ export struct MainContainer {
       }
 
       // ─── 主内容区 ───
+      // 右抽屉 bindSheet 绑定在 ContentArea 上：同一组件上链式多次 bindSheet
+      // 会互相覆盖（左侧抽屉生命周期被右侧覆盖导致打开即关闭），必须分开绑定。
       ContentArea()
         .layoutWeight(1)
         .height('100%')
+        .bindSheet(this.getIsCompact() && this.rightSidebarOpen, this.RightDrawerBuilder(), {
+          height: SheetSize.LARGE,
+          dragBar: false,
+          showClose: false,
+          onDisappear: () => {
+            AppState.setRightSidebarOpen(false);
+          }
+        })
 
       // ─── 右侧栏 + resizer ───
-      if (!this.isCompact && this.rightSidebarOpen) {
+      if (!this.getIsCompact() && this.rightSidebarOpen) {
         // 右 resizer
         Row() {
           Column()
@@ -150,20 +162,12 @@ export struct MainContainer {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.surface0'))
-    .bindSheet(this.isCompact && this.leftSidebarOpen, this.LeftDrawerBuilder(), {
+    .bindSheet(this.getIsCompact() && this.leftSidebarOpen, this.LeftDrawerBuilder(), {
       height: SheetSize.LARGE,
       dragBar: false,
       showClose: false,
       onDisappear: () => {
         AppState.setLeftSidebarOpen(false);
-      }
-    })
-    .bindSheet(this.isCompact && this.rightSidebarOpen, this.RightDrawerBuilder(), {
-      height: SheetSize.LARGE,
-      dragBar: false,
-      showClose: false,
-      onDisappear: () => {
-        AppState.setRightSidebarOpen(false);
       }
     })
   }

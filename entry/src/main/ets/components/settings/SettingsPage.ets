@@ -232,7 +232,7 @@ export struct SettingsPage {
       // 固定标题栏
       Row({ space: 12 }) {
         Row() {
-          TablerIcon('arrow-left', 18, $r('app.color.text'))
+          TablerIcon('arrow-left', 20, $r('app.color.text'))
         }
         .width(36).height(36)
         .onClick(() => {
@@ -255,7 +255,7 @@ export struct SettingsPage {
           this.ThemeOption('theme_light', ThemeMode.LIGHT)
           this.ThemeOption('theme_dark', ThemeMode.DARK)
           this.ThemeOption('theme_system', ThemeMode.SYSTEM)
-          this.SelectRow('字体大小', this.buildFontSizeOptions(), this.fontSizeIndex, (index: number) => {
+          this.SelectRow(t('font_size'), this.buildFontSizeOptions(), this.fontSizeIndex, (index: number) => {
             this.fontSizeIndex = index;
             AppStorage.setOrCreate(KEY_FONT_SIZE, FONT_SIZES[index]);
           })
@@ -270,16 +270,16 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 编辑器 ───
-          this.SectionHeader('编辑器', 'edit')
-          this.ToggleRow('显示 Bullet', this.showBullets, (on: boolean) => {
+          this.SectionHeader(t('editor'), 'edit')
+          this.ToggleRow(t('show_bullets'), this.showBullets, (on: boolean) => {
             this.showBullets = on;
             AppStorage.setOrCreate(KEY_SHOW_BULLETS, on);
           })
-          this.SelectRow('自动保存间隔', this.buildAutoSaveOptions(), this.autoSaveIntervalIndex, (index: number) => {
+          this.SelectRow(t('autosave_interval'), this.buildAutoSaveOptions(), this.autoSaveIntervalIndex, (index: number) => {
             this.autoSaveIntervalIndex = index;
             AppStorage.setOrCreate(KEY_AUTO_SAVE_INTERVAL, AUTO_SAVE_INTERVALS[index]);
           })
-          this.SelectRow('Tab 缩进宽度', this.buildTabWidthOptions(), this.tabWidthIndex, (index: number) => {
+          this.SelectRow(t('tab_width'), this.buildTabWidthOptions(), this.tabWidthIndex, (index: number) => {
             this.tabWidthIndex = index;
             AppStorage.setOrCreate(KEY_TAB_WIDTH, TAB_WIDTHS[index]);
           })
@@ -287,7 +287,7 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 快捷键 ───
-          this.SectionHeader('快捷键', 'keyboard')
+          this.SectionHeader('shortcuts', 'keyboard')
           this.ButtonRow('自定义快捷键', 'keyboard', () => {
             this.currentSection = 'shortcuts';
           })
@@ -328,14 +328,14 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 同步 ───
-          this.SectionHeader('同步', 'cloud')
-          this.ToggleRow('云同步', this.cloudSyncEnabled, (on: boolean) => {
+          this.SectionHeader('sync', 'cloud')
+          this.ToggleRow(t('cloud_sync'), this.cloudSyncEnabled, (on: boolean) => {
             this.cloudSyncEnabled = on;
             AppStorage.setOrCreate(KEY_CLOUD_SYNC, on);
             CloudSyncService.setEnabled(on);
             this.refreshSyncStatus();
           })
-          this.ToggleRow('协同编辑', this.collabEnabled, (on: boolean) => {
+          this.ToggleRow(t('collab_edit'), this.collabEnabled, (on: boolean) => {
             this.collabEnabled = on;
             AppStorage.setOrCreate(KEY_COLLAB, on);
           })
@@ -362,7 +362,7 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 账户 ───
-          this.SectionHeader('账户', 'user')
+          this.SectionHeader('account', 'user')
           Row({ space: 8 }) {
             Text('华为账号')
               .fontSize(14)
@@ -418,7 +418,7 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 插件 ───
-          this.SectionHeader('插件', 'puzzle')
+          this.SectionHeader('plugins', 'puzzle')
           ForEach(this.plugins, (p: PluginInfo) => {
             this.PluginRow(p)
           }, (p: PluginInfo) => p.id)
@@ -426,7 +426,7 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 数据 ───
-          this.SectionHeader('数据', 'database')
+          this.SectionHeader('data', 'database')
           this.ButtonRow('导出数据', 'download', () => { AppState.setExportDialogOpen(true); })
           this.ButtonRow('导入数据', 'upload', () => { AppState.setImportDialogOpen(true); })
           this.ButtonRow('清除缓存', 'trash', () => { this.clearCache(); })
@@ -436,7 +436,7 @@ export struct SettingsPage {
           // ─── 关于 ───
           this.SectionHeader('about', 'info-circle')
           Row({ space: 12 }) {
-            TablerIcon('info-circle', 18, $r('app.color.muted_text'))
+            TablerIcon('info-circle', 16, $r('app.color.muted_text'))
             Column({ space: 4 }) {
               Text('Callaite v1.0.0')
                 .fontSize(15)
@@ -578,13 +578,13 @@ export struct SettingsPage {
   @Builder
   ThemeOption(labelKey: string, mode: ThemeMode) {
     Row({ space: 12 }) {
-      TablerIcon('palette', 18, this.selectedTheme === mode ? $r('app.color.primary') : $r('app.color.muted_text'))
+      TablerIcon('palette', 16, this.selectedTheme === mode ? $r('app.color.primary') : $r('app.color.muted_text'))
       Text(t(labelKey))
         .fontSize(16)
         .fontColor(this.selectedTheme === mode ? $r('app.color.primary') : $r('app.color.text'))
         .layoutWeight(1)
       if (this.selectedTheme === mode) {
-        TablerIcon('check', 18, $r('app.color.primary'))
+        TablerIcon('check', 16, $r('app.color.primary'))
       }
     }
     .width('100%')
@@ -602,13 +602,13 @@ export struct SettingsPage {
   @Builder
   LanguageOption(label: string, lang: SupportedLanguage) {
     Row({ space: 12 }) {
-      TablerIcon('world', 18, this.selectedLanguage === lang ? $r('app.color.primary') : $r('app.color.muted_text'))
+      TablerIcon('world', 16, this.selectedLanguage === lang ? $r('app.color.primary') : $r('app.color.muted_text'))
       Text(label)
         .fontSize(16)
         .fontColor(this.selectedLanguage === lang ? $r('app.color.primary') : $r('app.color.text'))
         .layoutWeight(1)
       if (this.selectedLanguage === lang) {
-        TablerIcon('check', 18, $r('app.color.primary'))
+        TablerIcon('check', 16, $r('app.color.primary'))
       }
     }
     .width('100%')

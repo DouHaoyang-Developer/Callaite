@@ -139,7 +139,7 @@ export struct SlashMenu {
       // ─── 模板选择子视图 ───
       Column() {
         Row({ space: 8 }) {
-          TablerIcon('chevron-left', 18, $r('app.color.text'))
+          TablerIcon('chevron-left', 16, $r('app.color.text'))
           Text('选择模板')
             .fontSize(14)
             .fontWeight(FontWeight.Medium)

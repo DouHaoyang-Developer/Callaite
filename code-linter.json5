@@ -13,7 +13,10 @@
   ],
   "ruleSet": [
     "plugin:@performance/recommended",
-    "plugin:@typescript-eslint/recommended"
+    "plugin:@typescript-eslint/recommended",
+    "plugin:@correctness/recommended",
+    "plugin:@cross-device-app-dev/recommended",
+    "plugin:@hw-stylistic/recommended"
   ],
   "rules": {
     "@security/no-unsafe-aes": "error",

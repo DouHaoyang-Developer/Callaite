@@ -71,8 +71,6 @@ export struct BlockList {
   @StorageLink('callaite_blocksVersion') @Watch('onBlocksVersionChanged') private blocksVersion: number = 0;
   // LazyForEach 数据源
   private dataSource: BlockDataSource = new BlockDataSource();
-  // FindInPage 组件引用
-  private findInPageRef: FindInPage = new FindInPage();
 
   aboutToAppear(): void {
     this.refreshBlocks();
@@ -142,49 +140,50 @@ export struct BlockList {
   }
 
   // ─── 空页面状态 ───
+  // Logseq 风格：左对齐的项目符号点 + 弱化占位提示，而非居中的大图标。
 
   @Builder
   EmptyState() {
-    Column({ space: 12 }) {
-      TablerIcon('edit', 40, $r('app.color.muted_text'))
-      Text(t('empty_page'))
-        .fontSize(16)
+    Row({ space: 10 }) {
+      // 项目符号点（Logseq 的标志性视觉元素）
+      Circle({ width: 5, height: 5 })
+        .fill($r('app.color.bullet'))
+      Text(t('placeholder_block'))
+        .fontSize(15)
         .fontColor($r('app.color.muted_text'))
-        .onClick(() => {
-          this.addTopLevelBlock();
-        })
     }
     .width('100%')
-    .padding({ top: 60 })
-    .alignItems(HorizontalAlign.Center)
+    .height(40)
+    .padding({ left: 6, top: 12 })
+    .onClick(() => {
+      this.addaopLevelBlock();
+    })
   }
 
   // ─── 底部添加按钮 ───
+  // Logseq 无显式添加按钮（回车即新建），这里弱化为幽灵行。
 
   @Builder
   AddBlockButton() {
-    Row() {
-      Row({ space: 8 }) {
-        TablerIcon('plus', 18, $r('app.color.muted_text'))
-        Text('添加 Block')
-          .fontSize(15)
-          .fontColor($r('app.color.muted_text'))
-      }
-      .width('100%')
-      .height(40)
-      .padding({ left: 8, right: 8 })
-      .borderRadius(6)
-      .onClick(() => {
-        this.addTopLevelBlock();
-      })
+    Row({ space: 10 }) {
+      Circle({ width: 5, height: 5 })
+        .fill($r('app.color.bullet'))
+      TablerIcon('plus', 15, $r('app.color.muted_text'))
+      Text(t('add'))
+        .fontSize(14)
+        .fontColor($r('app.color.muted_text'))
     }
     .width('100%')
-    .padding({ top: 8 })
+    .height(36)
+    .padding({ left: 6, top: 4 })
+    .onClick(() => {
+      this.addaopLevelBlock();
+    })
   }
 
   // ─── 操作 ───
 
-  addTopLevelBlock(): void {
+  addaopLevelBlock(): void {
     const ws = WorkspaceService.getInstance();
     const page = ws.getPageByName(this.pageName);
     if (!page) {

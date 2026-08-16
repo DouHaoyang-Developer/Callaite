@@ -209,7 +209,7 @@ export struct PropertyEditor {
               .fontSize(12)
               .fontColor($r('app.color.muted_text'))
             Row({ space: 4 }) {
-              TablerIcon('plus', 12, $r('app.color.primary'))
+              TablerIcon('plus', 14, $r('app.color.primary'))
               Text('添加属性')
                 .fontSize(12)
                 .fontColor($r('app.color.primary'))

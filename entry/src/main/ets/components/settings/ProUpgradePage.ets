@@ -22,7 +22,7 @@ export struct ProUpgradePage {
     Column({ space: 20 }) {
       // 标题
       Row({ space: 12 }) {
-        Row() { TablerIcon('arrow-left', 18, $r('app.color.text')) }
+        Row() { TablerIcon('arrow-left', 20, $r('app.color.text')) }
         .width(36).height(36)
         .onClick(() => { AppState.setCurrentPage('Settings'); })
 

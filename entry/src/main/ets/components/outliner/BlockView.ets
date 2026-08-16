@@ -155,7 +155,7 @@ export struct BlockView {
             // 悬停操作按钮
             if (this.isHovered || this.showActions) {
               Row() {
-                TablerIcon('dots', 12, $r('app.color.muted_text'))
+                TablerIcon('dots', 16, $r('app.color.muted_text'))
               }
               .width(20).height(20)
               .onClick(() => {
@@ -355,7 +355,7 @@ export struct BlockView {
     Row({ space: 8 }) {
       if (data.scheduled !== '') {
         Row({ space: 4 }) {
-          TablerIcon('calendar-event', 12, $r('app.color.primary'))
+          TablerIcon('calendar-event', 16, $r('app.color.primary'))
           Text('SCHEDULED: ' + data.scheduled)
             .fontSize(11)
             .fontColor($r('app.color.primary'))
@@ -366,7 +366,7 @@ export struct BlockView {
       }
       if (data.deadline !== '') {
         Row({ space: 4 }) {
-          TablerIcon('alarm', 12, $r('app.color.error'))
+          TablerIcon('alarm', 16, $r('app.color.error'))
           Text('DEADLINE: ' + data.deadline)
             .fontSize(11)
             .fontColor($r('app.color.error'))
@@ -386,8 +386,8 @@ export struct BlockView {
   ActionsBar() {
     Row({ space: 4 }) {
       // 缩进
-      Button() { TablerIcon('indent-increase', 14, $r('app.color.text')) }
-        .width(26).height(26).type(ButtonType.Circle)
+      Button() { TablerIcon('indent-increase', 18, $r('app.color.text')) }
+        .width(36).height(36).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
           EditorService.getInstance().indentBlock();
@@ -396,8 +396,8 @@ export struct BlockView {
           AppState.bumpBlocksVersion();
         })
       // 反缩进
-      Button() { TablerIcon('indent-decrease', 14, $r('app.color.text')) }
-        .width(26).height(26).type(ButtonType.Circle)
+      Button() { TablerIcon('indent-decrease', 18, $r('app.color.text')) }
+        .width(36).height(36).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
           EditorService.getInstance().outdentBlock();
@@ -406,8 +406,8 @@ export struct BlockView {
           AppState.bumpBlocksVersion();
         })
       // 上移
-      Button() { TablerIcon('arrow-up', 14, $r('app.color.text')) }
-        .width(26).height(26).type(ButtonType.Circle)
+      Button() { TablerIcon('arrow-up', 18, $r('app.color.text')) }
+        .width(36).height(36).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
           EditorService.getInstance().moveBlockUp();
@@ -416,8 +416,8 @@ export struct BlockView {
           AppState.bumpBlocksVersion();
         })
       // 下移
-      Button() { TablerIcon('arrow-down', 14, $r('app.color.text')) }
-        .width(26).height(26).type(ButtonType.Circle)
+      Button() { TablerIcon('arrow-down', 18, $r('app.color.text')) }
+        .width(36).height(36).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
           EditorService.getInstance().moveBlockDown();
@@ -428,9 +428,9 @@ export struct BlockView {
       // 折叠/展开
       if (this.hasChildrenFlag) {
         Button() {
-          TablerIcon(this.isCollapsed ? 'chevron-down' : 'chevron-up', 14, $r('app.color.text'))
+          TablerIcon(this.isCollapsed ? 'chevron-down' : 'chevron-up', 18, $r('app.color.text'))
         }
-        .width(26).height(26).type(ButtonType.Circle)
+        .width(36).height(36).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
           this.toggleCollapse();
@@ -438,8 +438,8 @@ export struct BlockView {
         })
       }
       // 删除
-      Button() { TablerIcon('trash', 14, $r('app.color.error')) }
-        .width(26).height(26).type(ButtonType.Circle)
+      Button() { TablerIcon('trash', 18, $r('app.color.error')) }
+        .width(36).height(36).type(ButtonType.Circle)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
           WorkspaceService.getInstance().executeOp({ type: 'delete-block', uuid: this.blockUuid });

@@ -1,4 +1,5 @@
 import { findIconPath, IconPathData } from './TablerIconPaths';
+import { display } from '@kit.ArkUI';
 
 interface IconSvgParams {
   pathData: IconPathData;
@@ -21,11 +22,55 @@ struct IconRenderer {
     this.pathData = findIconPath(this.name);
   }
 
-  private resolveStrokeWidth(): number {
-    // Tabler 图标以 24x24 为设计坐标系、标准线宽 2，按渲染尺寸等比缩放线宽，
-    // 避免大图标线条过粗、小图标线条过糊。
-    const width = this.iconSize / 12;
-    return width < 0.8 ? 0.8 : width;
+  /**
+   * 屏幕密度。Shape/Path 的坐标单位是该 SDK 上的物理像素
+   * （实测 24 单位方块渲染为 26x25px），因此必须按密度换算：
+   * 目标像素尺寸 = iconSize(vp) × densityPixels。
+   */
+  private densityScale(): number {
+    try {
+      const d = display.getDefaultDisplaySync();
+      return d.densityPixels > 0 ? d.densityPixels : 1;
+    } catch (_e) {
+      return 1;
+    }
+  }
+
+  private resolveStrokeWidthPx(): number {
+    // Tabler 标准线宽 2（24 设计坐标系），等比换算到像素
+    const px = this.iconSize * this.densityScale();
+    return px / 12;
+  }
+
+  /**
+   * 数值缩放路径坐标：Tabler 以 24x24 设计坐标系存储。
+   * 乘以 factor 后直接生成像素坐标。
+   */
+  private scaledPath(path: string, factor: number): string {
+    let out = '';
+    let i = 0;
+    while (i < path.length) {
+      const ch = path.charAt(i);
+      if (ch === '-' || ch === '.' || (ch >= '0' && ch <= '9')) {
+        let j = i;
+        while (j < path.length) {
+          const cj = path.charAt(j);
+          if (cj === '-' || cj === '.' || (cj >= '0' && cj <= '9')) {
+            j++;
+          } else {
+            break;
+          }
+        }
+        const numStr = path.substring(i, j);
+        const num = parseFloat(numStr);
+        out += (Math.round(num * factor * 100) / 100).toString();
+        i = j;
+      } else {
+        out += ch;
+        i++;
+      }
+    }
+    return out;
   }
 
   build() {
@@ -33,17 +78,18 @@ struct IconRenderer {
       Shape() {
         ForEach(this.pathData.paths, (path: string, index: number) => {
           Path()
-            .commands(path)
+            .width(this.iconSize * this.densityScale())
+            .height(this.iconSize * this.densityScale())
+            .commands(this.scaledPath(path, this.iconSize * this.densityScale() / 24))
             .fillOpacity(0)
             .stroke(this.iconColor)
-            .strokeWidth(this.resolveStrokeWidth())
+            .strokeWidth(this.resolveStrokeWidthPx())
             .strokeLineCap(LineCapStyle.Round)
             .strokeLineJoin(LineJoinStyle.Round)
         }, (path: string, index: number) => `${index}`)
       }
       .width(this.iconSize)
       .height(this.iconSize)
-      .viewPort({ x: 0, y: 0, width: 24, height: 24 })
     } else {
       // 未找到图标时使用带边框的占位框，避免误认为错位的实心圆
       Rect({ width: this.iconSize, height: this.iconSize, radius: this.iconSize * 0.18 })

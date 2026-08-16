@@ -287,7 +287,7 @@ export struct DatePicker {
           // 月份导航
           Row() {
             Row() {
-              TablerIcon('chevron-left', 18, $r('app.color.muted_text'))
+              TablerIcon('chevron-left', 16, $r('app.color.muted_text'))
             }
             .width(32).height(32)
             .onClick(() => {
@@ -302,7 +302,7 @@ export struct DatePicker {
               .textAlign(TextAlign.Center)
 
             Row() {
-              TablerIcon('chevron-right', 18, $r('app.color.muted_text'))
+              TablerIcon('chevron-right', 16, $r('app.color.muted_text'))
             }
             .width(32).height(32)
             .onClick(() => {

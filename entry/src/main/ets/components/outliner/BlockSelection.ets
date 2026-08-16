@@ -75,7 +75,7 @@ export struct BlockSelection {
         Row({ space: 8 }) {
           // ─── 选中数量显示 ───
           Row({ space: 4 }) {
-            TablerIcon('checkbox', 14, $r('app.color.primary'))
+            TablerIcon('checkbox', 18, $r('app.color.primary'))
             Text(this.selectedCount.toString())
               .fontSize(13)
               .fontColor($r('app.color.primary'))
@@ -87,7 +87,7 @@ export struct BlockSelection {
 
           // ─── 缩进按钮（→） ───
           Button() {
-            TablerIcon('indent-increase', 16, $r('app.color.text'))
+            TablerIcon('indent-increase', 18, $r('app.color.text'))
           }
           .width(32).height(32)
           .type(ButtonType.Circle)
@@ -98,7 +98,7 @@ export struct BlockSelection {
 
           // ─── 反缩进按钮（←） ───
           Button() {
-            TablerIcon('indent-decrease', 16, $r('app.color.text'))
+            TablerIcon('indent-decrease', 18, $r('app.color.text'))
           }
           .width(32).height(32)
           .type(ButtonType.Circle)
@@ -109,7 +109,7 @@ export struct BlockSelection {
 
           // ─── 删除按钮（×） ───
           Button() {
-            TablerIcon('trash', 16, $r('app.color.error'))
+            TablerIcon('trash', 18, $r('app.color.error'))
           }
           .width(32).height(32)
           .type(ButtonType.Circle)
@@ -120,7 +120,7 @@ export struct BlockSelection {
 
           // ─── 复制按钮 ───
           Button() {
-            TablerIcon('copy', 14, $r('app.color.text'))
+            TablerIcon('copy', 18, $r('app.color.text'))
           }
           .width(32).height(32)
           .type(ButtonType.Circle)
@@ -131,7 +131,7 @@ export struct BlockSelection {
 
           // ─── 全选按钮 ───
           Button() {
-            TablerIcon('square-check', 14, $r('app.color.text'))
+            TablerIcon('square-check', 18, $r('app.color.text'))
           }
           .width(32).height(32)
           .type(ButtonType.Circle)
@@ -142,7 +142,7 @@ export struct BlockSelection {
 
           // ─── 清除选择按钮 ───
           Button() {
-            TablerIcon('x', 14, $r('app.color.muted_text'))
+            TablerIcon('x', 18, $r('app.color.muted_text'))
           }
           .width(32).height(32)
           .type(ButtonType.Circle)

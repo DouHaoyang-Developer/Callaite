@@ -29,10 +29,10 @@ export struct Toolbar {
       Row({ space: 4 }) {
         Button() {
           Row({ space: 4 }) {
-            TablerIcon('arrow-left', 13, this.canUndo ? $r('app.color.text') : '#D1D5DB')
+            TablerIcon('arrow-left', 18, this.canUndo ? $r('app.color.text') : '#D1D5DB')
           }
         }
-        .width(28).height(28).type(ButtonType.Circle).backgroundColor('#F3F4F6')
+        .width(36).height(36).type(ButtonType.Circle).backgroundColor($r('app.color.surface2'))
         .enabled(this.canUndo)
         .onClick(() => {
           const editor = EditorService.getInstance();
@@ -42,10 +42,10 @@ export struct Toolbar {
 
         Button() {
           Row({ space: 4 }) {
-            TablerIcon('arrow-right', 13, this.canRedo ? $r('app.color.text') : '#D1D5DB')
+            TablerIcon('arrow-right', 18, this.canRedo ? $r('app.color.text') : '#D1D5DB')
           }
         }
-        .width(28).height(28).type(ButtonType.Circle).backgroundColor('#F3F4F6')
+        .width(36).height(36).type(ButtonType.Circle).backgroundColor($r('app.color.surface2'))
         .enabled(this.canRedo)
         .onClick(() => {
           const editor = EditorService.getInstance();

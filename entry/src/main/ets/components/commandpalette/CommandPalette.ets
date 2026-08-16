@@ -18,7 +18,7 @@ export struct CommandPalette {
     Column() {
       // 搜索输入框
       Row({ space: 8 }) {
-        TablerIcon('search', 18, $r('app.color.muted_text'))
+        TablerIcon('search', 16, $r('app.color.muted_text'))
         TextInput({ placeholder: t('placeholder_search'), text: this.queryText })
           .fontSize(16)
           .layoutWeight(1)
@@ -55,9 +55,9 @@ export struct CommandPalette {
             ForEach(this.results.slice(0, 15), (page: PageData) => {
               Row({ space: 12 }) {
                 if (page.journalDay !== '') {
-                  TablerIcon('calendar', 18, $r('app.color.muted_text'))
+                  TablerIcon('calendar', 16, $r('app.color.muted_text'))
                 } else {
-                  TablerIcon('file', 18, $r('app.color.muted_text'))
+                  TablerIcon('file', 16, $r('app.color.muted_text'))
                 }
 
                 Column({ space: 2 }) {

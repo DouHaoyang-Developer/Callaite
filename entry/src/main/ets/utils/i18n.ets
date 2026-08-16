@@ -1,3 +1,5 @@
+import { StatePersistence } from '../state/StatePersistence';
+
 export type SupportedLanguage = 'zh-CN' | 'en-US';
 
 const LANGUAGE_KEY = 'callaite_language';
@@ -103,6 +105,19 @@ function buildZhCN(): I18nDict {
   d.add('add_property_hint', 'key:: value 添加属性');
   d.add('empty_sidebar', '右侧栏为空');
   d.add('empty_sidebar_hint', '点击右侧栏图标查看页面信息');
+  // 设置页
+  d.add('font_size', '字体大小');
+  d.add('show_bullets', '显示 Bullet');
+  d.add('autosave_interval', '自动保存间隔');
+  d.add('tab_width', 'Tab 缩进宽度');
+  d.add('editor', '编辑器');
+  d.add('shortcuts', '快捷键');
+  d.add('sync', '同步');
+  d.add('account', '账户');
+  d.add('plugins', '插件');
+  d.add('data', '数据');
+  d.add('cloud_sync', '云同步');
+  d.add('collab_edit', '协同编辑');
   return d;
 }
 
@@ -186,6 +201,19 @@ function buildEnUS(): I18nDict {
   d.add('add_property_hint', 'key:: value to add property');
   d.add('empty_sidebar', 'Sidebar is empty');
   d.add('empty_sidebar_hint', 'Click right sidebar icons to view page info');
+  // Settings
+  d.add('font_size', 'Font Size');
+  d.add('show_bullets', 'Show Bullet');
+  d.add('autosave_interval', 'Autosave Interval');
+  d.add('tab_width', 'Tab Width');
+  d.add('editor', 'Editor');
+  d.add('shortcuts', 'Shortcuts');
+  d.add('sync', 'Sync');
+  d.add('account', 'Account');
+  d.add('plugins', 'Plugins');
+  d.add('data', 'Data');
+  d.add('cloud_sync', 'Cloud Sync');
+  d.add('collab_edit', 'Collaborative Editing');
   return d;
 }
 
@@ -218,6 +246,7 @@ export class I18n {
 
   static setLanguage(lang: SupportedLanguage): void {
     AppStorage.setOrCreate(LANGUAGE_KEY, lang);
+    StatePersistence.save();
   }
 
   /**

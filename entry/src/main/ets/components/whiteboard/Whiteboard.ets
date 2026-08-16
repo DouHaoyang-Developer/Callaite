@@ -855,7 +855,7 @@ export struct Whiteboard {
       Row({ space: 4 }) {
         // 返回按钮
         Row() {
-          TablerIcon('arrow-left', 18, $r('app.color.text'))
+          TablerIcon('arrow-left', 20, $r('app.color.text'))
         }
         .width(32)
         .height(32)

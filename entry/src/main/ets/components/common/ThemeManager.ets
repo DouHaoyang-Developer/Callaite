@@ -1,4 +1,6 @@
 import { ConfigurationConstant } from '@kit.AbilityKit';
+import { FileService } from '../../services/FileService';
+import { StatePersistence } from '../../state/StatePersistence';
 
 export enum ThemeMode {
   LIGHT = 'light',
@@ -29,8 +31,34 @@ export class ThemeManager {
     return ThemeMode.SYSTEM;
   }
 
+  /**
+   * 将当前持久化的主题应用到系统资源限定符。
+   * 必须在 EntryAbility.onCreate（页面加载前）调用，且 setThemeMode 时同步调用，
+   * 否则 resources/dark/ 目录永远不会生效（切换主题无任何视觉变化）。
+   */
+  static applyPersistedTheme(): void {
+    ThemeManager.applyColorMode(ThemeManager.getThemeMode());
+  }
+
+  private static applyColorMode(mode: ThemeMode): void {
+    const ctx = FileService.getContext();
+    if (!ctx) {
+      return;
+    }
+    const appCtx = ctx.getApplicationContext();
+    if (mode === ThemeMode.DARK) {
+      appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+    } else if (mode === ThemeMode.LIGHT) {
+      appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
+    } else {
+      appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+    }
+  }
+
   static setThemeMode(mode: ThemeMode): void {
     AppStorage.setOrCreate(THEME_MODE_KEY, mode);
+    ThemeManager.applyColorMode(mode);
+    StatePersistence.save();
   }
 
   static toggleTheme(): void {
