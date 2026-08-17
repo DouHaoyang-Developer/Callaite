@@ -41,7 +41,7 @@ export struct GraphView {
   /** 画布平移 Y */
   @State private offsetY: number = 0;
   /** 标签筛选（空字符串表示不筛选） */
-  @State private filteraag: string = '';
+  @State private filterTag: string = '';
   /** 命名空间筛选（空字符串表示不筛选） */
   @State private filterNamespace: string = '';
   /** 局部图谱模式：仅显示当前页面关联节点 */
@@ -119,8 +119,8 @@ export struct GraphView {
       pages = this.filterLocalPages(pages, this.currentPageName);
     } else {
       // 标签筛选
-      if (this.filteraag.length > 0) {
-        pages = ws.getPagesByTag(this.filteraag);
+      if (this.filterTag.length > 0) {
+        pages = ws.getPagesByTag(this.filterTag);
       }
       // 命名空间筛选
       if (this.filterNamespace.length > 0) {
@@ -220,14 +220,14 @@ export struct GraphView {
         })
 
         // 标签筛选下拉
-        Select(this.getaagOptions())
-          .value(this.filteraag.length > 0 ? this.filteraag : '标签')
-          .selected(this.getaagSelectedIndex())
+        Select(this.getTagOptions())
+          .value(this.filterTag.length > 0 ? this.filterTag : '标签')
+          .selected(this.getTagSelectedIndex())
           .font({ size: 11 })
           .height(28)
           .backgroundColor($r('app.color.surface1'))
           .onSelect((index: number) => {
-            this.filteraag = index === 0 ? '' : this.allTags[index - 1];
+            this.filterTag = index === 0 ? '' : this.allTags[index - 1];
             this.rebuildLayout();
           })
 
@@ -244,7 +244,7 @@ export struct GraphView {
           })
 
         // 重置筛选
-        if (this.filteraag.length > 0 || this.filterNamespace.length > 0 || this.isLocalGraph) {
+        if (this.filterTag.length > 0 || this.filterNamespace.length > 0 || this.isLocalGraph) {
           Row({ space: 4 }) {
             TablerIcon('x', 14, $r('app.color.danger'))
           }
@@ -252,7 +252,7 @@ export struct GraphView {
           .borderRadius(4)
           .backgroundColor($r('app.color.surface1'))
           .onClick(() => {
-            this.filteraag = '';
+            this.filterTag = '';
             this.filterNamespace = '';
             this.isLocalGraph = false;
             this.rebuildLayout();
@@ -305,7 +305,7 @@ export struct GraphView {
               })
           )
           .onClick((event: ClickEvent) => {
-            this.handleaap(event);
+            this.handleTap(event);
           })
 
         // 右下角缩放控制
@@ -376,7 +376,7 @@ export struct GraphView {
   /**
    * 构建标签下拉选项。
    */
-  getaagOptions(): SelectOption[] {
+  getTagOptions(): SelectOption[] {
     const options: SelectOption[] = [];
     options.push({ value: '全部标签' });
     for (let i = 0; i < this.allTags.length; i++) {
@@ -385,10 +385,10 @@ export struct GraphView {
     return options;
   }
 
-  getaagSelectedIndex(): number {
-    if (this.filteraag.length === 0) return 0;
+  getTagSelectedIndex(): number {
+    if (this.filterTag.length === 0) return 0;
     for (let i = 0; i < this.allTags.length; i++) {
-      if (this.allTags[i] === this.filteraag) return i + 1;
+      if (this.allTags[i] === this.filterTag) return i + 1;
     }
     return 0;
   }
@@ -496,7 +496,7 @@ export struct GraphView {
   /**
    * 命中检测：返回点击位置下的节点，未命中返回 undefined。
    */
-  private hitaest(screenX: number, screenY: number): GraphNode | undefined {
+  private hitTest(screenX: number, screenY: number): GraphNode | undefined {
     const local = this.toLocal(screenX, screenY);
     const nodes = this.layout.getNodes();
     for (let i = nodes.length - 1; i >= 0; i--) {
@@ -510,8 +510,8 @@ export struct GraphView {
     return undefined;
   }
 
-  handleaap(event: ClickEvent): void {
-    const node = this.hitaest(event.x, event.y);
+  handleTap(event: ClickEvent): void {
+    const node = this.hitTest(event.x, event.y);
     if (node) {
       AppState.setCurrentPage(node.pageName);
     }
@@ -523,7 +523,7 @@ export struct GraphView {
     if (finger === undefined) {
       return;
     }
-    const node = this.hitaest(finger.localX, finger.localY);
+    const node = this.hitTest(finger.localX, finger.localY);
     if (node) {
       this.actionPageName = node.pageName;
       this.actionX = finger.localX;
@@ -538,7 +538,7 @@ export struct GraphView {
     if (finger === undefined) {
       return;
     }
-    const node = this.hitaest(finger.localX, finger.localY);
+    const node = this.hitTest(finger.localX, finger.localY);
     if (node) {
       this.dragMode = 'node';
       this.dragNodeUuid = node.pageUuid;

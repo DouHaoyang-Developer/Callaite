@@ -160,7 +160,7 @@ export struct BlockList {
     .height(40)
     .padding({ left: 6, top: 12 })
     .onClick(() => {
-      this.addaopLevelBlock();
+      this.addTopLevelBlock();
     })
   }
 
@@ -181,13 +181,13 @@ export struct BlockList {
     .height(36)
     .padding({ left: 6, top: 4 })
     .onClick(() => {
-      this.addaopLevelBlock();
+      this.addTopLevelBlock();
     })
   }
 
   // ─── 操作 ───
 
-  addaopLevelBlock(): void {
+  addTopLevelBlock(): void {
     const ws = WorkspaceService.getInstance();
     const page = ws.getPageByName(this.pageName);
     if (!page) {

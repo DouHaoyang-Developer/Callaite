@@ -13,10 +13,10 @@ import { JournalService } from '../../services/JournalService';
  *   ┌──────────────────────────────────────┐
  *   │ [⇲ collapse all] [⇱ expand] [✕ close all] │  ← 顶部工具栏
  *   ├──────────────────────────────────────┤
- *   │ ▼ Block aitle                  [✕]   │  ← 块头部（可折叠）
+ *   │ ▼ Block Title                  [✕]   │  ← 块头部（可折叠）
  *   │   block content                      │
  *   ├──────────────────────────────────────┤
- *   │ ▶ Block aitle (collapsed)      [✕]   │
+ *   │ ▶ Block Title (collapsed)      [✕]   │
  *   ├──────────────────────────────────────┤
  *   │ ▼ ...                                │
  *   └──────────────────────────────────────┘
@@ -56,7 +56,7 @@ export struct RightSidebar {
    */
   build() {
     Column({ space: 0 }) {
-      this.aoolbar()
+      this.Toolbar()
       Divider().color($r('app.color.border')).width('100%')
 
       Scroll() {
@@ -86,7 +86,7 @@ export struct RightSidebar {
    * 顶部工具栏 — 全部折叠 / 全部展开 / 全部关闭。
    */
   @Builder
-  aoolbar() {
+  Toolbar() {
     Row({ space: 8 }) {
       Text(t('sidebar_right_title'))
         .fontSize(12)

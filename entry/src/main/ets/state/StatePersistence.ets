@@ -31,10 +31,10 @@ export class StatePersistence {
       return;
     }
     const path = ctx.filesDir + '/' + STATE_FILE;
-    if (!fs.accessSync(path)) {
-      return;
-    }
     try {
+      if (!fs.accessSync(path)) {
+        return;
+      }
       const raw = fs.readTextSync(path).trim();
       if (raw === '') {
         return;

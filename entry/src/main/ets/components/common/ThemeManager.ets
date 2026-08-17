@@ -46,12 +46,16 @@ export class ThemeManager {
       return;
     }
     const appCtx = ctx.getApplicationContext();
+    let target = ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET;
     if (mode === ThemeMode.DARK) {
-      appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+      target = ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
     } else if (mode === ThemeMode.LIGHT) {
-      appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
-    } else {
-      appCtx.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+      target = ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT;
+    }
+    try {
+      appCtx.setColorMode(target);
+    } catch (e) {
+      console.warn('[ThemeManager] Failed to set color mode', e);
     }
   }
 
