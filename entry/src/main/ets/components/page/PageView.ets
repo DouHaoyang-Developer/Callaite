@@ -38,6 +38,17 @@ export struct PageView {
   }
 
   /**
+   * 显示标题：日志日期页（yyyy-MM-dd）显示本地化日期，其余显示页面名。
+   * 注意：必须是普通方法 —— struct 上的 getter 会被 ArkTS 编译器静默丢弃。
+   */
+  getDisplayTitle(): string {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(this.displayName)) {
+      return JournalService.formatJournalTitle(this.displayName);
+    }
+    return this.displayName;
+  }
+
+  /**
    * 响应式内容留白：窄屏（手机）20vp，宽屏（平板/2in1）48vp。
    * Logseq 桌面端内容区更宽，移动端更紧凑。
    */
@@ -112,8 +123,8 @@ export struct PageView {
       // 外层容器：内容列限宽 960vp 并水平居中（--ls-main-content-max-width）
       Column({ space: 0 }) {
         Column({ space: 0 }) {
-        // 页面标题（Logseq 风格: 大号粗体）
-        Text(this.displayName)
+        // 页面标题（Logseq 风格: 大号粗体；日志日期页显示本地化日期）
+        Text(this.getDisplayTitle())
           .fontSize(36)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text'))
@@ -122,32 +133,29 @@ export struct PageView {
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-        // ─── 属性区：logseq 内联 key:: value 风格 ───
-        // 折叠头部（logseq 中第一个 block 是 properties 时会显示为可折叠区）
-        Row({ space: 6 }) {
-          Text(this.showProperties ? '−' : '+')
-            .fontSize(14)
-            .fontColor($r('app.color.muted_text'))
-            .width(14)
-          Text(t('properties').toUpperCase())
-            .fontSize(11)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.muted_text'))
-            .letterSpacing(0.8)
-          if (this.pagePropKeys.length > 0) {
+        // ─── 属性区：logseq 内联 key:: value 风格（仅页面有属性时显示）───
+        if (this.pagePropKeys.length > 0) {
+          Row({ space: 6 }) {
+            Text(this.showProperties ? '−' : '+')
+              .fontSize(14)
+              .fontColor($r('app.color.muted_text'))
+              .width(14)
+            Text(t('properties').toUpperCase())
+              .fontSize(11)
+              .fontWeight(FontWeight.Bold)
+              .fontColor($r('app.color.muted_text'))
+              .letterSpacing(0.8)
             Text('· ' + this.pagePropKeys.length.toString())
               .fontSize(11)
               .fontColor($r('app.color.muted_text'))
               .opacity(0.7)
           }
-        }
-        .width('100%')
-        .padding({ top: 12, bottom: 6, left: 4, right: 4 })
-        .onClick(() => { this.showProperties = !this.showProperties; })
+          .width('100%')
+          .padding({ top: 12, bottom: 6, left: 4, right: 4 })
+          .onClick(() => { this.showProperties = !this.showProperties; })
 
-        if (this.showProperties) {
-          Column({ space: 2 }) {
-            if (this.pagePropKeys.length > 0) {
+          if (this.showProperties) {
+            Column({ space: 2 }) {
               ForEach(this.pagePropKeys, (key: string, idx: number) => {
                 // logseq 内联属性渲染：key 用主色 + :: 分隔符 + value
                 Row({ space: 0 }) {
@@ -169,16 +177,10 @@ export struct PageView {
                 .width('100%')
                 .padding({ top: 2, bottom: 2, left: 20 })
               }, (key: string) => key)
-            } else {
-              Text(t('add_property_hint'))
-                .fontSize(12)
-                .fontColor($r('app.color.muted_text'))
-                .opacity(0.7)
-                .padding({ left: 20, top: 4, bottom: 4 })
             }
+            .width('100%')
+            .padding({ top: 4, bottom: 8 })
           }
-          .width('100%')
-          .padding({ top: 4, bottom: 8 })
         }
 
         // Block 列表

@@ -247,11 +247,12 @@ export struct SettingsPage {
       .width('100%')
       .padding({ top: 24, bottom: 12, left: 24, right: 24 })
 
-      // 可滚动内容
+      // 可滚动内容（限宽 760 居中，Logseq 设置页内容列宽）
       Scroll() {
-        Column({ space: 16 }) {
+        Column({ space: 0 }) {
+          Column({ space: 4 }) {
           // ─── 外观 ───
-          this.SectionHeader('theme', 'palette')
+          this.SectionHeader('theme')
           this.ThemeOption('theme_light', ThemeMode.LIGHT)
           this.ThemeOption('theme_dark', ThemeMode.DARK)
           this.ThemeOption('theme_system', ThemeMode.SYSTEM)
@@ -263,14 +264,14 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 语言 ───
-          this.SectionHeader('language', 'world')
+          this.SectionHeader('language')
           this.LanguageOption('中文 (zh-CN)', 'zh-CN')
           this.LanguageOption('English (en-US)', 'en-US')
 
           this.SectionDivider()
 
           // ─── 编辑器 ───
-          this.SectionHeader(t('editor'), 'edit')
+          this.SectionHeader('editor')
           this.ToggleRow(t('show_bullets'), this.showBullets, (on: boolean) => {
             this.showBullets = on;
             AppStorage.setOrCreate(KEY_SHOW_BULLETS, on);
@@ -287,7 +288,7 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 快捷键 ───
-          this.SectionHeader('shortcuts', 'keyboard')
+          this.SectionHeader('shortcuts')
           this.ButtonRow('自定义快捷键', 'keyboard', () => {
             this.currentSection = 'shortcuts';
           })
@@ -328,7 +329,7 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 同步 ───
-          this.SectionHeader('sync', 'cloud')
+          this.SectionHeader('sync')
           this.ToggleRow(t('cloud_sync'), this.cloudSyncEnabled, (on: boolean) => {
             this.cloudSyncEnabled = on;
             AppStorage.setOrCreate(KEY_CLOUD_SYNC, on);
@@ -362,7 +363,7 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 账户 ───
-          this.SectionHeader('account', 'user')
+          this.SectionHeader('account')
           Row({ space: 8 }) {
             Text('华为账号')
               .fontSize(14)
@@ -418,7 +419,7 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 插件 ───
-          this.SectionHeader('plugins', 'puzzle')
+          this.SectionHeader('plugins')
           ForEach(this.plugins, (p: PluginInfo) => {
             this.PluginRow(p)
           }, (p: PluginInfo) => p.id)
@@ -426,7 +427,7 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 数据 ───
-          this.SectionHeader('data', 'database')
+          this.SectionHeader('data')
           this.ButtonRow('导出数据', 'download', () => { AppState.setExportDialogOpen(true); })
           this.ButtonRow('导入数据', 'upload', () => { AppState.setImportDialogOpen(true); })
           this.ButtonRow('清除缓存', 'trash', () => { this.clearCache(); })
@@ -434,7 +435,7 @@ export struct SettingsPage {
           this.SectionDivider()
 
           // ─── 关于 ───
-          this.SectionHeader('about', 'info-circle')
+          this.SectionHeader('about')
           Row({ space: 12 }) {
             TablerIcon('info-circle', 16, $r('app.color.muted_text'))
             Column({ space: 4 }) {
@@ -454,8 +455,12 @@ export struct SettingsPage {
           Blank().height(24)
         }
         .width('100%')
-        .padding({ left: 24, right: 24 })
+        .constraintSize({ maxWidth: 760 })
         .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .padding({ left: 24, right: 24 })
+        .alignItems(HorizontalAlign.Center)
       }
       .layoutWeight(1)
       .width('100%')
@@ -468,25 +473,24 @@ export struct SettingsPage {
   // ─── 通用 Builder ───
 
   @Builder
-  SectionHeader(labelKey: string, icon: string) {
-    Row({ space: 8 }) {
-      TablerIcon(icon, 16, $r('app.color.primary'))
-      Text(t(labelKey))
-        .fontSize(14)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.muted_text'))
-    }
-    .width('100%')
-    .padding({ top: 8, bottom: 4 })
+  SectionHeader(labelKey: string) {
+    // Logseq 设置分组风格：小号大写弱化文字，无图标
+    Text(t(labelKey).toUpperCase())
+      .fontSize(12)
+      .fontWeight(FontWeight.Bold)
+      .fontColor($r('app.color.muted_text'))
+      .letterSpacing(0.8)
+      .width('100%')
+      .padding({ left: 4, top: 4, bottom: 6 })
   }
 
   @Builder
   SectionDivider() {
+    // Logseq 分组间以留白分隔，不用分割线
     Column() {
-      Divider().color($r('app.color.border'))
     }
     .width('100%')
-    .padding({ top: 8, bottom: 8 })
+    .height(24)
   }
 
   @Builder

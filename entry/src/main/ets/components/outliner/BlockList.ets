@@ -123,8 +123,10 @@ export struct BlockList {
           }, (block: BlockData) => block.uuid)
         }
 
-        // 底部添加按钮
-        this.AddBlockButton()
+        // 底部添加按钮（feed 内嵌模式不渲染 — Logseq 无显式添加按钮，回车即新建）
+        if (!this.embedded) {
+          this.AddBlockButton()
+        }
 
         // Slash 命令菜单
         if (this.slashMenuVisible) {
@@ -189,9 +191,10 @@ export struct BlockList {
 
   addTopLevelBlock(): void {
     const ws = WorkspaceService.getInstance();
-    const page = ws.getPageByName(this.pageName);
+    // 页面不存在时懒创建（日志流 feed 中的空日期页首次编辑时落库）
+    let page = ws.getPageByName(this.pageName);
     if (!page) {
-      return;
+      page = ws.createPage(this.pageName);
     }
 
     const result = ws.executeOp({

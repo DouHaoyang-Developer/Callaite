@@ -23,14 +23,12 @@ export struct JournalFeed {
 
   /**
    * 向前追加 N 天的日期（从当前最后一天的下一天开始）。
+   * 不预创建页面（保持全部页面列表干净），空日期在编辑时由 BlockList 懒创建。
    */
   appendDays(count: number): void {
     const base: number = this.days.length;
     for (let i = 0; i < count; i++) {
-      const dateStr: string = JournalService.getDateAfter(-(base + i));
-      // 提前创建空日期页，保证 feed 中可直接编辑
-      JournalService.ensureJournal(dateStr);
-      this.days.push(dateStr);
+      this.days.push(JournalService.getDateAfter(-(base + i)));
     }
   }
 
@@ -55,8 +53,8 @@ export struct JournalFeed {
         Column({ space: 0 }) {
           ForEach(this.days, (day: string, index: number) => {
             Column({ space: 0 }) {
-              // 日期标题 — 点击进入该日单日页
-              Text(day)
+              // 日期标题（Logseq 本地化格式）— 点击进入该日单日页
+              Text(JournalService.formatJournalTitle(day))
                 .fontSize(24)
                 .fontWeight(FontWeight.Bold)
                 .fontColor($r('app.color.text'))

@@ -27,14 +27,18 @@ export struct Header {
    */
   getDisplayTitle(): string {
     if (this.currentPage === 'Journal') {
-      return JournalService.getTodayDateString();
+      return JournalService.formatJournalTitle(JournalService.getTodayDateString());
+    }
+    // 日志日期页（yyyy-MM-dd）显示本地化日期
+    if (/^\d{4}-\d{2}-\d{2}$/.test(this.currentPage)) {
+      return JournalService.formatJournalTitle(this.currentPage);
     }
     return this.currentPage;
   }
 
   build() {
     Row({ space: 0 }) {
-      // ─── 左侧：菜单 + 后退 + 前进 + 搜索 ───
+      // ─── 左侧：菜单 + 后退 + 前进 + 搜索（logseq header.cljs 左侧功能组）───
       // 菜单按钮必须始终可点击（enabled=true），否则抽屉关闭后无法再打开；
       // 打开状态通过 active 参数高亮表达。
       this.IconButton('menu-2', true,
@@ -49,44 +53,43 @@ export struct Header {
       this.IconButton('search', true,
         () => { AppState.setSearchPanelOpen(true); })
 
-      // ─── 中间：页面标题（含日志页前后日期导航）───
-      Row({ space: 6 }) {
+      Blank()
+
+      // ─── 中间：页面标题居中（logseq header breadcrumb 位）───
+      // 日志页的前后日期箭头紧贴标题两侧（logseq journal 标题箭头风格）
+      Row({ space: 4 }) {
+        if (this.currentPage === 'Journal') {
+          Row() {
+            TablerIcon('chevron-left', 16, $r('app.color.icon_color'))
+          }
+          .width(28).height(28).borderRadius(4)
+          .onClick(() => {
+            AppState.setCurrentPage(JournalService.getYesterdayDateString());
+          })
+        }
+
         Text(this.getDisplayTitle())
           .fontSize(15)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
 
-        // 日志页：显示前后日期导航箭头（logseq journal 风格）
         if (this.currentPage === 'Journal') {
-          Row({ space: 0 }) {
-            Row() {
-              TablerIcon('chevron-left', 18, $r('app.color.icon_color'))
-            }
-            .width(32).height(32).borderRadius(4)
-            .onClick(() => {
-              AppState.setCurrentPage(JournalService.getYesterdayDateString());
-            })
-
-            Row() {
-              TablerIcon('chevron-right', 18, $r('app.color.icon_color'))
-            }
-            .width(32).height(32).borderRadius(4)
-            .onClick(() => {
-              AppState.setCurrentPage(JournalService.getTomorrowDateString());
-            })
+          Row() {
+            TablerIcon('chevron-right', 16, $r('app.color.icon_color'))
           }
+          .width(28).height(28).borderRadius(4)
+          .onClick(() => {
+            AppState.setCurrentPage(JournalService.getTomorrowDateString());
+          })
         }
       }
-      .layoutWeight(1)
-      .constraintSize({ maxWidth: 480 })
       .alignItems(VerticalAlign.Center)
 
       Blank()
 
-      // ─── 右侧：主页 + 更多 + 右侧栏 ───
+      // ─── 右侧：主页 + 更多 + 右侧栏（logseq header 右侧开关组）───
       this.IconButton('home', this.currentPage !== 'Journal',
         () => { AppState.setCurrentPage('Journal'); })
 

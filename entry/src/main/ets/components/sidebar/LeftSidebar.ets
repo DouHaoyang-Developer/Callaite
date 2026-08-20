@@ -44,6 +44,8 @@ export struct LeftSidebar {
   @State recent: string[] = [];
   @State renamingPage: string = '';
   @State renameText: string = '';
+  // 当前悬停的页面项（操作按钮仅 hover 时显示，Logseq 风格）
+  @State hoveredPage: string = '';
   // 分组折叠态（持久化，Logseq sidebar-content-group）
   @StorageLink('callaite_collapsed_favorites') collapsedFavorites: boolean = false;
   @StorageLink('callaite_collapsed_recent') collapsedRecent: boolean = false;
@@ -135,20 +137,17 @@ export struct LeftSidebar {
       .height(48)
       .padding({ left: 18, right: 16 })
 
-      Divider().color($r('app.color.border')).width('100%')
-
       // ─── 可滚动主体 ───
       Scroll() {
         Column({ space: 0 }) {
-          // 导航区（logseq sidebar 顶部）
-          this.SectionHeader(t('sidebar_navigations'), 'menu-2')
+          // 导航区（logseq sidebar 顶部，无分组头）
           ForEach(this.getNavItems(), (item: NavItem) => {
             this.NavRow(item)
           }, (item: NavItem) => item.key)
           this.SectionSpacer()
 
           // 收藏夹（可折叠分组）
-          this.SectionHeader(t('favorites'), 'pin', 'favorites', this.collapsedFavorites)
+          this.SectionHeader(t('favorites'), 'favorites', this.collapsedFavorites)
           if (!this.collapsedFavorites) {
             ForEach(this.favorites, (name: string) => { this.PageLink(name); }, (name: string) => name)
             if (this.favorites.length === 0) this.EmptyHint(t('empty_sidebar_hint'))
@@ -156,7 +155,7 @@ export struct LeftSidebar {
           this.SectionSpacer()
 
           // 最近页面（可折叠分组）
-          this.SectionHeader(t('recent'), 'refresh', 'recent', this.collapsedRecent)
+          this.SectionHeader(t('recent'), 'recent', this.collapsedRecent)
           if (!this.collapsedRecent) {
             ForEach(this.recent.slice(0, 8), (name: string) => { this.PageLink(name); }, (name: string) => name)
             if (this.recent.length === 0) this.EmptyHint(t('empty_sidebar_hint'))
@@ -164,7 +163,7 @@ export struct LeftSidebar {
           this.SectionSpacer()
 
           // 所有页面（按命名空间分组，可折叠）
-          this.SectionHeader(t('all_pages'), 'file', 'allpages', this.collapsedAllPages)
+          this.SectionHeader(t('all_pages'), 'allpages', this.collapsedAllPages)
           if (!this.collapsedAllPages) {
             ForEach(this.getNamespaceGroups(), (ns: string) => {
               if (ns !== '') {
@@ -190,14 +189,14 @@ export struct LeftSidebar {
       .layoutWeight(1)
       .scrollBar(BarState.Off)
 
-      // ─── Footer：设置 ───
+      // ─── Footer：设置入口 ───
       Divider().color($r('app.color.border')).width('100%')
       Row({ space: 8 }) {
         TablerIcon('settings', 18, $r('app.color.icon_color'))
         Text(t('settings')).fontSize(14).fontColor($r('app.color.muted_text'))
       }
       .width('100%')
-      .height(40)
+      .height(44)
       .padding({ left: 18, right: 16 })
       .onClick(() => {
         AppState.setLeftSidebarOpen(false);
@@ -212,30 +211,22 @@ export struct LeftSidebar {
   }
 
   /**
-   * section header — 大写 + 11px + muted_text + 小图标。
-   * sectionKey 非空时渲染为可折叠分组（Logseq sidebar-content-group）：
-   * 左侧 chevron 指示折叠态，点击整行切换。
+   * section header — Logseq sidebar-content-group 风格：
+   * 左侧 chevron 指示折叠态 + 普通大小写 13px 弱化文字，点击整行切换。
    */
   @Builder
-  SectionHeader(title: string, iconName: string, sectionKey: string = '', collapsed: boolean = false) {
-    Row({ space: 6 }) {
-      if (sectionKey !== '') {
-        TablerIcon(collapsed ? 'chevron-right' : 'chevron-down', 12, $r('app.color.icon_color'))
-      }
-      TablerIcon(iconName, 14, $r('app.color.icon_color'))
-      Text(title.toUpperCase())
-        .fontSize(11)
-        .fontWeight(FontWeight.Bold)
+  SectionHeader(title: string, sectionKey: string, collapsed: boolean) {
+    Row({ space: 4 }) {
+      TablerIcon(collapsed ? 'chevron-right' : 'chevron-down', 12, $r('app.color.icon_color'))
+      Text(title)
+        .fontSize(13)
         .fontColor($r('app.color.muted_text'))
-        .letterSpacing(0.6)
     }
     .width('100%')
-    .padding({ left: sectionKey !== '' ? 12 : 20, right: 16, top: 14, bottom: 6 })
+    .padding({ left: 12, right: 16, top: 14, bottom: 6 })
     .borderRadius(4)
     .onClick(() => {
-      if (sectionKey !== '') {
-        this.toggleSection(sectionKey);
-      }
+      this.toggleSection(sectionKey);
     })
   }
 
@@ -322,16 +313,19 @@ export struct LeftSidebar {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .onClick(() => { AppState.setCurrentPage(name); })
       }
-      Row() { TablerIcon('edit', 16, $r('app.color.icon_color')) }
-        .width(28)
-        .height(28)
-        .opacity(0.4)
-        .onClick(() => { this.startRename(name); })
-      Row() { TablerIcon('trash', 16, $r('app.color.danger')) }
-        .width(28)
-        .height(28)
-        .opacity(0.4)
-        .onClick(() => { this.deletePage(name); })
+      // 操作按钮仅 hover 时显示（Logseq 侧栏页项风格）
+      if (this.hoveredPage === name) {
+        Row() { TablerIcon('edit', 16, $r('app.color.icon_color')) }
+          .width(28)
+          .height(28)
+          .opacity(0.6)
+          .onClick(() => { this.startRename(name); })
+        Row() { TablerIcon('trash', 16, $r('app.color.danger')) }
+          .width(28)
+          .height(28)
+          .opacity(0.6)
+          .onClick(() => { this.deletePage(name); })
+      }
     }
     .width('100%')
     .height(40)
@@ -340,6 +334,9 @@ export struct LeftSidebar {
     .backgroundColor(this.currentPage === name
       ? $r('app.color.surface2')
       : Color.Transparent)
+    .onHover((isHover: boolean) => {
+      this.hoveredPage = isHover ? name : '';
+    })
   }
 
   startRename(oldName: string): void {
