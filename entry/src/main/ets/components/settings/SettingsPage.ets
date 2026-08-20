@@ -59,7 +59,7 @@ interface PluginInfo {
 export struct SettingsPage {
   @State selectedTheme: string = '';
   @State selectedLanguage: string = '';
-  @State fontSizeIndex: number = 2;
+  @State fontSizeIndex: number = 3;
   @State showBullets: boolean = true;
   @State autoSaveIntervalIndex: number = 3;
   @State tabWidthIndex: number = 1;

@@ -513,18 +513,29 @@ export class AppState {
   }
 
   static addRecentPage(pageName: string): void {
-    if (pageName === 'Journal') {
+    // 内部路由页（设置/图谱等伪页面）不记入最近列表
+    if (AppState.isInternalRoute(pageName)) {
       return;
     }
     const list = AppState.getRecentPages();
     const deduped: string[] = [];
     deduped[0] = pageName;
     for (let i = 0; i < list.length; i++) {
-      if (list[i] !== pageName) {
+      if (list[i] !== pageName && !AppState.isInternalRoute(list[i])) {
         deduped[deduped.length] = list[i];
       }
     }
     AppState.setRecentPages(deduped);
+  }
+
+  /**
+   * 判断是否为内部路由键（非真实笔记页面）。
+   */
+  static isInternalRoute(pageName: string): boolean {
+    return pageName === 'Journal' || pageName === 'Settings' || pageName === 'Graph' ||
+      pageName === 'Whiteboards' || pageName === 'Flashcards' || pageName === 'Pdf' ||
+      pageName === 'ProUpgrade' || pageName === 'AllPages' || pageName === 'Recycle' ||
+      pageName === 'About';
   }
 
   // ─── Overlays ───

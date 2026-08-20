@@ -49,6 +49,8 @@ export struct BlockView {
   @State editingCellLine: number = -1;
   @State editingCellCol: number = -1;
   @State editingCellText: string = '';
+  // 正文字号（设置页可切换 12-16pt，默认 15）
+  @StorageLink('callaite_fontSize') contentFontSize: number = 15;
   private blockData: BlockData | undefined;
 
   aboutToAppear(): void {
@@ -254,7 +256,7 @@ export struct BlockView {
     Row({ space: 0 }) {
       if (this.displaySegments.length === 0) {
         Text(' ')
-          .fontSize(15)
+          .fontSize(this.contentFontSize)
           .fontColor($r('app.color.muted_text'))
           .height(28)
           .onClick(() => {
@@ -288,7 +290,7 @@ export struct BlockView {
       }.width('100%').padding({ left: 4, top: 2, bottom: 2 })
     } else if (seg.type === SegmentType.PAGE_REF || seg.type === SegmentType.PAGE_EMBED) {
       Text('[[' + seg.text + ']]')
-        .fontSize(15)
+        .fontSize(this.contentFontSize)
         .fontColor($r('app.color.link'))
         .height(28)
         .onClick(() => {
@@ -296,7 +298,7 @@ export struct BlockView {
         })
     } else if (seg.type === SegmentType.BLOCK_REF) {
       Text('((' + seg.text.substring(0, 8) + '))')
-        .fontSize(15)
+        .fontSize(this.contentFontSize)
         .fontColor($r('app.color.primary'))
         .height(28)
         .onClick(() => {
@@ -315,7 +317,7 @@ export struct BlockView {
         })
     } else if (seg.type === SegmentType.TAG_REF) {
       Text('#' + seg.text)
-        .fontSize(15)
+        .fontSize(this.contentFontSize)
         .fontColor($r('app.color.success'))
         .height(28)
         .onClick(() => {
@@ -323,7 +325,7 @@ export struct BlockView {
         })
     } else if (seg.type === SegmentType.LINK) {
       Text(seg.extra !== undefined && seg.extra !== '' ? seg.extra : seg.text)
-        .fontSize(15)
+        .fontSize(this.contentFontSize)
         .fontColor($r('app.color.link'))
         .decoration({ type: TextDecorationType.Underline, color: $r('app.color.link') })
         .height(28)
@@ -332,7 +334,7 @@ export struct BlockView {
         })
     } else {
       Text(seg.text)
-        .fontSize(15)
+        .fontSize(this.contentFontSize)
         .fontColor(ContentRenderer.getSegmentColor(seg.type))
         .fontWeight(seg.type === SegmentType.BOLD ? FontWeight.Bold : FontWeight.Normal)
         .fontStyle(seg.type === SegmentType.ITALIC ? FontStyle.Italic : FontStyle.Normal)

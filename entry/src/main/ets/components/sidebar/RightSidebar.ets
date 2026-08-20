@@ -426,5 +426,7 @@ export struct RightSidebar {
 
   closeAll(): void {
     AppState.clearRightSidebarBlocks();
+    // ✕ 同时关闭整个右侧栏（Logseq 右侧栏 close 行为）
+    AppState.setRightSidebarOpen(false);
   }
 }

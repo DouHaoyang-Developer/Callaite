@@ -72,8 +72,6 @@ export struct Whiteboard {
   // ─── 手势辅助 ───
   private lastTouchX: number = 0;
   private lastTouchY: number = 0;
-  private panAccumX: number = 0;
-  private panAccumY: number = 0;
   private panBaseOffsetX: number = 0;
   private panBaseOffsetY: number = 0;
   private baseScale: number = 1;
@@ -1033,8 +1031,6 @@ export struct Whiteboard {
       .gesture(
         PanGesture({ fingers: 1 })
           .onActionStart(() => {
-            this.panAccumX = 0;
-            this.panAccumY = 0;
             if (this.currentTool === 'select') {
               const canvasX = (this.lastTouchX - this.offsetX) / this.scaleValue;
               const canvasY = (this.lastTouchY - this.offsetY) / this.scaleValue;
@@ -1071,16 +1067,16 @@ export struct Whiteboard {
             }
           })
           .onActionUpdate((event: GestureEvent) => {
-            this.panAccumX += event.offsetX;
-            this.panAccumY += event.offsetY;
+            // 注意：PanGesture 的 offsetX/Y 是从手势起点起的累计位移，
+            // 直接使用（base + offset）即可；若逐帧累加会导致位移平方级增长（"灵敏度过高"）。
             if (this.isDraggingShape) {
-              const totalDx = this.panAccumX / this.scaleValue;
-              const totalDy = this.panAccumY / this.scaleValue;
+              const totalDx = event.offsetX / this.scaleValue;
+              const totalDy = event.offsetY / this.scaleValue;
               this.setShapePosition(this.dragShapeId, this.dragStartShapeX + totalDx, this.dragStartShapeY + totalDy);
             } else if (this.isDrawing && this.currentTool === 'pen') {
               // 手写笔模式：收集笔触点并实时重绘
-              this.drawCurrentX = this.drawStartX + this.panAccumX / this.scaleValue;
-              this.drawCurrentY = this.drawStartY + this.panAccumY / this.scaleValue;
+              this.drawCurrentX = this.drawStartX + event.offsetX / this.scaleValue;
+              this.drawCurrentY = this.drawStartY + event.offsetY / this.scaleValue;
               const point: StrokePoint = {
                 x: this.drawCurrentX,
                 y: this.drawCurrentY,
@@ -1090,11 +1086,11 @@ export struct Whiteboard {
               this.currentStrokePoints.push(point);
               this.drawGrid();
             } else if (this.isDrawing) {
-              this.drawCurrentX = this.drawStartX + this.panAccumX / this.scaleValue;
-              this.drawCurrentY = this.drawStartY + this.panAccumY / this.scaleValue;
+              this.drawCurrentX = this.drawStartX + event.offsetX / this.scaleValue;
+              this.drawCurrentY = this.drawStartY + event.offsetY / this.scaleValue;
             } else {
-              this.offsetX = this.panBaseOffsetX + this.panAccumX;
-              this.offsetY = this.panBaseOffsetY + this.panAccumY;
+              this.offsetX = this.panBaseOffsetX + event.offsetX;
+              this.offsetY = this.panBaseOffsetY + event.offsetY;
               this.drawGrid();
             }
           })

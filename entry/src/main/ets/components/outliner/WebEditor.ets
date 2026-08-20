@@ -44,21 +44,29 @@ export struct WebEditor {
 
   build() {
     Web({
-      src: this.htmlContent,
+      // src 只接受 URL/$rawfile；HTML 源码串必须在控制器就绪后通过 loadData 加载，
+      // 且特殊字符（# % \ ? 等，本模板含 CSS 颜色值）需 encodeURIComponent 转义。
+      src: 'about:blank',
       controller: this.controller
     })
       .width('100%')
       .height(32)
       .javaScriptAccess(true)
       .domStorageAccess(true)
+      .focusable(true)
       .javaScriptProxy({
         object: this.bridgeObj,
         name: 'nativeProxy',
         methodList: ['onAction', 'getContent'],
         controller: this.controller
       })
+      .onControllerAttached(() => {
+        this.controller.loadData(encodeURIComponent(this.htmlContent), 'text/html', 'utf-8');
+      })
       .onPageEnd(() => {
         this.editorReady = true;
+        // 页面加载完成后聚焦，弹出软键盘
+        this.focus();
       })
   }
 

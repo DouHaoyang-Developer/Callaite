@@ -90,8 +90,8 @@ export struct Header {
       Blank()
 
       // ─── 右侧：主页 + 更多 + 右侧栏（logseq header 右侧开关组）───
-      this.IconButton('home', this.currentPage !== 'Journal',
-        () => { AppState.setCurrentPage('Journal'); })
+      this.IconButton('home', true,
+        () => { AppState.setCurrentPage('Journal'); }, this.currentPage === 'Journal')
 
       // 三点菜单（logseq toolbar-dots-menu）
       Row() {

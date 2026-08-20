@@ -4,6 +4,7 @@ import { t } from '../../utils/i18n';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData } from '../../core/models/Page';
 import { SubscriptionService } from '../../services/SubscriptionService';
+import { display } from '@kit.ArkUI';
 
 interface NavItem {
   key: string;          // 唯一标识，对应 AppState.currentPage 值
@@ -82,7 +83,11 @@ export struct LeftSidebar {
 
   refreshRecent(): void {
     if (this.recentRaw) {
-      try { this.recent = JSON.parse(this.recentRaw) as string[] ?? []; } catch (e) { this.recent = []; }
+      try {
+        const parsed = JSON.parse(this.recentRaw) as string[] ?? [];
+        // 过滤内部路由键（Settings/Graph 等伪页面，可能来自旧版本残留数据）
+        this.recent = parsed.filter((name: string) => !AppState.isInternalRoute(name));
+      } catch (e) { this.recent = []; }
     } else {
       this.recent = [];
     }
@@ -107,6 +112,19 @@ export struct LeftSidebar {
     items[4] = { key: 'Whiteboards', label: t('whiteboards'), iconName: 'layout-grid' };
     items[5] = { key: 'Pdf', label: 'PDF', iconName: 'file' };
     return items;
+  }
+
+  /**
+   * 窄屏（<768vp，抽屉模式）判定。切换页面时仅窄屏才自动收起侧栏，
+   * 宽屏（2in1/平板）保持侧栏常开（Logseq 桌面端行为）。
+   */
+  isCompact(): boolean {
+    try {
+      const d = display.getDefaultDisplaySync();
+      return d.width / d.densityPixels < 768;
+    } catch (_e) {
+      return false;
+    }
   }
 
   /**
@@ -199,7 +217,9 @@ export struct LeftSidebar {
       .height(44)
       .padding({ left: 18, right: 16 })
       .onClick(() => {
-        AppState.setLeftSidebarOpen(false);
+        if (this.isCompact()) {
+          AppState.setLeftSidebarOpen(false);
+        }
         AppState.setCurrentPage('Settings');
       })
     }
@@ -276,8 +296,10 @@ export struct LeftSidebar {
       ? $r('app.color.surface2')
       : Color.Transparent)
     .onClick(() => {
-      // 导航后关闭抽屉（窄屏模式），避免遮挡目标页面
-      AppState.setLeftSidebarOpen(false);
+      // 仅窄屏抽屉模式导航后收起侧栏，宽屏保持常开
+      if (this.isCompact()) {
+        AppState.setLeftSidebarOpen(false);
+      }
       if ((item.key === 'Flashcards' && !SubscriptionService.canUseFeature('flashcard')) ||
         (item.key === 'Pdf' && !SubscriptionService.canUseFeature('pdf'))) {
         AppState.setCurrentPage('ProUpgrade');

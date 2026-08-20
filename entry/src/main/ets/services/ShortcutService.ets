@@ -26,68 +26,66 @@ export interface ShortcutDef {
 }
 
 /**
- * 按键名称 → ArkTS keyCode 映射表。
+ * 按键名称 → HarmonyOS keyCode 映射表（真实值，见 @ohos.multimodalInput.keyCode）。
  *
- * 注意：ArkTS/HarmonyOS 中 keyCode 值与标准 Web keyCode 不同。
- *
- * 特殊键：Enter=2050, Tab=2049, Backspace=2057, Esc=2070
- * 字母键 A-Z：2031-2056
- * 数字键 0-9：2073-2082
- * 方向键：Up=2084, Down=2085, Left=2086, Right=2087
+ * 数字键 0-9：2000-2009
+ * 方向键：Up=2012, Down=2013, Left=2014, Right=2015
+ * 字母键 A-Z：2017-2042
+ * 特殊键：Tab=2049, Enter=2054, Backspace(DEL)=2055, Esc=2082
  */
 const KEY_CODE_MAP: Map<string, number> = new Map<string, number>();
 
 // 特殊键
-KEY_CODE_MAP.set('Enter', 2050);
+KEY_CODE_MAP.set('Enter', 2054);
 KEY_CODE_MAP.set('Tab', 2049);
-KEY_CODE_MAP.set('Backspace', 2057);
-KEY_CODE_MAP.set('Esc', 2070);
+KEY_CODE_MAP.set('Backspace', 2055);
+KEY_CODE_MAP.set('Esc', 2082);
 
 // 方向键
-KEY_CODE_MAP.set('Up', 2084);
-KEY_CODE_MAP.set('Down', 2085);
-KEY_CODE_MAP.set('Left', 2086);
-KEY_CODE_MAP.set('Right', 2087);
+KEY_CODE_MAP.set('Up', 2012);
+KEY_CODE_MAP.set('Down', 2013);
+KEY_CODE_MAP.set('Left', 2014);
+KEY_CODE_MAP.set('Right', 2015);
 
-// 字母键 A-Z（2031-2056）
-KEY_CODE_MAP.set('A', 2031);
-KEY_CODE_MAP.set('B', 2032);
-KEY_CODE_MAP.set('C', 2033);
-KEY_CODE_MAP.set('D', 2034);
-KEY_CODE_MAP.set('E', 2035);
-KEY_CODE_MAP.set('F', 2036);
-KEY_CODE_MAP.set('G', 2037);
-KEY_CODE_MAP.set('H', 2038);
-KEY_CODE_MAP.set('I', 2039);
-KEY_CODE_MAP.set('J', 2040);
-KEY_CODE_MAP.set('K', 2041);
-KEY_CODE_MAP.set('L', 2042);
-KEY_CODE_MAP.set('M', 2043);
-KEY_CODE_MAP.set('N', 2044);
-KEY_CODE_MAP.set('O', 2045);
-KEY_CODE_MAP.set('P', 2046);
-KEY_CODE_MAP.set('Q', 2047);
-KEY_CODE_MAP.set('R', 2048);
-KEY_CODE_MAP.set('S', 2049);
-KEY_CODE_MAP.set('T', 2050);
-KEY_CODE_MAP.set('U', 2051);
-KEY_CODE_MAP.set('V', 2052);
-KEY_CODE_MAP.set('W', 2053);
-KEY_CODE_MAP.set('X', 2054);
-KEY_CODE_MAP.set('Y', 2055);
-KEY_CODE_MAP.set('Z', 2056);
+// 字母键 A-Z（2017-2042）
+KEY_CODE_MAP.set('A', 2017);
+KEY_CODE_MAP.set('B', 2018);
+KEY_CODE_MAP.set('C', 2019);
+KEY_CODE_MAP.set('D', 2020);
+KEY_CODE_MAP.set('E', 2021);
+KEY_CODE_MAP.set('F', 2022);
+KEY_CODE_MAP.set('G', 2023);
+KEY_CODE_MAP.set('H', 2024);
+KEY_CODE_MAP.set('I', 2025);
+KEY_CODE_MAP.set('J', 2026);
+KEY_CODE_MAP.set('K', 2027);
+KEY_CODE_MAP.set('L', 2028);
+KEY_CODE_MAP.set('M', 2029);
+KEY_CODE_MAP.set('N', 2030);
+KEY_CODE_MAP.set('O', 2031);
+KEY_CODE_MAP.set('P', 2032);
+KEY_CODE_MAP.set('Q', 2033);
+KEY_CODE_MAP.set('R', 2034);
+KEY_CODE_MAP.set('S', 2035);
+KEY_CODE_MAP.set('T', 2036);
+KEY_CODE_MAP.set('U', 2037);
+KEY_CODE_MAP.set('V', 2038);
+KEY_CODE_MAP.set('W', 2039);
+KEY_CODE_MAP.set('X', 2040);
+KEY_CODE_MAP.set('Y', 2041);
+KEY_CODE_MAP.set('Z', 2042);
 
-// 数字键 0-9（2073-2082）
-KEY_CODE_MAP.set('0', 2073);
-KEY_CODE_MAP.set('1', 2074);
-KEY_CODE_MAP.set('2', 2075);
-KEY_CODE_MAP.set('3', 2076);
-KEY_CODE_MAP.set('4', 2077);
-KEY_CODE_MAP.set('5', 2078);
-KEY_CODE_MAP.set('6', 2079);
-KEY_CODE_MAP.set('7', 2080);
-KEY_CODE_MAP.set('8', 2081);
-KEY_CODE_MAP.set('9', 2082);
+// 数字键 0-9（2000-2009）
+KEY_CODE_MAP.set('0', 2000);
+KEY_CODE_MAP.set('1', 2001);
+KEY_CODE_MAP.set('2', 2002);
+KEY_CODE_MAP.set('3', 2003);
+KEY_CODE_MAP.set('4', 2004);
+KEY_CODE_MAP.set('5', 2005);
+KEY_CODE_MAP.set('6', 2006);
+KEY_CODE_MAP.set('7', 2007);
+KEY_CODE_MAP.set('8', 2008);
+KEY_CODE_MAP.set('9', 2009);
 
 /**
  * ShortcutService — 快捷键服务（单例）。
@@ -410,6 +408,19 @@ export class ShortcutService {
     });
 
     // ─── 文件操作 ───
+
+    // Ctrl+K — 全局搜索（Logseq mod+K）
+    self.register({
+      id: 'app.search-global',
+      key: 'K',
+      ctrl: true,
+      shift: false,
+      alt: false,
+      description: '全局搜索',
+      action: () => {
+        AppStorage.setOrCreate('callaite_searchPanelOpen', true);
+      }
+    });
 
     // Ctrl+F — 页内搜索
     self.register({
