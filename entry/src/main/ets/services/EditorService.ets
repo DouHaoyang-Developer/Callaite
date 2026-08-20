@@ -38,6 +38,8 @@ export class EditorService {
 
   setFocusedBlock(uuid: string): void {
     this.focusedBlockUuid = uuid;
+    // 同步到 AppStorage：BlockView 据此在其他块获焦时自动退出编辑态
+    AppStorage.setOrCreate('callaite_focusedBlock', uuid);
   }
 
   getFocusedBlockUuid(): string {
@@ -46,6 +48,7 @@ export class EditorService {
 
   clearFocus(): void {
     this.focusedBlockUuid = '';
+    AppStorage.setOrCreate('callaite_focusedBlock', '');
     this.selectedUuids = [];
   }
 

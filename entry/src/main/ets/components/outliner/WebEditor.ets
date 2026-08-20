@@ -1,7 +1,9 @@
 import { webview } from '@kit.ArkWeb';
+import { fileIo as fs } from '@kit.CoreFileKit';
 import { EditorService } from '../../services/EditorService';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { JournalService } from '../../services/JournalService';
+import { FileService } from '../../services/FileService';
 
 /**
  * WebEditor — 基于 WebView 的 contenteditable 编辑器。
@@ -28,6 +30,8 @@ export struct WebEditor {
 
   private controller: webview.WebviewController = new webview.WebviewController();
   @State private htmlContent: string = '';
+  // file:// 加载地址（Web 的 src 只接受 URL；HTML 源码串写入沙箱文件后加载）
+  @State private webSrc: string = 'about:blank';
   private editorReady: boolean = false;
   private bridgeObj: NativeBridge = new NativeBridge(this);
 
@@ -40,28 +44,38 @@ export struct WebEditor {
     this.htmlContent = WebEditorHTML
       .replace('__CONTENT__', escaped)
       .replace('__BLOCK_ID__', this.blockUuid);
+    // 将 HTML 写入应用缓存目录，通过 file:// 加载。
+    // 已实测：src 直接传 HTML 源码串、loadData 传源码串均渲染空白。
+    try {
+      const ctx = FileService.getContext();
+      if (ctx) {
+        const path = ctx.cacheDir + '/web_editor_' + this.blockUuid + '.html';
+        const file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+        fs.writeSync(file.fd, this.htmlContent);
+        fs.closeSync(file);
+        this.webSrc = 'file://' + path;
+      }
+    } catch (_e) {
+      // 写文件失败时保持 about:blank
+    }
   }
 
   build() {
     Web({
-      // src 只接受 URL/$rawfile；HTML 源码串必须在控制器就绪后通过 loadData 加载，
-      // 且特殊字符（# % \ ? 等，本模板含 CSS 颜色值）需 encodeURIComponent 转义。
-      src: 'about:blank',
+      src: this.webSrc,
       controller: this.controller
     })
       .width('100%')
       .height(32)
       .javaScriptAccess(true)
       .domStorageAccess(true)
+      .fileAccess(true)
       .focusable(true)
       .javaScriptProxy({
         object: this.bridgeObj,
         name: 'nativeProxy',
         methodList: ['onAction', 'getContent'],
         controller: this.controller
-      })
-      .onControllerAttached(() => {
-        this.controller.loadData(encodeURIComponent(this.htmlContent), 'text/html', 'utf-8');
       })
       .onPageEnd(() => {
         this.editorReady = true;
@@ -146,6 +160,9 @@ class NativeBridge {
       editor.setFocusedBlock(this.parent.blockUuid);
       editor.deleteEmptyBlock();
       this.parent.onAction('focusPrev', '');
+    } else if (action === 'autosave') {
+      // 输入防抖自动保存：只落库，不退出编辑态、不触发 UI 刷新
+      editor.updateBlockContent(this.parent.blockUuid, data);
     } else if (action === 'focusPrev') {
       this.parent.onAction('focusPrev', '');
     } else if (action === 'focusNext') {
@@ -258,6 +275,15 @@ editor.addEventListener('keydown',function(e){
 // 失焦时保存
 editor.addEventListener('blur',function(){
   if(window.nativeProxy) window.nativeProxy.onAction('save',editor.innerText||'');
+});
+
+// 输入防抖自动保存（只落库不退出编辑态；配合 ArkTS 侧焦点切换退出逻辑）
+let saveTimer=null;
+editor.addEventListener('input',function(){
+  if(saveTimer)clearTimeout(saveTimer);
+  saveTimer=setTimeout(function(){
+    if(window.nativeProxy)window.nativeProxy.onAction('autosave',editor.innerText||'');
+  },400);
 });
 
 // 斜杠触发: 检测 / 开头的行

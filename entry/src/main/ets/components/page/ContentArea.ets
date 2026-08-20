@@ -14,6 +14,11 @@ export struct ContentArea {
   @StorageLink('callaite_exportDialogOpen') exportDialogOpen: boolean = false;
   @StorageLink('callaite_importDialogOpen') importDialogOpen: boolean = false;
 
+  aboutToAppear(): void {
+    // 主动夺取焦点，否则 Scroll 未持焦时 onKeyEvent 不触发（快捷键整体失效）
+    focusControl.requestFocus('contentAreaScroll');
+  }
+
   build() {
     Stack() {
       Column() {
@@ -30,6 +35,7 @@ export struct ContentArea {
         .backgroundColor($r('app.color.surface0'))
         .focusable(true)
         .defaultFocus(true)
+        .key('contentAreaScroll')
         .onKeyEvent((event: KeyEvent) => {
           // 统一路由到 ShortcutService（含 Ctrl+K/Ctrl+Z/Tab/Alt+↑↓ 等全部快捷键）
           if (event.type === KeyType.Down) {
@@ -80,6 +86,19 @@ export struct ContentArea {
     }
     .width('100%')
     .height('100%')
+    // 修饰键组合（Ctrl+K/Ctrl+Z/Alt+↑↓ 等）在 IME/子组件处理前拦截，
+    // 保证 WebEditor 持焦时全局快捷键依然可用；无修饰键的按键放行给编辑器。
+    .onKeyPreIme((event: KeyEvent) => {
+      if (event.type !== KeyType.Down) {
+        return false;
+      }
+      const hasCtrl = event.getModifierKeyState!(['ctrl']);
+      const hasAlt = event.getModifierKeyState!(['alt']);
+      if (!hasCtrl && !hasAlt) {
+        return false;
+      }
+      return ShortcutService.getInstance().handleKeyEvent(event);
+    })
   }
 
   static resolvePageName(pageName: string): string {

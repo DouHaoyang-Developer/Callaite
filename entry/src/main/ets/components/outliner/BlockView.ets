@@ -51,6 +51,8 @@ export struct BlockView {
   @State editingCellText: string = '';
   // 正文字号（设置页可切换 12-16pt，默认 15）
   @StorageLink('callaite_fontSize') contentFontSize: number = 15;
+  // 全局焦点块：其他块获焦时本块自动退出编辑态（内容已由编辑器防抖保存）
+  @StorageLink('callaite_focusedBlock') @Watch('onGlobalFocusChanged') focusedBlockUuid: string = '';
   private blockData: BlockData | undefined;
 
   aboutToAppear(): void {
@@ -259,15 +261,19 @@ export struct BlockView {
           .fontSize(this.contentFontSize)
           .fontColor($r('app.color.muted_text'))
           .height(28)
-          .onClick(() => {
-            this.enterEdit();
-          })
       } else {
         ForEach(this.displaySegments, (seg: ContentSegment, idx: number) => {
           this.RenderSegment(seg, idx)
         }, (seg: ContentSegment, idx: number) => idx.toString())
       }
-    }.width('100%')
+    }
+    .width('100%')
+    // 整行可点击进入编辑（此前仅 Text 本体响应，空块的 Text(' ') 只有几像素宽，
+    // 点击行内空白处无法进入编辑 —— 表现为"编辑器点了没反应"）。
+    // 带自身 onClick 的 segment（[[链接]]/#标签 等）优先消费事件，不触发编辑。
+    .onClick(() => {
+      this.enterEdit();
+    })
   }
 
   @Builder
@@ -546,6 +552,17 @@ export struct BlockView {
   enterEdit(): void {
     EditorService.getInstance().setFocusedBlock(this.blockUuid);
     this.isEditing = true;
+  }
+
+  /**
+   * 全局焦点变化回调：焦点落到别的块（或被清除）时退出本块编辑态。
+   * 内容安全：WebEditor 已在 input 事件中 400ms 防抖自动保存。
+   */
+  onGlobalFocusChanged(): void {
+    if (this.isEditing && this.focusedBlockUuid !== this.blockUuid) {
+      this.isEditing = false;
+      this.refreshBlock();
+    }
   }
 
   private startCellEdit(line: number, col: number, text: string): void {
