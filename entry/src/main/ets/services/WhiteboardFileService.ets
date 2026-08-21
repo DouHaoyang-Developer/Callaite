@@ -114,6 +114,45 @@ export class WhiteboardFileService {
   }
 
   /**
+   * 保存原始 JSON 字符串到指定路径（模型无关的通用写入）。
+   * 供白板组件以自身数据模型直接持久化，避免与 CanvasFileData 的
+   * 字段差异（strokeColor/borderColor 等）产生转换层。
+   */
+  saveRawCanvas(filePath: string, json: string): void {
+    const parentDir = this.getParentDir(filePath);
+    if (parentDir.length > 0) {
+      this.ensureDir(parentDir);
+    }
+    try {
+      const file = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+      fs.writeSync(file.fd, json);
+      fs.closeSync(file);
+    } catch (e) {
+      console.error('[WhiteboardFileService] Failed to save raw canvas: ' + filePath, e);
+    }
+  }
+
+  /**
+   * 读取原始 JSON 字符串；文件不存在或为空时返回 undefined。
+   */
+  loadRawCanvas(filePath: string): string | undefined {
+    try {
+      const exists = fs.accessSync(filePath);
+      if (!exists) {
+        return undefined;
+      }
+      const raw = fs.readTextSync(filePath);
+      if (raw.length === 0) {
+        return undefined;
+      }
+      return raw;
+    } catch (e) {
+      console.error('[WhiteboardFileService] Failed to load raw canvas: ' + filePath, e);
+      return undefined;
+    }
+  }
+
+  /**
    * 加载 .canvas 文件并解析为 CanvasFileData。
    * 文件不存在或解析失败时返回 undefined。
    */

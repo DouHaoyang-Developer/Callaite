@@ -125,6 +125,7 @@ export struct BlockView {
                   blockUuid: this.blockUuid,
                   initialContent: this.blockData.content,
                   pageName: this.resolvePageName(),
+                  fontSize: this.contentFontSize,
                   onSave: () => {
                     this.isEditing = false;
                     this.refreshBlock();

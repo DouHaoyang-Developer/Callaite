@@ -4,6 +4,18 @@ import { WbShape, WbShapeData } from './WbShape';
 import { WbConnector, WbConnectorData } from './WbConnector';
 import { WbPageRef, WbPageRefData } from './WbPageRef';
 import { PenKitService, PenBrushType, StrokePoint, StrokeData, BrushPresetItem } from '../../services/PenKitService';
+import { FileService } from '../../services/FileService';
+import { WhiteboardFileService } from '../../services/WhiteboardFileService';
+import { promptAction } from '@kit.ArkUI';
+
+/**
+ * 白板视口数据（缩放 + 平移），随画布一起持久化。
+ */
+interface WbViewportData {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+}
 
 /**
  * 白板导出数据格式 — .canvas 文件 JSON 结构。
@@ -12,6 +24,8 @@ interface WbExportData {
   shapes: WbShapeData[];
   connectors: WbConnectorData[];
   strokes: StrokeData[];
+  pageRefs: WbPageRefData[];
+  viewport: WbViewportData;
 }
 
 /**
@@ -66,8 +80,10 @@ export struct Whiteboard {
   // ─── Canvas 2D 上下文 ───
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
-  private canvasWidth: number = 800;
-  private canvasHeight: number = 600;
+  // @State：缩放浮层位置依赖画布实际尺寸，onAreaChange 更新后需要触发重渲染
+  @State private canvasWidth: number = 800;
+  @State private canvasHeight: number = 600;
+  private canvasFilePath: string = '';
 
   // ─── 手势辅助 ───
   private lastTouchX: number = 0;
@@ -111,35 +127,93 @@ export struct Whiteboard {
   ];
 
   aboutToAppear(): void {
-    // 初始化示例数据
-    this.initDemoData();
     // 初始化手写笔服务
     this.brushPresets = this.penKit.getBrushPresets();
     this.presetColors = this.penKit.getPresetColors();
+    // 加载持久化画布；无存档时首次进入显示演示数据
+    this.loadCanvasFile();
+  }
+
+  aboutToDisappear(): void {
+    this.persist();
+  }
+
+  /**
+   * 画布存档路径（应用沙箱 filesDir/whiteboards/default.canvas）。
+   */
+  private getCanvasFilePath(): string {
+    const ctx = FileService.getContext();
+    if (ctx) {
+      return ctx.filesDir + '/whiteboards/default.canvas';
+    }
+    return '';
+  }
+
+  /**
+   * 加载画布存档；不存在或解析失败时使用演示数据（仅首次进入）。
+   */
+  private loadCanvasFile(): void {
+    if (this.canvasFilePath === '') {
+      this.canvasFilePath = this.getCanvasFilePath();
+    }
+    const raw = WhiteboardFileService.getInstance().loadRawCanvas(this.canvasFilePath);
+    if (raw && raw.length > 0) {
+      try {
+        const data = JSON.parse(raw) as WbExportData;
+        this.shapes = Array.isArray(data.shapes) ? data.shapes : [];
+        this.connectors = Array.isArray(data.connectors) ? data.connectors : [];
+        this.strokes = Array.isArray(data.strokes) ? data.strokes : [];
+        this.pageRefs = Array.isArray(data.pageRefs) ? data.pageRefs : [];
+        if (data.viewport && data.viewport.scale > 0) {
+          this.scaleValue = data.viewport.scale;
+          this.offsetX = data.viewport.offsetX;
+          this.offsetY = data.viewport.offsetY;
+          this.zoomPercent = Math.round(data.viewport.scale * 100);
+        }
+        return;
+      } catch (e) {
+        console.error('[Whiteboard] 存档解析失败，回退演示数据', e);
+      }
+    }
+    this.initDemoData();
+  }
+
+  /**
+   * 持久化画布（含视口）。文件很小（几 KB），直接在每次变更后同步写入。
+   */
+  persist(): void {
+    if (this.canvasFilePath === '') {
+      this.canvasFilePath = this.getCanvasFilePath();
+    }
+    if (this.canvasFilePath === '') {
+      return;
+    }
+    WhiteboardFileService.getInstance().saveRawCanvas(this.canvasFilePath, this.exportCanvas());
   }
 
   /**
    * 初始化演示数据 — 2 个形状 + 1 条连线 + 1 个页面引用。
+   * 坐标已适配手机屏宽（<359vp），避免元素被屏幕右缘截断。
    */
   private initDemoData(): void {
     const s1: WbShapeData = {
-      id: 'shape_demo_1', type: 'rect', x: 100, y: 80,
-      width: 160, height: 80, text: '欢迎使用白板',
+      id: 'shape_demo_1', type: 'rect', x: 32, y: 32,
+      width: 220, height: 72, text: '欢迎使用白板',
       fillColor: '#F3F3F4', borderColor: '#0458A6', rotation: 0
     };
     const s2: WbShapeData = {
-      id: 'shape_demo_2', type: 'ellipse', x: 320, y: 200,
-      width: 120, height: 120, text: '拖拽捏合\n探索画布',
+      id: 'shape_demo_2', type: 'ellipse', x: 200, y: 160,
+      width: 130, height: 130, text: '拖拽捏合\n探索画布',
       fillColor: '#EAEAEB', borderColor: '#0458A6', rotation: 0
     };
     const c1: WbConnectorData = {
       id: 'conn_demo_1', fromShapeId: 'shape_demo_1', toShapeId: 'shape_demo_2',
-      fromPoint: { x: 260, y: 120 }, toPoint: { x: 320, y: 260 },
+      fromPoint: { x: 252, y: 104 }, toPoint: { x: 230, y: 180 },
       type: 'curved', color: '#787B80'
     };
     const pr1: WbPageRefData = {
       id: 'pageref_demo_1', pageName: 'Journal',
-      x: 120, y: 260, width: 160, height: 80, blockCount: 12
+      x: 32, y: 350, width: 200, height: 80, blockCount: 12
     };
     this.shapes = [s1, s2];
     this.connectors = [c1];
@@ -189,6 +263,7 @@ export struct Whiteboard {
     newShapes.push(shape);
     this.shapes = newShapes;
     this.selectedShapeId = id;
+    this.persist();
   }
 
   /**
@@ -257,6 +332,7 @@ export struct Whiteboard {
     if (this.editingShapeId === id) {
       this.editingShapeId = '';
     }
+    this.persist();
   }
 
   /**
@@ -277,6 +353,7 @@ export struct Whiteboard {
       }
     }
     this.shapes = newShapes;
+    this.persist();
   }
 
   // ═══════════════════════════════════════════
@@ -361,6 +438,7 @@ export struct Whiteboard {
       }
     }
     this.drawGrid();
+    this.persist();
   }
 
   /**
@@ -386,6 +464,7 @@ export struct Whiteboard {
       }
     }
     this.drawGrid();
+    this.persist();
   }
 
   // ═══════════════════════════════════════════
@@ -393,14 +472,20 @@ export struct Whiteboard {
   // ═══════════════════════════════════════════
 
   /**
-   * 导出画布为 JSON 字符串（.canvas 文件格式）。
-   * 实际持久化由 WhiteboardFileService 处理（预留接口）。
+   * 导出画布为 JSON 字符串（.canvas 文件格式，含页面引用与视口）。
    */
   exportCanvas(): string {
+    const vp: WbViewportData = {
+      scale: this.scaleValue,
+      offsetX: this.offsetX,
+      offsetY: this.offsetY
+    };
     const data: WbExportData = {
       shapes: this.shapes,
       connectors: this.connectors,
-      strokes: this.strokes
+      strokes: this.strokes,
+      pageRefs: this.pageRefs,
+      viewport: vp
     };
     return JSON.stringify(data);
   }
@@ -412,12 +497,15 @@ export struct Whiteboard {
     try {
       const data = JSON.parse(json) as WbExportData;
       this.pushHistory();
-      this.shapes = data.shapes;
-      this.connectors = data.connectors;
-      if (data.strokes) {
-        this.strokes = data.strokes;
-      } else {
-        this.strokes = [];
+      this.shapes = Array.isArray(data.shapes) ? data.shapes : [];
+      this.connectors = Array.isArray(data.connectors) ? data.connectors : [];
+      this.strokes = Array.isArray(data.strokes) ? data.strokes : [];
+      this.pageRefs = Array.isArray(data.pageRefs) ? data.pageRefs : [];
+      if (data.viewport && data.viewport.scale > 0) {
+        this.scaleValue = data.viewport.scale;
+        this.offsetX = data.viewport.offsetX;
+        this.offsetY = data.viewport.offsetY;
+        this.zoomPercent = Math.round(data.viewport.scale * 100);
       }
       this.selectedShapeId = '';
       this.editingShapeId = '';
@@ -425,6 +513,35 @@ export struct Whiteboard {
     } catch (e) {
       console.error('[Whiteboard] 导入失败', e);
     }
+  }
+
+  /**
+   * 按系数缩放（以画布中心为锚点，避免视图漂移）。
+   */
+  private zoomBy(factor: number): void {
+    const newScale = Math.max(0.2, Math.min(3, this.scaleValue * factor));
+    const cx = this.canvasWidth / 2;
+    const cy = this.canvasHeight / 2;
+    const worldX = (cx - this.offsetX) / this.scaleValue;
+    const worldY = (cy - this.offsetY) / this.scaleValue;
+    this.scaleValue = newScale;
+    this.offsetX = cx - worldX * newScale;
+    this.offsetY = cy - worldY * newScale;
+    this.zoomPercent = Math.round(newScale * 100);
+    this.drawGrid();
+    this.persist();
+  }
+
+  /**
+   * 重置视图：100% 缩放、回到画布原点。
+   */
+  private resetView(): void {
+    this.scaleValue = 1;
+    this.offsetX = 0;
+    this.offsetY = 0;
+    this.zoomPercent = 100;
+    this.drawGrid();
+    this.persist();
   }
 
   // ═══════════════════════════════════════════
@@ -664,6 +781,7 @@ export struct Whiteboard {
 
     this.currentStrokePoints = [];
     this.drawGrid();
+    this.persist();
   }
 
   /**
@@ -817,34 +935,61 @@ export struct Whiteboard {
   }
 
   /**
+   * 缩放控件按钮（缩小/放大/重置视图）。
+   */
+  @Builder ZoomButton(mode: string) {
+    Row() {
+      TablerIcon(mode === 'reset' ? 'refresh' : mode, 16, $r('app.color.muted_text'))
+    }
+    .width(32)
+    .height(32)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(6)
+    .onClick(() => {
+      if (mode === 'minus') {
+        this.zoomBy(1 / 1.25);
+      } else if (mode === 'plus') {
+        this.zoomBy(1.25);
+      } else {
+        this.resetView();
+      }
+    })
+  }
+
+  /**
    * 操作按钮（撤销/重做）。
    */
   @Builder UndoButton() {
-    Text('↶')
-      .fontSize(16)
-      .fontColor(this.undoStack.length > 0 ? $r('app.color.text') : $r('app.color.muted_text'))
-      .width(32)
-      .height(32)
-      .textAlign(TextAlign.Center)
-      .borderRadius(6)
-      .opacity(this.undoStack.length > 0 ? 1 : 0.4)
-      .onClick(() => {
-        this.undo();
-      })
+    Row() {
+      TablerIcon('arrow-back-up', 18,
+        this.undoStack.length > 0 ? $r('app.color.text') : $r('app.color.muted_text'))
+    }
+    .width(36)
+    .height(36)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(6)
+    .opacity(this.undoStack.length > 0 ? 1 : 0.4)
+    .onClick(() => {
+      this.undo();
+    })
   }
 
   @Builder RedoButton() {
-    Text('↷')
-      .fontSize(16)
-      .fontColor(this.redoStack.length > 0 ? $r('app.color.text') : $r('app.color.muted_text'))
-      .width(32)
-      .height(32)
-      .textAlign(TextAlign.Center)
-      .borderRadius(6)
-      .opacity(this.redoStack.length > 0 ? 1 : 0.4)
-      .onClick(() => {
-        this.redo();
-      })
+    Row() {
+      TablerIcon('arrow-forward-up', 18,
+        this.redoStack.length > 0 ? $r('app.color.text') : $r('app.color.muted_text'))
+    }
+    .width(36)
+    .height(36)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(6)
+    .opacity(this.redoStack.length > 0 ? 1 : 0.4)
+    .onClick(() => {
+      this.redo();
+    })
   }
 
   build() {
@@ -855,8 +1000,8 @@ export struct Whiteboard {
         Row() {
           TablerIcon('arrow-left', 20, $r('app.color.text'))
         }
-        .width(32)
-        .height(32)
+        .width(36)
+        .height(36)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
@@ -869,12 +1014,21 @@ export struct Whiteboard {
           .height(20)
           .color($r('app.color.border'))
           .strokeWidth(1)
-          .margin({ left: 4, right: 4 })
+          .margin({ left: 2, right: 2 })
 
-        // 工具按钮组
-          ForEach(this.tools, (tc: ToolConfig) => {
-            this.ToolButton(tc.icon, tc.tool)
-          }, (tc: ToolConfig) => tc.tool)
+        // 工具按钮组（横向可滚动，窄屏不再溢出裁切）
+        Scroll() {
+          Row({ space: 4 }) {
+            ForEach(this.tools, (tc: ToolConfig) => {
+              this.ToolButton(tc.icon, tc.tool)
+            }, (tc: ToolConfig) => tc.tool)
+          }
+        }
+        .layoutWeight(1)
+        .height(36)
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .align(Alignment.Start)
 
         // 分隔线
         Divider()
@@ -882,28 +1036,19 @@ export struct Whiteboard {
           .height(20)
           .color($r('app.color.border'))
           .strokeWidth(1)
-          .margin({ left: 4, right: 4 })
+          .margin({ left: 2, right: 2 })
 
-        // 撤销/重做
+        // 撤销/重做（固定右侧，不随工具组滚动）
         this.UndoButton()
         this.RedoButton()
-
-        // 弹性间距
-        Blank()
-
-        // 缩放百分比
-        Text(this.zoomPercent + '%')
-          .fontSize(12)
-          .fontColor($r('app.color.muted_text'))
-          .margin({ right: 8 })
 
         // 删除按钮（选中时显示）
         if (this.selectedShapeId !== '') {
           Row() {
             TablerIcon('trash', 16, $r('app.color.danger'))
           }
-          .width(32)
-          .height(32)
+          .width(36)
+          .height(36)
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
           .borderRadius(6)
@@ -912,18 +1057,18 @@ export struct Whiteboard {
           })
         }
 
-        // 导出按钮
+        // 保存按钮（持久化到 .canvas 文件并提示）
         Row() {
-          TablerIcon('download', 16, $r('app.color.muted_text'))
+          TablerIcon('download', 18, $r('app.color.muted_text'))
         }
-        .width(32)
-        .height(32)
+        .width(36)
+        .height(36)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .borderRadius(6)
         .onClick(() => {
-          const json = this.exportCanvas();
-          console.info('[Whiteboard] 导出: ' + json.substring(0, 200));
+          this.persist();
+          promptAction.openToast({ message: '白板已保存' });
         })
       }
       .width('100%')
@@ -956,6 +1101,8 @@ export struct Whiteboard {
           WbConnector({
             connector: c,
             zoomScale: this.scaleValue,
+            panX: this.offsetX,
+            panY: this.offsetY,
             isSelected: false
           })
             .hitTestBehavior(HitTestMode.None)
@@ -1010,6 +1157,30 @@ export struct Whiteboard {
             .opacity(0.5)
             .hitTestBehavior(HitTestMode.None)
         }
+
+        // 缩放控件浮层（画布右下角；显式 position——Stack 子组件的
+        // .align() 在该 SDK 上不生效，会被 alignContent 默认居中）
+        Row({ space: 2 }) {
+          this.ZoomButton('minus')
+          Text(this.zoomPercent + '%')
+            .fontSize(11)
+            .fontColor($r('app.color.muted_text'))
+            .width(42)
+            .textAlign(TextAlign.Center)
+          this.ZoomButton('plus')
+          this.ZoomButton('reset')
+        }
+        .width(152)
+        .height(40)
+        .padding({ left: 4, right: 4, top: 2, bottom: 2 })
+        .backgroundColor($r('app.color.surface0'))
+        .borderRadius(8)
+        .border({ width: 1, color: $r('app.color.border') })
+        .opacity(0.94)
+        .position({
+          x: this.canvasWidth - 164,
+          y: this.canvasHeight - 52
+        })
       }
       .width('100%')
       .layoutWeight(1)
@@ -1097,6 +1268,7 @@ export struct Whiteboard {
           .onActionEnd(() => {
             if (this.isDraggingShape) {
               this.isDraggingShape = false;
+              this.persist();
             }
             if (this.isDrawing) {
               if (this.currentTool === 'pen') {
@@ -1121,6 +1293,9 @@ export struct Whiteboard {
             this.scaleValue = newScale;
             this.zoomPercent = Math.round(newScale * 100);
             this.drawGrid();
+          })
+          .onActionEnd(() => {
+            this.persist();
           })
       )
       .onClick((event: ClickEvent) => {

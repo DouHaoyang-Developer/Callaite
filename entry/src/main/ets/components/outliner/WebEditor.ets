@@ -25,6 +25,7 @@ export struct WebEditor {
   @Prop blockUuid: string = '';
   @Prop initialContent: string = '';
   @Prop pageName: string = '';
+  @Prop fontSize: number = 15;
   onSave: () => void = () => {};
   onAction: (action: string, data: string) => void = (_a: string, _d: string) => {};
 
@@ -43,7 +44,8 @@ export struct WebEditor {
       .replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
     this.htmlContent = WebEditorHTML
       .replace('__CONTENT__', escaped)
-      .replace('__BLOCK_ID__', this.blockUuid);
+      .replace('__BLOCK_ID__', this.blockUuid)
+      .replace('__FS__', this.fontSize.toString());
     // 将 HTML 写入应用缓存目录，通过 file:// 加载。
     // 已实测：src 直接传 HTML 源码串、loadData 传源码串均渲染空白。
     try {
@@ -54,9 +56,12 @@ export struct WebEditor {
         fs.writeSync(file.fd, this.htmlContent);
         fs.closeSync(file);
         this.webSrc = 'file://' + path;
+        console.info('[WebEditor] wrote html: ' + path);
+      } else {
+        console.error('[WebEditor] FileService context is null');
       }
-    } catch (_e) {
-      // 写文件失败时保持 about:blank
+    } catch (e) {
+      console.error('[WebEditor] html write failed: ' + JSON.stringify(e));
     }
   }
 
@@ -88,10 +93,14 @@ export struct WebEditor {
 
   /**
    * 外部调用：设置焦点到编辑器。
+   * 关键：仅 runJavaScript('focusEditor()') 只设置 DOM 焦点，
+   * IME/软键盘输入不会路由到 WebView —— 必须先 requestFocus() 让
+   * Web 组件获得 ArkUI 系统焦点，再聚焦 DOM。
    */
   focus(): void {
     if (this.editorReady) {
       try {
+        this.controller.requestFocus();
         this.controller.runJavaScript('focusEditor()');
       } catch (_e) { /* ignore */ }
     }
@@ -179,7 +188,7 @@ const WebEditorHTML: string = `<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:28px;color:#1a1a1a;background:transparent;padding:0 4px;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:__FS__px;line-height:28px;color:#1a1a1a;background:transparent;padding:0 4px;}
 #editor{outline:none;min-height:28px;word-break:break-word;white-space:pre-wrap;}
 #editor:empty:before{content:attr(data-placeholder);color:#9ca3af;}
 </style></head><body>

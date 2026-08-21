@@ -3,7 +3,7 @@
 **Logseq 风格的鸿蒙知识管理应用** — 基于 HarmonyOS ArkTS 构建，完整复刻 Logseq 的大纲编辑、双向链接、知识图谱等核心体验。
 
 > **SDK**: 6.1.1(24) / API 12 · **语言**: ArkTS · **模型**: Stage Model  
-> **规模**: 108 源文件 · ~25,163 行代码 · 0 第三方运行时依赖 · 完成度 80%+  
+> **规模**: 116 源文件 · ~29,550 行代码 · 0 第三方运行时依赖 · 当前版本 4.1.1 Beta  
 > **架构**: MVVM + Service + Plugin + Query 四层架构
 
 ---
@@ -35,10 +35,10 @@
 ```bash
 # 1. 用 DevEco Studio 打开 Callaite/ 目录
 # 2. Sync Project → Build → Run
-# 3. 首次启动自动播种 5 个测试页面
+# 3. 首次启动进入 4 步引导（欢迎 → 创建 Graph → 快捷键 → 开始使用）
 ```
 
-启动后点击左侧栏「日志」进入今天的日志页，点击 Block 开始编辑。
+启动后进入日志流首页（最近 7 天按日期倒序，滚动到底自动追加），点击日期标题进入单日日志页，点击 Block 开始编辑。
 
 | 快捷键 | 功能 |
 |--------|------|
@@ -61,7 +61,7 @@ Callaite 的核心是 Logseq 风格的大纲树编辑器。每个 Block 是一�
 **编辑模式**
 - **阅读模式**：Block 内容以格式化文本显示，`[[引用]]` 显示为蓝色链接
 - **编辑模式**：点击 Block 进入 WebView contenteditable 编辑器，支持全键盘操作
-- **自动保存**：编辑器失焦时自动保存到 DataStore 并持久化到 .md 文件
+- **自动保存**：输入防抖 400ms 自动落库（只保存、不退出编辑态、不触发 UI 刷新），失焦时保存并持久化到 .md 文件
 
 **Block 操作**
 - 圆点（●）点击：展开操作工具栏 / 折叠子 Block
@@ -139,7 +139,8 @@ Callaite 的核心是 Logseq 风格的大纲树编辑器。每个 Block 是一�
 ### 3. 页面系统
 
 **日志页**
-- 每日自动创建（格式 yyyy-MM-dd）
+- 每日自动创建（存储名 yyyy-MM-dd，参与文件系统与查询）
+- 显示标题本地化（`JournalService.formatJournalTitle`）：中文「2026年8月20日 星期四」/ 英文「Aug 20th, 2026」，仅显示用，存储名不变
 - Header 导航箭头支持前一天/后一天快速跳转
 - 日志页顶部显示计划/截止任务面板
 
@@ -484,6 +485,8 @@ Logseq .md → Block 树解析器：
 
 Callaite 采用 **WebView contenteditable** 方案实现完整键盘支持。每个 Block 编辑时实例化一个微型 WebView 编辑器。
 
+**加载方式（4.1.1）**：编辑器 HTML 写入应用沙箱缓存目录后以 `file://` URL 加载。Web 组件的 `src` 只接受 URL / `$rawfile`，HTML 源码串直接传 `src` 或 `loadData` 均实测渲染空白，沙箱文件是唯一可靠方案。
+
 ### JS ↔ ArkTS 通信
 
 ```
@@ -720,6 +723,20 @@ Pro 状态缓存到沙箱文件，启动时先恢复未过期缓存，随后网�
 - URL 分享 → 转为 `[url]` 格式 Block
 - 处理后显示 toast 提示并跳转日志页
 
+### 状态持久化（StatePersistence）
+
+`PersistentStorage` 在 SDK 冷启动时恢复不可靠，Callaite 自管 JSON 文件持久化关键状态：
+
+- `onCreate` 同步恢复 10 个 AppStorage 键（引导标志 / 主题模式 / 语言 / 用户配置 / 收藏夹 / 侧栏折叠状态等），必须在任何 UI 加载前执行
+- `onBackground` 与 `onSaveState` 时写入，避免进程被杀后状态丢失
+- 主题恢复分两步：启动初期 `setColorMode(NOT_SET)` 跟随系统 → `AppState.initialize()` 后 `ThemeManager.applyPersistedTheme()` 应用持久化主题（顺序错误会导致 dark/light 资源限定符不切换）
+
+### 崩溃恢复（ErrorRecoveryService）
+
+- `appRecovery.enableAppRecovery` — JS 崩溃 / 主线程卡死 / Native 崩溃自动重启
+- `errorManager.on('error')` — 全局捕获未处理异常，落日志并保存数据
+- `onSaveState` 回调 — 框架触发时执行 `WorkspaceService.saveAll()`
+
 ### 安全
 
 - **应用沙箱**：HarmonyOS 应用沙箱隔离
@@ -875,22 +892,39 @@ WebView + mermaid.js 10 CDN，支持流程图/时序图/类图等，主题自动
 
 ```
 EntryAbility.onCreate
-  └── FileService.setContext(this.context)
+  ├── FileService.setContext(this.context)   // 沙箱路径上下文
+  ├── StatePersistence.load()                // 冷启动恢复 10 个 AppStorage 键（引导标志/主题/语言/配置等）
+  ├── ErrorRecoveryService.init()            // appRecovery + errorManager 全局异常捕获
+  └── setColorMode(NOT_SET)                  // 启动初期跟随系统，持久化主题延后应用
 
 EntryAbility.onRestoreData（仅多端流转目标端）
   └── ContinuationManager.restoreFromContinue(want)   // 恢复迁移状态
 
 EntryAbility.onWindowStageCreate
-  ├── FileService.initGraph()             // 加载 .md 文件到内存
-  ├── TestDataService.seedIfEmpty()       // 空 Graph → 播种 5 个测试页面
-  ├── CollaborationService.init(ctx)      // 初始化分布式 KVStore
-  ├── SubscriptionService.refreshPro()    // 异步 IAP 订阅状态刷新
-  ├── EncryptionService.init()            // AES-256 密钥初始化
-  ├── CloudSyncService.initCloudDir()     // 端云协同目录创建
-  ├── registerBuiltinPlugins()            // 插件系统初始化
-  ├── AppState.initialize()               // 主题 → i18n → AppStorage → 侧栏状态
-  └── loadContent('pages/Index')          // 渲染主界面
+  ├── FileService.initGraph()                // 加载 .md 文件到内存
+  ├── CollaborationService.init(ctx)         // 初始化分布式 KVStore
+  ├── SubscriptionService.initCachedProState()          // 恢复缓存的 Pro 状态（先展示，不等网络）
+  ├── SubscriptionService.startPeriodicRefresh()        // 24h 定时刷新
+  ├── SubscriptionService.refreshProStatus()            // 网络刷新 IAP 订阅状态
+  ├── HuaweiAccountService.refresh()         // 华为账号状态（云同步与 IAP 前置）
+  ├── EncryptionService.init()               // AES-256 密钥初始化
+  ├── CloudSyncService.initCloudDir()        // 端云协同目录创建
+  ├── registerBuiltinPlugins()               // 插件系统初始化
+  ├── AppState.initialize()                  // 主题 → i18n → AppStorage → 侧栏状态
+  ├── ThemeManager.applyPersistedTheme()     // 必须在 AppStorage 初始化后、loadContent 前，
+  │                                          // 否则 dark/light 资源限定符不切换
+  └── loadContent('pages/Index')             // 渲染主界面
+
+EntryAbility.onBackground
+  ├── WorkspaceService.saveAll()             // 保存所有页面
+  ├── StatePersistence.save()                // 持久化跨进程状态
+  └── CloudSyncService.syncAll()             // 端云协同同步（完成后同步 Block 元数据索引）
+
+EntryAbility.onSaveState（崩溃恢复）
+  └── WorkspaceService.saveAll()             // 框架触发时保存数据
 ```
+
+> 测试数据播种 `TestDataService.seedIfEmpty()` 已于 3.1.2 从启动链移除，生产构建不会创建示例页面。
 
 ---
 
@@ -915,9 +949,11 @@ EntryAbility.onWindowStageCreate
 | 云同步 | Core File Kit 端云协同 | 零服务器 |
 | 加密 | cryptoFramework AES-256-CBC | 随机 IV |
 | 闪卡 | FSRS-4.5 算法 | 稳定性/难度/可提取性 |
-| 图标 | 123 个 Tabler SVG → ArkTS Shape | MIT 协议 |
+| 图标 | 137 个 Tabler SVG → ArkTS Shape | MIT 协议 |
 | 插件 | 预编译 + 静态注册表 | ArkTS 安全兼容 |
 | i18n | 自定义 I18nDict class | 中/英双语 |
+| 状态持久化 | StatePersistence 自管 JSON | 替代 PersistentStorage（冷启动恢复不可靠） |
+| 崩溃恢复 | appRecovery + errorManager | 自动重启 + 全局异常捕获 |
 
 ---
 
@@ -945,25 +981,25 @@ EntryAbility.onWindowStageCreate
 
 ```
 Callaite/entry/src/main/ets/
-├── components/              49 文件 (UI 层)
+├── components/              57 文件 (UI 层)
 │   ├── outliner/            11  (BlockView / BlockList / BlockChildren / BlockDragHandler / BlockSelection /
 │   │                            WebEditor / RichBlockEditor / SlashMenu / AutoComplete / Toolbar / FindInPage)
 │   ├── sidebar/              5  (LeftSidebar / RightSidebar / PageTree / PageContextMenu / BacklinkFilters)
-│   ├── page/                 3  (PageView / ContentArea / AllPagesPage)
+│   ├── page/                 4  (PageView / ContentArea / JournalFeed / AllPagesPage)
 │   ├── layout/               2  (Header / MainContainer)
 │   ├── graph/                3  (GraphView / GraphLayout / GraphActions)
 │   ├── whiteboard/           4  (Whiteboard / WbShape / WbConnector / WbPageRef)
 │   ├── search/               3  (SearchPanel / TaskDashboard / TaskSchedulePanel)
 │   ├── settings/             4  (SettingsPage / ProUpgradePage / RecycleBinPage / ShortcutSettings)
 │   ├── property/             3  (PropertyEditor / PropertyConfig / PropertyValueEditor)
-│   ├── query/                2  (QueryBuilder / QueryView)
+│   ├── query/                3  (QueryBuilder / QueryView / InlineQueryBlock)
 │   ├── commandpalette/       1  (CommandPalette)
 │   ├── flashcard/            1  (FlashcardPage)
 │   ├── onboarding/           1  (OnboardingPage)
 │   ├── mobile/               1  (MobileToolbar)
-│   ├── common/               4  (Icons / TablerIconPaths / ThemeManager / DatePicker)
-│   └── extensions/           3  (MathRenderer / MermaidRenderer / CodeBlock)
-├── core/                    18 文件 (引擎层)
+│   ├── common/               6  (Icons / TablerIconPaths / ThemeManager / DatePicker / ExportDialog / ImportDialog)
+│   └── extensions/           5  (MathRenderer / MermaidRenderer / CodeBlock / PdfViewer / PdfPage)
+├── core/                    22 文件 (引擎层)
 │   ├── models/               4  (Block / Page / Property / Constants)
 │   ├── engine/               9  (BlockTree / OutlinerOps / OutlinerEngine / Validator /
 │   │                            TransactionPipeline / ReferenceResolver / PropertyEngine /
@@ -971,13 +1007,14 @@ Callaite/entry/src/main/ets/
 │   ├── parser/               2  (MarkdownParser / MarkdownExporter)
 │   ├── db/                   6  (DataStore / IndexStore / QueryEngine / DatalogEngine / LogicEngine / ReactiveQuery)
 │   └── persistence/          1  (FileRepository)
-├── services/                18 文件 (服务层)
+├── services/                21 文件 (服务层)
 │   Workspace / File / Editor / Journal / Template / ShortcutService / PasteService /
 │   Subscription / Collaboration / Encryption / CloudSync / ContinuationManager /
-│   PenKitService / Export / Import / Flashcard / WhiteboardFileService / TestData
+│   PenKitService / Export / Import / Flashcard / WhiteboardFileService / TestData /
+│   HuaweiAccount / BlockMetadataSync / ErrorRecovery
 ├── plugins/                  4 文件 (插件框架)
 │   CallaitePlugin / PluginAPI / PluginManager / BuiltinPlugins
-├── state/                    1  (AppState)
+├── state/                    2  (AppState / StatePersistence)
 ├── utils/                    4  (i18n / UUID / ContentRenderer / NamespaceUtils)
 ├── pages/                    1  (Index)
 ├── entryability/             1  (EntryAbility — 含 onContinue/onRestoreData)
@@ -1002,7 +1039,7 @@ Callaite/entry/src/main/ets/
 **权限声明** (`module.json5`):
 - `ohos.permission.DISTRIBUTED_DATASYNC` — 分布式协同编辑
 
-**测试数据**: 首次启动自动创建 5 个页面（今日日志 / 项目文档 / dev/鸿蒙开发笔记 / HarmonyOS开发指南），含 TODO 标记、引用、嵌套 Block、KaTeX 公式、Mermaid 图表。
+**测试数据**: `TestDataService` 保留在代码库中供开发调试，但自 3.1.2 起已从启动链移除，生产构建首次启动为空白 Graph + 4 步引导。
 
 ---
 
@@ -1036,9 +1073,9 @@ Callaite/entry/src/main/ets/
 - [ ] 确认隐私政策已说明：笔记经 AES-256-CBC 加密后写入华为云空间进行端云同步
 - [ ] 若后续引入位置/相册/文件等敏感权限，需在 `module.json5` 补充 `reason` 并做动态申请与合规声明
 
-### 3. 测试数据清理
+### 3. 测试数据清理 ✅ 已完成
 
-- [ ] 生产构建前关闭测试数据播种：移除或条件化 [EntryAbility.ets](entry/src/main/ets/entryability/EntryAbility.ets) 中 `TestDataService.seedIfEmpty()`（当前首次启动会自动创建 5 个示例页面）
+- [x] `TestDataService.seedIfEmpty()` 已于 3.1.2 从 [EntryAbility.ets](entry/src/main/ets/entryability/EntryAbility.ets) 启动链移除，生产构建首次启动为空白 Graph + 4 步引导
 
 ### 4. 构建与质量门禁
 

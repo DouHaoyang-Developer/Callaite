@@ -35,7 +35,7 @@ export struct ContentArea {
         .backgroundColor($r('app.color.surface0'))
         .focusable(true)
         .defaultFocus(true)
-        .key('contentAreaScroll')
+        .id('contentAreaScroll')
         .onKeyEvent((event: KeyEvent) => {
           // 统一路由到 ShortcutService（含 Ctrl+K/Ctrl+Z/Tab/Alt+↑↓ 等全部快捷键）
           if (event.type === KeyType.Down) {
