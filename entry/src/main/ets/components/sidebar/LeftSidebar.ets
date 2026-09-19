@@ -42,6 +42,7 @@ export struct LeftSidebar {
   @State hoveredPage: string = '';
   @State hoveredNavKey: string = '';
   @State hoveredViewIcon: string = '';
+  @State hoveredStrip: string = '';
   @State hoveredTool: string = '';
   /** 文件树排序方向：false=名称升序，true=名称降序（对齐 Obsidian 左栏排序按钮） */
   @StorageLink('callaite_sidebarSortDesc') sortDesc: boolean = false;
@@ -115,7 +116,7 @@ export struct LeftSidebar {
 
   build() {
     Column({ space: 0 }) {
-      // ─── 搜索框（导航区唯一元素，形状对齐 Obsidian）───
+      // ─── 搜索框（Obsidian 形状）───
       Row({ space: 8 }) {
         TablerIcon('search', 14, $r('app.color.muted_text'))
         Text('搜索或开始搜索...')
@@ -134,7 +135,7 @@ export struct LeftSidebar {
         AppState.setSearchPanelOpen(true);
       })
 
-      // ─── 文件树（严格 Obsidian：缩进 / 箭头 / 图标区分 / 高亮 / 悬停 / 统计）───
+      // ─── 文件树（Obsidian 原生风格，占主体）───
       PageTree()
         .layoutWeight(1)
 
@@ -143,7 +144,7 @@ export struct LeftSidebar {
         .width('100%')
         .color($r('app.color.border'))
 
-      // ─── 文件树工具行（迁移自顶部；对齐 Obsidian 移动端底部工具行）───
+      // ─── 文件树工具行 ───
       Row({ space: 2 }) {
         this.TreeToolIcon('file-plus', 'tree_new_note', () => {
           AppStorage.setOrCreate('callaite_newFileDialogOpen', true);
@@ -163,7 +164,7 @@ export struct LeftSidebar {
       .height(40)
       .padding({ left: 12, right: 12 })
 
-      // ─── 导航区（迁移：日志 / 所有页面 / 图谱 / 白板 / 闪卡 / PDF）───
+      // ─── 导航区 ───
       ForEach(this.getNavItems(), (item: NavItem) => {
         this.NavRow(item)
       }, (item: NavItem) => item.key)
@@ -185,7 +186,7 @@ export struct LeftSidebar {
       }
       this.SectionSpacer()
 
-      // ─── 仓库切换入口（迁移自顶部 Vault 行）───
+      // ─── 仓库切换入口 ───
       Row({ space: 8 }) {
         TablerIcon('database', 14, $r('app.color.icon_color'))
         Text('仓库切换')
@@ -200,7 +201,7 @@ export struct LeftSidebar {
         AppStorage.setOrCreate('callaite_vaultSwitcherOpen', true);
       })
 
-      // ─── 底部 Vault 行（设置入口，Obsidian 左下角）───
+      // ─── 底部 Vault 行（设置入口）───
       Row({ space: 8 }) {
         TablerIcon('settings', 16, $r('app.color.icon_color'))
         Text(t('vault') + ' · ' + t('settings'))
@@ -222,13 +223,8 @@ export struct LeftSidebar {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.surface1'))
-    .border({ width: { right: 0.5 }, color: $r('app.color.border') })
   }
 
-  /**
-   * 视图切换小图标（Obsidian 左栏顶部图标行）。
-   */
   @Builder
   ViewSwitchIcon(icon: string, active: boolean, onTap: () => void) {
     Row() {
