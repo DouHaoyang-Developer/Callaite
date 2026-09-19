@@ -1,6 +1,9 @@
 import { TablerIcon } from '../common/Icons';
 import { t } from '../../utils/i18n';
 import { TabState, TabInfo } from '../../state/TabState';
+import { WorkspaceService } from '../../services/WorkspaceService';
+import { pageTitle } from '../../utils/PageTitle';
+import { PageData } from '../../core/models/Page';
 
 /**
  * TabBar — Obsidian 桌面端编辑器标签页栏（复刻 Obsidian_Laptop.png 顶部标签组）。
@@ -12,6 +15,10 @@ import { TabState, TabInfo } from '../../state/TabState';
  */
 @Component
 export struct TabBar {
+  /** 副窗格可选的内置路由（与 pageTitle 的映射保持一致） */
+  private static readonly BUILTIN_ROUTES: string[] =
+    ['Journal', 'AllPages', 'Graph', 'Whiteboards', 'Flashcards', 'Pdf'];
+
   @StorageLink('callaite_tabsVersion') @Watch('onTabsChanged') tabsVersion: number = 0;
   @StorageLink('callaite_activeTabId') activeTabId: string = '';
   @StorageLink('callaite_currentPage') currentPage: string = 'Journal';
@@ -19,9 +26,50 @@ export struct TabBar {
   @State hoveredTabId: string = '';
   @State hoveredAction: string = '';
   @State hoveredCloseId: string = '';
+  // ─── 分屏（对齐 Obsidian 桌面 split）───
+  @StorageLink('callaite_splitEnabled') splitEnabled: boolean = false;
+  @StorageLink('callaite_splitPage') splitPage: string = 'Journal';
+  /** 副窗格可选页面（缓存，避免 build 期间访问服务） */
+  @State pageOptions: SelectOption[] = [];
+  /** 与 pageOptions 一一对应的内部路由（SelectOption.value 为 ResourceStr，单独存字符串便于比较） */
+  @State pageRoutes: string[] = [];
 
   aboutToAppear(): void {
+    this.refreshPageOptions();
     this.tabsList = TabState.getTabs();
+  }
+
+  /** 收集副窗格可选页面（内置入口 + 全部页面）；在生命周期内调用，避免 build 期间访问服务 */
+  private refreshPageOptions(): void {
+    const opts: SelectOption[] = [];
+    const routes: string[] = [];
+    for (let i = 0; i < TabBar.BUILTIN_ROUTES.length; i++) {
+      const r: string = TabBar.BUILTIN_ROUTES[i];
+      opts.push({ value: pageTitle(r) });
+      routes.push(r);
+    }
+    const pages: PageData[] = WorkspaceService.getInstance().getAllPages();
+    for (let i = 0; i < pages.length && i < 40; i++) {
+      opts.push({ value: pages[i].originalName });
+      routes.push(pages[i].originalName);
+    }
+    this.pageOptions = opts;
+    this.pageRoutes = routes;
+  }
+
+  /** 选项下标 → 内部路由 */
+  private routeOfOption(index: number): string {
+    return this.pageRoutes[index] !== undefined ? this.pageRoutes[index] : 'Journal';
+  }
+
+  /** 当前副窗格路由对应的选项下标 */
+  private currentSplitIndex(): number {
+    for (let i = 0; i < this.pageRoutes.length; i++) {
+      if (this.pageRoutes[i] === this.splitPage) {
+        return i;
+      }
+    }
+    return 0;
   }
 
   onTabsChanged(): void {
@@ -115,6 +163,28 @@ export struct TabBar {
 
   build() {
     Row({ space: 2 }) {
+      // ─── 标签列表下拉（Obsidian 桌面：位于最左）───
+      Row() {
+        TablerIcon('chevron-down', 18, $r('app.color.icon_color'))
+      }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .width(40)
+      .height(40)
+      .borderRadius(6)
+      .margin({ left: 2 })
+      .stateStyles({
+        normal: {
+          .backgroundColor(this.hoveredAction === 'menu' ? $r('app.color.surface2') : Color.Transparent)
+        },
+        pressed: { .backgroundColor($r('app.color.surface3')) }
+      })
+      .animation({ duration: 140, curve: Curve.EaseOut })
+      .onHover((isHover: boolean) => {
+        this.hoveredAction = isHover ? 'menu' : '';
+      })
+      .bindMenu(this.TabsMenu())
+
       // ─── 标签滚动区 ───
       Scroll() {
         Row({ space: 0 }) {
@@ -130,6 +200,47 @@ export struct TabBar {
       .align(Alignment.Start)
 
       // ─── 右侧操作区 ───
+      // 分屏（Obsidian 桌面 split）：开关 + 副窗格页面选择
+      Row() {
+        TablerIcon('square-toggle-horizontal', 16, this.splitEnabled
+          ? $r('app.color.primary')
+          : $r('app.color.icon_color'))
+      }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .width(40)
+      .height(40)
+      .borderRadius(6)
+      .stateStyles({
+        normal: {
+          .backgroundColor(this.splitEnabled
+            ? $r('app.color.accent_soft')
+            : (this.hoveredAction === 'split' ? $r('app.color.surface2') : Color.Transparent))
+        },
+        pressed: { .backgroundColor($r('app.color.surface3')) }
+      })
+      .animation({ duration: 140, curve: Curve.EaseOut })
+      .onHover((isHover: boolean) => {
+        this.hoveredAction = isHover ? 'split' : '';
+      })
+      .onClick(() => {
+        this.splitEnabled = !this.splitEnabled;
+      })
+
+      if (this.splitEnabled) {
+        Select(this.pageOptions)
+          .selected(this.currentSplitIndex())
+          .value(this.currentSplitIndex() < this.pageOptions.length
+            ? this.pageOptions[this.currentSplitIndex()].value
+            : '')
+          .font({ size: 12 })
+          .height(30)
+          .constraintSize({ maxWidth: 150 })
+          .onSelect((index: number) => {
+            this.splitPage = this.routeOfOption(index);
+          })
+      }
+
       Divider()
         .vertical(true)
         .height(16)
@@ -159,26 +270,6 @@ export struct TabBar {
         TabState.newTab('Journal');
       })
 
-      Row() {
-        TablerIcon('chevron-down', 18, $r('app.color.icon_color'))
-      }
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Center)
-      .width(40)
-      .height(40)
-      .borderRadius(6)
-      .margin({ right: 6 })
-      .stateStyles({
-        normal: {
-          .backgroundColor(this.hoveredAction === 'menu' ? $r('app.color.surface2') : Color.Transparent)
-        },
-        pressed: { .backgroundColor($r('app.color.surface3')) }
-      })
-      .animation({ duration: 140, curve: Curve.EaseOut })
-      .onHover((isHover: boolean) => {
-        this.hoveredAction = isHover ? 'menu' : '';
-      })
-      .bindMenu(this.TabsMenu())
     }
     .width('100%')
     .height(40)

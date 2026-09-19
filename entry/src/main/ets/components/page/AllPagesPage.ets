@@ -417,7 +417,7 @@ export struct AllPagesPage {
       }
     })
     .gesture(
-      LongPressGesture()
+      LongPressGesture({ fingers: 1 })
         .onAction(() => {
           this.deleteSinglePage(page);
         })

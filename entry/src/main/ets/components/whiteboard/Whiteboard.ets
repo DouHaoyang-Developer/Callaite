@@ -7,6 +7,7 @@ import { PenKitService, PenBrushType, StrokePoint, StrokeData, BrushPresetItem }
 import { FileService } from '../../services/FileService';
 import { WhiteboardFileService } from '../../services/WhiteboardFileService';
 import { promptAction } from '@kit.ArkUI';
+import { CanvasMath } from '../../utils/CanvasMath';
 
 /**
  * 白板视口数据（缩放 + 平移），随画布一起持久化。
@@ -668,15 +669,20 @@ export struct Whiteboard {
    */
   drawGrid(): void {
     const ctx = this.ctx;
-    const w = this.canvasWidth;
-    const h = this.canvasHeight;
+    // API 26 行为变更：Canvas 传入 NaN/Infinity 后，其它绘制方法会"正常绘制"而污染整幅画面，
+    // 因此所有坐标必须在源头做有限性校验
+    const w = CanvasMath.safe(this.canvasWidth);
+    const h = CanvasMath.safe(this.canvasHeight);
+    if (w <= 0 || h <= 0) {
+      return;
+    }
     ctx.clearRect(0, 0, w, h);
     // 网格
     const baseGridSize = 40;
-    const gridSize = baseGridSize * this.scaleValue;
+    const gridSize = CanvasMath.safe(baseGridSize * this.scaleValue, baseGridSize);
     if (gridSize >= 8) {
-      const startX = ((this.offsetX % gridSize) + gridSize) % gridSize;
-      const startY = ((this.offsetY % gridSize) + gridSize) % gridSize;
+      const startX = CanvasMath.safe(((this.offsetX % gridSize) + gridSize) % gridSize);
+      const startY = CanvasMath.safe(((this.offsetY % gridSize) + gridSize) % gridSize);
       ctx.strokeStyle = '#E8E9EA';
       ctx.lineWidth = 0.5;
       ctx.beginPath();
@@ -739,9 +745,21 @@ export struct Whiteboard {
     for (let j = 1; j < stroke.points.length; j++) {
       const p0 = stroke.points[j - 1];
       const p1 = stroke.points[j];
+      if (p0 === undefined || p1 === undefined) {
+        continue;
+      }
+      // 坐标含 NaN/Infinity 时跳过该段（API 26 行为变更）。
+      // 热路径禁用数组字面量：每帧每段分配临时数组会引发 GC 风暴（实测主线程冻结）
+      if (CanvasMath.notFinite4(
+        p0.x * this.scaleValue + this.offsetX, p0.y * this.scaleValue + this.offsetY,
+        p1.x * this.scaleValue + this.offsetX, p1.y * this.scaleValue + this.offsetY
+      )) {
+        continue;
+      }
       const avgPressure = (p0.pressure + p1.pressure) / 2;
       // 使用笔触存储时的 baseSize 渲染，而非当前笔刷设置
-      const lineWidth = this.penKit.mapPressureWithBase(avgPressure, stroke.brushType, stroke.baseSize) * this.scaleValue;
+      const lineWidth = CanvasMath.safe(
+        this.penKit.mapPressureWithBase(avgPressure, stroke.brushType, stroke.baseSize) * this.scaleValue);
       ctx.lineWidth = lineWidth;
       ctx.beginPath();
       ctx.moveTo(p0.x * this.scaleValue + this.offsetX, p0.y * this.scaleValue + this.offsetY);

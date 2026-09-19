@@ -1,4 +1,5 @@
 import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { deviceInfo } from '@kit.BasicServicesKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { display, window } from '@kit.ArkUI';
 import { AppState } from '../state/AppState';
@@ -16,6 +17,8 @@ import { HuaweiAccountService } from '../services/HuaweiAccountService';
 import { BlockMetadataSyncService } from '../services/BlockMetadataSyncService';
 import { ErrorRecoveryService } from '../services/ErrorRecoveryService';
 import { StatePersistence } from '../state/StatePersistence';
+import GlobalContext from '../utils/GlobalContext';
+import { SystemBarHelper } from '../utils/SystemBarHelper';
 
 const DOMAIN = 0x0001;
 
@@ -59,6 +62,9 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'EntryAbility', '%{public}s', 'Ability onWindowStageCreate');
+
+    // Pen Kit 手写套件要求：把 UIAbilityContext 暴露到全局容器（官方接入步骤 1）
+    GlobalContext.setContext(this.context);
 
     // ─── 启动链（对应迁移计划 §启动链） ───
     // 1. 初始化文件服务并加载 Graph
@@ -128,19 +134,48 @@ export default class EntryAbility extends UIAbility {
   private setupImmersiveLayout(windowStage: window.WindowStage): void {
     try {
       const win: window.Window = windowStage.getMainWindowSync();
-      win.setWindowLayoutFullScreen(true).then(() => {
+
+      // ─── API 26 行为变更适配 ───
+      // setWindowLayoutFullScreen / setImmersiveModeEnabledState 在 PC/2in1 设备的
+      // **自由多窗模式**上被禁用（官方变更说明 app-all-b123sp16）。此类设备上继续调用
+      // 不仅无效，还可能打断同一批窗口设置的其它调用。因此：
+      //   · PC/2in1  → 跳过全屏布局切换，仅采集避让区 + 设置系统栏样式
+      //   · 其它设备 → 保持原行为
+      if (EntryAbility.isPCFormFactor()) {
+        hilog.info(DOMAIN, 'EntryAbility',
+          'PC/2in1 detected: skip setWindowLayoutFullScreen (disabled in free multi-window)');
+        SystemBarHelper.setWindow(win);
         this.publishAvoidArea(win);
-        this.applySystemBarStyle(win);
-      }).catch((err: Object) => {
-        hilog.warn(DOMAIN, 'EntryAbility', 'setWindowLayoutFullScreen failed: %{public}s', JSON.stringify(err));
-        this.publishAvoidArea(win);
-      });
+        SystemBarHelper.apply(ThemeManager.isDarkMode());
+      } else {
+        win.setWindowLayoutFullScreen(true).then(() => {
+          this.publishAvoidArea(win);
+          SystemBarHelper.apply(ThemeManager.isDarkMode());
+        }).catch((err: Object) => {
+          hilog.warn(DOMAIN, 'EntryAbility', 'setWindowLayoutFullScreen failed: %{public}s', JSON.stringify(err));
+          this.publishAvoidArea(win);
+        });
+      }
+
       // 折叠/旋转/分屏会改变避让区，需重新发布
       win.on('avoidAreaChange', () => {
         this.publishAvoidArea(win);
       });
     } catch (err) {
       hilog.error(DOMAIN, 'EntryAbility', 'Failed to setup immersive layout. Cause: %{public}s', JSON.stringify(err));
+    }
+  }
+
+  /**
+   * 是否为 PC/2in1 形态（取其自由多窗模式下沉浸式接口被禁用的约束）。
+   * deviceInfo.deviceType 取值为 'phone' / 'tablet' / '2in1' / 'pc' 等。
+   */
+  private static isPCFormFactor(): boolean {
+    try {
+      const t: string = deviceInfo.deviceType;
+      return t === '2in1' || t === 'pc';
+    } catch (e) {
+      return false;
     }
   }
 
@@ -182,21 +217,6 @@ export default class EntryAbility extends UIAbility {
   /**
    * 系统栏文字/图标颜色随主题切换，保证在浅色/深色页面背景上均清晰可辨。
    */
-  private applySystemBarStyle(win: window.Window): void {
-    try {
-      const isDark: boolean = ThemeManager.isDarkMode();
-      // 深色页面 → 系统栏内容用浅色；浅色页面 → 用深色
-      const contentColor: string = isDark ? '#FFFFFF' : '#1F2328';
-      win.setWindowSystemBarProperties({
-        statusBarContentColor: contentColor,
-        navigationBarContentColor: contentColor
-      }).catch(() => {
-        // 个别设备不支持时忽略
-      });
-    } catch (e) {
-      // 忽略：不影响主流程
-    }
-  }
 
   onWindowStageDestroy(): void {
     hilog.info(DOMAIN, 'EntryAbility', '%{public}s', 'Ability onWindowStageDestroy');

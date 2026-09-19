@@ -4,6 +4,7 @@ import { GraphLayout, GraphNode } from './GraphLayout';
 import { AppState } from '../../state/AppState';
 import { TablerIcon } from '../common/Icons';
 import { GraphActions } from './GraphActions';
+import { CanvasMath } from '../../utils/CanvasMath';
 
 /**
  * Point — 屏幕坐标点（具名类型，替代内联对象类型以符合 ArkTS 约束）。
@@ -287,7 +288,7 @@ export struct GraphView {
           )
           .parallelGesture(
             // 长按节点 → 弹出操作菜单
-            LongPressGesture({ duration: 500 })
+            LongPressGesture({ fingers: 1, duration: 500 })
               .onAction((event: GestureEvent) => {
                 this.handleLongPress(event);
               })
@@ -436,6 +437,10 @@ export struct GraphView {
         const sy = src.y * s + this.offsetY;
         const tx = tgt.x * s + this.offsetX;
         const ty = tgt.y * s + this.offsetY;
+        // 力导向布局可能出现 NaN/Infinity（未收敛或除零），API 26 下会污染整幅画面
+        if (CanvasMath.notFinite4(sx, sy, tx, ty)) {
+          continue;
+        }
         ctx.beginPath();
         ctx.moveTo(sx, sy);
         ctx.lineTo(tx, ty);
@@ -449,6 +454,9 @@ export struct GraphView {
       const nx = nodes[i].x * s + this.offsetX;
       const ny = nodes[i].y * s + this.offsetY;
       const r = nodes[i].radius * s;
+      if (CanvasMath.notFinite3(nx, ny, r) || r <= 0) {
+        continue;
+      }
 
       // 颜色按类型
       ctx.beginPath();

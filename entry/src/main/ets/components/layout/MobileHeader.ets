@@ -3,6 +3,7 @@ import { AppState } from '../../state/AppState';
 import { pageTitle } from '../../utils/PageTitle';
 import { GlassSurface } from '../common/GlassSurface';
 import { GlassMode } from '../common/GlassSurface';
+import { MaterialRole } from '../../theme/MaterialTokens';
 
 /**
  * MobileHeader — Obsidian iOS 顶栏复刻（Obsidian_iphone 1/3/6/7 截图）：
@@ -29,8 +30,8 @@ export struct MobileHeader {
         radius: 22,
         fill: $r('app.color.glass_fill'),
         mode: GlassMode.EFFECT,
-        shadowRadius: 10,
-        shadowAlpha: 0.12
+        // 官方规范：顶部悬浮组件推荐 ULTRA_THIN 档（最通透、高光最明显）
+        materialRole: MaterialRole.TOP_FLOATING
       }) {
         Row() {
           TablerIcon(icon, 20, $r('app.color.text'))

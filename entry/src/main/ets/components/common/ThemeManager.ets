@@ -1,5 +1,6 @@
 import { ConfigurationConstant } from '@kit.AbilityKit';
 import { FileService } from '../../services/FileService';
+import { SystemBarHelper } from '../../utils/SystemBarHelper';
 import { StatePersistence } from '../../state/StatePersistence';
 
 export enum ThemeMode {
@@ -63,6 +64,8 @@ export class ThemeManager {
     AppStorage.setOrCreate(THEME_MODE_KEY, mode);
     ThemeManager.applyColorMode(mode);
     StatePersistence.save();
+    // 主题切换后实时刷新系统栏内容色（浅色页深字 / 深色页浅字）
+    SystemBarHelper.apply(ThemeManager.isDarkMode());
   }
 
   static toggleTheme(): void {

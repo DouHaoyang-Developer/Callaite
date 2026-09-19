@@ -283,7 +283,7 @@ export struct PropertyEditor {
               .fontColor($r('app.color.muted_text'))
             Flex({ wrap: FlexWrap.Wrap }) {
               ForEach(this.getTypeOptions(), (opt: TypeOption) => {
-                this.TypeButton(opt)
+                this.TypeButton(opt).type(ButtonType.Capsule)
               }, (opt: TypeOption) => opt.type.toString())
             }
             .width('100%')
@@ -293,7 +293,7 @@ export struct PropertyEditor {
 
           // 确认/取消
           Row({ space: 10 }) {
-            Button(t('cancel'))
+            Button(t('cancel')).type(ButtonType.Capsule)
               .fontSize(13)
               .layoutWeight(1)
               .height(36)
@@ -301,7 +301,7 @@ export struct PropertyEditor {
               .fontColor($r('app.color.text'))
               .onClick(() => { this.cancelAddProperty(); })
 
-            Button(t('confirm'))
+            Button(t('confirm')).type(ButtonType.Capsule)
               .fontSize(13)
               .layoutWeight(1)
               .height(36)
@@ -323,7 +323,7 @@ export struct PropertyEditor {
   }
 
   @Builder
-  TypeButton(opt: TypeOption) {
+  TypeButton(opt: TypeOption).type(ButtonType.Capsule) {
     Text(opt.label)
       .fontSize(12)
       .fontColor(this.newPropType === opt.type ? Color.White : $r('app.color.text'))

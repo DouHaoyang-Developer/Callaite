@@ -131,7 +131,7 @@ export struct FlashcardPage {
       }
       .width('100%').alignItems(HorizontalAlign.Center)
 
-      Button('刷新').fontSize(14).backgroundColor($r('app.color.surface1'))
+      Button('刷新').type(ButtonType.Capsule).fontSize(14).backgroundColor($r('app.color.surface1'))
         .onClick(() => { this.refreshCards(); })
     }
     .width('100%').alignItems(HorizontalAlign.Center).padding({ top: 60 })
@@ -171,16 +171,16 @@ export struct FlashcardPage {
       // 评分按钮（翻转后显示）
       if (this.showBack) {
         Row({ space: 8 }) {
-          Button('Again').fontSize(14).backgroundColor('#EF4444').fontColor('#FFFFFF')
+          Button('Again').type(ButtonType.Capsule).fontSize(14).backgroundColor('#EF4444').fontColor('#FFFFFF')
             .layoutWeight(1)
             .onClick(() => { this.rate(Rating.AGAIN); })
-          Button('Hard').fontSize(14).backgroundColor('#F59E0B').fontColor('#FFFFFF')
+          Button('Hard').type(ButtonType.Capsule).fontSize(14).backgroundColor('#F59E0B').fontColor('#FFFFFF')
             .layoutWeight(1)
             .onClick(() => { this.rate(Rating.HARD); })
-          Button('Good').fontSize(14).backgroundColor('#0078D4').fontColor('#FFFFFF')
+          Button('Good').type(ButtonType.Capsule).fontSize(14).backgroundColor('#0078D4').fontColor('#FFFFFF')
             .layoutWeight(1)
             .onClick(() => { this.rate(Rating.GOOD); })
-          Button('Easy').fontSize(14).backgroundColor('#10B981').fontColor('#FFFFFF')
+          Button('Easy').type(ButtonType.Capsule).fontSize(14).backgroundColor('#10B981').fontColor('#FFFFFF')
             .layoutWeight(1)
             .onClick(() => { this.rate(Rating.EASY); })
         }

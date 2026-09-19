@@ -106,7 +106,7 @@ struct WidgetCard {
         .fontColor($r('app.color.muted_text'))
         .maxLines(2)
 
-      Button('打开应用')
+      Button('打开应用').type(ButtonType.Capsule)
         .fontSize(12)
         .fontColor($r('app.color.surface0'))
         .backgroundColor($r('app.color.primary'))

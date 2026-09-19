@@ -22,10 +22,29 @@ export struct ContentArea {
   /** 系统栏安全区（沉浸式下由 EntryAbility 发布，单位 vp） */
   @StorageLink('callaite_safeTop') safeTop: number = 0;
   @StorageLink('callaite_safeBottom') safeBottom: number = 0;
+  /**
+   * 分屏支持：副窗格传入自己显示的路由；留空表示主窗格（跟随全局 currentPage）。
+   */
+  @Prop pageOverride: string = '';
+  /**
+   * 窗格标识。Scroll 的 id 与初始焦点按窗格区分，避免两个窗格争抢同一个 id / 焦点。
+   */
+  @Prop paneId: string = 'primary';
+
+  private isPrimaryPane(): boolean {
+    return this.pageOverride === '';
+  }
+
+  private scrollId(): string {
+    return this.isPrimaryPane() ? 'contentAreaScroll' : 'contentAreaScroll_' + this.paneId;
+  }
 
   aboutToAppear(): void {
-    // 主动夺取焦点，否则 Scroll 未持焦时 onKeyEvent 不触发（快捷键整体失效）
-    focusControl.requestFocus('contentAreaScroll');
+    // 主动夺取焦点，否则 Scroll 未持焦时 onKeyEvent 不触发（快捷键整体失效）。
+    // 仅主窗格抢焦点：分屏时两个窗格抢同一焦点会导致快捷键路由错乱。
+    if (this.isPrimaryPane()) {
+      focusControl.requestFocus('contentAreaScroll');
+    }
   }
 
   /**
@@ -50,7 +69,7 @@ export struct ContentArea {
         Toolbar()
 
         Scroll() {
-          PageView()
+          PageView({ pageOverride: this.pageOverride })
         }
         .width('100%')
         .layoutWeight(1)
@@ -58,7 +77,7 @@ export struct ContentArea {
         .align(Alignment.TopStart)
         .focusable(true)
         .defaultFocus(true)
-        .id('contentAreaScroll')
+        .id(this.scrollId())
         .onKeyEvent((event: KeyEvent) => {
           // 统一路由到 ShortcutService（含 Ctrl+K/Ctrl+Z/Tab/Alt+↑↓ 等全部快捷键）
           if (event.type === KeyType.Down) {

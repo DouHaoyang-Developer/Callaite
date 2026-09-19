@@ -136,7 +136,7 @@ export struct BlockDragHandler {
       .width('100%')
       .gesture(
         GestureGroup(GestureMode.Sequence,
-          LongPressGesture({ repeat: false, duration: 500 })
+          LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
             .onAction((event: GestureEvent) => {
               this.startDrag();
             }),

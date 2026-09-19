@@ -141,13 +141,13 @@ export struct ImportDialog {
 
       // 操作按钮
       Row({ space: 10 }) {
-        Button('取消')
+        Button('取消').type(ButtonType.Capsule)
           .fontSize(13)
           .fontColor($r('app.color.text'))
           .backgroundColor($r('app.color.surface2'))
           .layoutWeight(1)
           .onClick(() => { this.onClose(); })
-        Button(this.isImporting ? '导入中…' : '导入')
+        Button(this.isImporting ? '导入中…' : '导入').type(ButtonType.Capsule)
           .fontSize(13)
           .fontColor($r('app.color.on_primary'))
           .backgroundColor($r('app.color.primary'))

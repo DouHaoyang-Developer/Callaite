@@ -42,6 +42,9 @@ export struct LeftSidebar {
   @State hoveredPage: string = '';
   @State hoveredNavKey: string = '';
   @State hoveredViewIcon: string = '';
+  @State hoveredTool: string = '';
+  /** 文件树排序方向：false=名称升序，true=名称降序（对齐 Obsidian 左栏排序按钮） */
+  @StorageLink('callaite_sidebarSortDesc') sortDesc: boolean = false;
   // 分组折叠态（持久化，Logseq sidebar-content-group）
   @StorageLink('callaite_collapsed_favorites') collapsedFavorites: boolean = false;
   @StorageLink('callaite_collapsed_recent') collapsedRecent: boolean = false;
@@ -146,6 +149,26 @@ export struct LeftSidebar {
       .width('100%')
       .height(40)
       // 左内边距统一为 16vp（与 Vault 行、分组标题、导航行同一基准）
+      .padding({ left: 16, right: 12 })
+
+      // ─── 文件树工具行（对齐 Obsidian 左栏第二行：新建笔记 / 新建文件夹 / 排序 / 全部折叠）───
+      Row({ space: 2 }) {
+        this.TreeToolIcon('file-plus', 'tree_new_note', () => {
+          this.createNewNote();
+        })
+        this.TreeToolIcon('folder', 'tree_new_folder', () => {
+          this.createNewNamespace();
+        })
+        this.TreeToolIcon('arrows-up-down',
+          this.sortDesc ? 'tree_sort_desc' : 'tree_sort_asc', () => {
+            this.sortDesc = !this.sortDesc;
+          })
+        this.TreeToolIcon('arrows-minimize', 'tree_collapse_all', () => {
+          this.toggleCollapseAll();
+        })
+      }
+      .width('100%')
+      .height(40)
       .padding({ left: 16, right: 12 })
 
       // ─── 可滚动主体 ───
@@ -259,6 +282,98 @@ export struct LeftSidebar {
     .onClick(() => {
       onTap();
     })
+  }
+
+  /**
+   * 文件树工具行按钮（Obsidian 左栏第二行）。
+   * 三态齐全：正常 / 悬停 / 按下；每个按钮均绑定**真实动作**，不做空壳按钮。
+   */
+  @Builder
+  TreeToolIcon(icon: string, key: string, onTap: () => void) {
+    Row() {
+      TablerIcon(icon, 16, $r('app.color.icon_color'))
+    }
+    .width(40)
+    .height(40)
+    .borderRadius(6)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .stateStyles({
+      normal: {
+        .backgroundColor(this.hoveredTool === key ? $r('app.color.surface2') : Color.Transparent)
+      },
+      pressed: { .backgroundColor($r('app.color.surface3')) }
+    })
+    .animation({ duration: 140, curve: Curve.EaseOut })
+    .onHover((isHover: boolean) => {
+      this.hoveredTool = isHover ? key : '';
+    })
+    .onClick(() => {
+      onTap();
+    })
+  }
+
+  /** 生成不重名的页面名（基准名 + 递增序号） */
+  private uniquePageName(base: string): string {
+    const ws = WorkspaceService.getInstance();
+    if (ws.getPageByName(base) === undefined) {
+      return base;
+    }
+    let i = 2;
+    while (ws.getPageByName(base + ' ' + i.toString()) !== undefined) {
+      i++;
+    }
+    return base + ' ' + i.toString();
+  }
+
+  /**
+   * 新建笔记：创建后立即进入内联重命名，省去二次点击。
+   */
+  private createNewNote(): void {
+    const ws = WorkspaceService.getInstance();
+    const name = this.uniquePageName('未命名');
+    ws.createPage(name);
+    this.allPages = ws.getAllPages();
+    this.startRename(name);
+    AppState.setCurrentPage(name);
+  }
+
+  /**
+   * 新建命名空间页面。
+   * 本项目以「页面名含 `/`」表达层级（PageData.namespace 由此派生），
+   * 因此新建 `命名空间/未命名` 即会在文件树中生成一个可折叠的分组节点。
+   */
+  private createNewNamespace(): void {
+    const ws = WorkspaceService.getInstance();
+    let ns = '新文件夹';
+    let i = 2;
+    while (this.namespaceExists(ns)) {
+      ns = '新文件夹 ' + i.toString();
+      i++;
+    }
+    const full = ns + '/未命名';
+    ws.createPage(full);
+    this.allPages = ws.getAllPages();
+    this.startRename(full);
+    AppState.setCurrentPage(full);
+  }
+
+  private namespaceExists(ns: string): boolean {
+    for (let i = 0; i < this.allPages.length; i++) {
+      if (this.allPages[i].namespace === ns) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** 全部折叠 / 全部展开（三组状态一致时切换方向） */
+  private toggleCollapseAll(): void {
+    const allCollapsed = this.collapsedFavorites && this.collapsedRecent && this.collapsedAllPages;
+    const target = !allCollapsed;
+    this.collapsedFavorites = target;
+    this.collapsedRecent = target;
+    this.collapsedAllPages = target;
   }
 
   /**
@@ -455,7 +570,17 @@ export struct LeftSidebar {
         ns.push(n);
       }
     }
-    return ns;
+    // 分组名排序（'' 永远置首，代表无命名空间的顶层页面）
+    const head = ns[0];
+    const rest = ns.slice(1).sort();
+    if (this.sortDesc) {
+      rest.reverse();
+    }
+    const out: string[] = [head];
+    for (let i = 0; i < rest.length; i++) {
+      out.push(rest[i]);
+    }
+    return out;
   }
 
   getPagesByNamespace(ns: string): PageData[] {
@@ -464,6 +589,15 @@ export struct LeftSidebar {
       if (this.allPages[i].namespace === ns) {
         r.push(this.allPages[i]);
       }
+    }
+    // 按显示名排序，方向由工具行排序按钮控制
+    r.sort((a: PageData, b: PageData) => {
+      const x = a.originalName;
+      const y = b.originalName;
+      return x < y ? -1 : (x > y ? 1 : 0);
+    });
+    if (this.sortDesc) {
+      r.reverse();
     }
     return r;
   }

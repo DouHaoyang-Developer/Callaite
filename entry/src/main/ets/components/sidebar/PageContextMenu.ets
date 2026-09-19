@@ -248,7 +248,7 @@ export struct PageContextMenu {
               .onSubmit(() => { this.commitRename(); })
 
             Row({ space: 10 }) {
-              Button(t('cancel'))
+              Button(t('cancel')).type(ButtonType.Capsule)
                 .fontSize(13)
                 .layoutWeight(1)
                 .height(36)
@@ -256,7 +256,7 @@ export struct PageContextMenu {
                 .fontColor($r('app.color.text'))
                 .onClick(() => { this.cancelRename(); })
 
-              Button(t('confirm'))
+              Button(t('confirm')).type(ButtonType.Capsule)
                 .fontSize(13)
                 .layoutWeight(1)
                 .height(36)

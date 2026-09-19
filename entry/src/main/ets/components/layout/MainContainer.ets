@@ -8,9 +8,12 @@ import { TabBar } from './TabBar';
 import { StatusBar } from './StatusBar';
 import { MobileHeader } from './MobileHeader';
 import { MobileBottomBar } from './MobileBottomBar';
+import { MarkdownToolbar } from '../mobile/MarkdownToolbar';
 import { TabOverviewSheet } from './TabOverviewSheet';
 import { MobileMenuSheet } from './MobileMenuSheet';
 import { FloatingPanel } from '../common/FloatingPanel';
+import { SplitDivider } from './SplitDivider';
+import { MaterialRole } from '../../theme/MaterialTokens';
 import { AppState } from '../../state/AppState';
 import { TabState } from '../../state/TabState';
 import { Breakpoints } from '../../state/Breakpoints';
@@ -52,6 +55,16 @@ export struct MainContainer {
   // 系统栏安全区（由 EntryAbility 在启用沉浸式后写入，单位 vp）
   @StorageLink('callaite_safeTop') safeTop: number = 0;
   @StorageLink('callaite_safeBottom') safeBottom: number = 0;
+  // ─── 内容区左右分屏（对齐 Obsidian 桌面分屏）───
+  @StorageLink('callaite_splitEnabled') splitEnabled: boolean = false;
+  @StorageLink('callaite_splitRatio') splitRatio: number = 0.5;
+  @StorageLink('callaite_splitPage') splitPage: string = 'Journal';
+  /**
+   * 当前获焦 block（由 EditorService 写入）。
+   * 非空时说明正在编辑，此时在底部栏之上显示 Markdown 工具行
+   * （对齐 Obsidian iOS 键盘上方工具行）。
+   */
+  @StorageLink('callaite_focusedBlock') focusedBlock: string = '';
   @State leftWidth: number = SIDEBAR_DEFAULT;
   @State rightWidth: number = RIGHT_SIDEBAR_DEFAULT;
   @State draggingLeft: boolean = false;
@@ -161,6 +174,62 @@ export struct MainContainer {
     return this.windowWidth < Breakpoints.SM_MAX;
   }
 
+  /**
+   * 内容区分屏区域可用宽度（vp）—— 用于把分隔条拖拽的像素位移换算为比例。
+   * 扣除 Ribbon、左右侧栏后为真实可分配宽度。
+   */
+  private splitAreaWidth(): number {
+    let w = this.windowWidth;
+    if (!this.getIsCompact()) {
+      w -= 46;                                                  // Ribbon
+      if (this.leftSidebarOpen) {
+        w -= this.leftWidth;
+      }
+      if (this.rightSidebarOpen) {
+        w -= this.rightWidth;
+      }
+    }
+    return w > 100 ? w : 100;
+  }
+
+  /** 左窗格权重（layoutWeight 需为数值，放大 1000 倍保留精度） */
+  private splitLeftWeight(): number {
+    return Math.round(this.splitRatio * 1000);
+  }
+
+  /** 右窗格权重 */
+  private splitRightWeight(): number {
+    return Math.round((1 - this.splitRatio) * 1000);
+  }
+
+  /**
+   * 内容区分屏容器 —— 单窗格 / 双窗格（主 + 副 + 可拖拽分隔条）。
+   */
+  @Builder
+  ContentPanes() {
+    if (!this.getIsCompact() && this.splitEnabled) {
+      Row() {
+        ContentArea()
+          .layoutWeight(this.splitLeftWeight())
+        SplitDivider({
+          ratio: this.splitRatio,
+          totalWidth: this.splitAreaWidth(),
+          onRatioChange: (r: number) => {
+            this.splitRatio = r;
+          }
+        })
+        ContentArea({ pageOverride: this.splitPage, paneId: 'secondary' })
+          .layoutWeight(this.splitRightWeight())
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .alignItems(VerticalAlign.Top)
+    } else {
+      ContentArea()
+        .layoutWeight(1)
+    }
+  }
+
   build() {
     Stack() {
       // ─── 氛围渐变底层（玻璃材质的透光背景）───
@@ -194,13 +263,17 @@ export struct MainContainer {
         }
 
         // ─── 中列：TabBar + 内容 + StatusBar ───
+        // ⚠️ 沉浸光感阶段二说明：曾尝试用 Navigation 包裹此列、把 TabBar 挂到
+        // .title() 标题栏以启用 systemMaterial，实测 Navigation 会按自己的
+        // 布局模型重排子节点（标题栏与内容区并排），导致桌面壳布局回归。
+        // 该迁移需要按 Navigation 的布局模型重新设计（titleBar 高度/模式/分屏
+        // 兼容），本阶段保持原有自研外壳 + Token 化玻璃方案。
         Column() {
           if (!this.getIsCompact()) {
             TabBar()
           }
 
-          ContentArea()
-            .layoutWeight(1)
+          this.ContentPanes()
 
           if (!this.getIsCompact()) {
             StatusBar()
@@ -232,6 +305,18 @@ export struct MainContainer {
         Column() {
           MobileHeader()
           Blank()
+
+          // ─── 键盘上方 Markdown 工具行（仅编辑态出现）───
+          if (this.focusedBlock !== '') {
+            Row() {
+              MarkdownToolbar()
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .margin({ bottom: 8 })
+            .hitTestBehavior(HitTestMode.Transparent)
+          }
+
           Row() {
             MobileBottomBar()
           }

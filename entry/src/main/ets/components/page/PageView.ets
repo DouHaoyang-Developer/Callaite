@@ -19,6 +19,11 @@ import { display } from '@kit.ArkUI';
 @Component
 export struct PageView {
   @StorageLink('callaite_currentPage') @Watch('onPageChanged') currentPage: string = 'Journal';
+  /**
+   * 分屏支持：副窗格通过 pageOverride 指定自己显示的路由，留空则跟随全局 currentPage。
+   * 采用「覆盖式」而非「再造一份状态」，使主/副窗格复用同一套渲染与数据逻辑。
+   */
+  @Prop @Watch('onPageChanged') pageOverride: string = '';
   @State displayName: string = '';
   @State showProperties: boolean = false;
   @State pagePropKeys: string[] = [];
@@ -68,16 +73,24 @@ export struct PageView {
    * currentPage 变更时重新解析页面名与属性。
    * 修复：此前仅在 aboutToAppear 调用 resolvePage，切换页面后标题/属性不刷新。
    */
+  /**
+   * 当前窗格实际渲染的路由。
+   * 主窗格（pageOverride 为空）跟随全局 currentPage；副窗格使用自身覆盖值。
+   */
+  private page(): string {
+    return this.pageOverride !== '' ? this.pageOverride : this.currentPage;
+  }
+
   onPageChanged(): void {
     this.resolvePage();
   }
 
   resolvePage(): void {
-    if (this.currentPage === 'Journal') {
+    if (this.page() === 'Journal') {
       JournalService.ensureTodayJournal();
       this.displayName = JournalService.getTodayDateString();
     } else {
-      this.displayName = this.currentPage;
+      this.displayName = this.page();
     }
     this.loadProperties();
   }
@@ -98,26 +111,26 @@ export struct PageView {
   }
 
   build() {
-    if (this.currentPage === 'Settings') {
+    if (this.page() === 'Settings') {
       SettingsPage()
-    } else if (this.currentPage === 'Journal') {
+    } else if (this.page() === 'Journal') {
       // 日志首页 = 时间流 feed（Logseq all-journals）
       JournalFeed()
-    } else if (this.currentPage === 'Graph') {
+    } else if (this.page() === 'Graph') {
       GraphView()
-    } else if (this.currentPage === 'Whiteboards') {
+    } else if (this.page() === 'Whiteboards') {
       Whiteboard()
-    } else if (this.currentPage === 'Flashcards') {
+    } else if (this.page() === 'Flashcards') {
       FlashcardPage()
-    } else if (this.currentPage === 'Pdf') {
+    } else if (this.page() === 'Pdf') {
       PdfPage()
-    } else if (this.currentPage === 'ProUpgrade') {
+    } else if (this.page() === 'ProUpgrade') {
       ProUpgradePage()
-    } else if (this.currentPage === 'AllPages') {
+    } else if (this.page() === 'AllPages') {
       this.AllPagesView()
-    } else if (this.currentPage === 'Recycle') {
+    } else if (this.page() === 'Recycle') {
       this.RecycleView()
-    } else if (this.currentPage === 'About') {
+    } else if (this.page() === 'About') {
       this.AboutView()
     } else {
       // 外层容器：内容列限宽 960vp 并水平居中（--ls-main-content-max-width）

@@ -26,6 +26,13 @@ export struct WebEditor {
   @Prop initialContent: string = '';
   @Prop pageName: string = '';
   @Prop fontSize: number = 15;
+  /** 当前获焦 block（用于判定本编辑器是否为命令接收方） */
+  @StorageLink('callaite_focusedBlock') focusedBlock: string = '';
+  /**
+   * Markdown 工具条命令通道。
+   * 格式 `命令|序号`，序号用于让「连续点击同一按钮」也能触发 @Watch。
+   */
+  @StorageLink('callaite_editorCommand') @Watch('onEditorCommand') editorCommand: string = '';
   onSave: () => void = () => {};
   onAction: (action: string, data: string) => void = (_a: string, _d: string) => {};
 
@@ -62,6 +69,29 @@ export struct WebEditor {
       }
     } catch (e) {
       console.error('[WebEditor] html write failed: ' + JSON.stringify(e));
+    }
+  }
+
+  /**
+   * 响应 Markdown 工具条命令。
+   * 仅当本块正是当前获焦块时才执行，避免一条命令被多个编辑器重复应用。
+   * 命令格式 `cmd|seq`，序号用于让连续点击同一按钮也能触发 @Watch。
+   */
+  onEditorCommand(): void {
+    if (this.focusedBlock !== this.blockUuid || this.editorCommand === '') {
+      return;
+    }
+    const parts: string[] = this.editorCommand.split('|');
+    const cmd: string = parts[0];
+    if (cmd === '') {
+      return;
+    }
+    // 命令串仅含字母/数字/中括号等安全字符；仍剥离单引号以防破坏 JS 字面量
+    const safe: string = cmd.split("'").join('');
+    try {
+      this.controller.runJavaScript("applyFormat('" + safe + "')");
+    } catch (e) {
+      // WebView 未就绪时忽略，下次命令会重试
     }
   }
 
@@ -200,6 +230,29 @@ const editor=document.getElementById('editor');
 // 初始化: 光标移到末尾
 function focusEditor(){editor.focus();placeCaretAtEnd(editor);}
 function placeCaretAtEnd(el){const range=document.createRange();range.selectNodeContents(el);range.collapse(false);const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);}
+
+// 供 ArkTS 侧 Markdown 工具条调用：对当前块应用格式化。
+// 编辑器为 contenteditable，使用 execCommand 可原生复用浏览器选区处理；
+// 执行后手动派发 input 事件，以复用既有的 400ms 防抖持久化链路。
+window.applyFormat=function(cmd){
+  editor.focus();
+  if(cmd==='bold'){
+    document.execCommand('bold',false,null);
+  }else if(cmd==='undo'){
+    document.execCommand('undo',false,null);
+  }else if(cmd==='redo'){
+    document.execCommand('redo',false,null);
+  }else if(cmd==='heading'){
+    // 标题层级循环：正文 -> h1 -> h2 -> h3 -> 正文
+    var cur=(document.queryCommandValue('formatBlock')||'').toLowerCase();
+    var next= cur==='h1'?'h2' : cur==='h2'?'h3' : cur==='h3'?'div' : 'h1';
+    document.execCommand('formatBlock',false,next);
+  }else{
+    // 其余为插入片段（[[]] / # / []() 等）
+    document.execCommand('insertText',false,cmd);
+  }
+  editor.dispatchEvent(new Event('input',{bubbles:true}));
+};
 
 // 键盘拦截
 editor.addEventListener('keydown',function(e){

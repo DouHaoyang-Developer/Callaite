@@ -545,7 +545,7 @@ export struct PropertyConfig {
 
         // 操作按钮
         Row({ space: 8 }) {
-          Button(t('cancel'))
+          Button(t('cancel')).type(ButtonType.Capsule)
             .fontSize(13)
             .layoutWeight(1)
             .backgroundColor($r('app.color.surface2'))
@@ -553,7 +553,7 @@ export struct PropertyConfig {
             .onClick(() => {
               this.showAddDialog = false;
             })
-          Button(t('confirm'))
+          Button(t('confirm')).type(ButtonType.Capsule)
             .fontSize(13)
             .layoutWeight(1)
             .backgroundColor($r('app.color.primary'))

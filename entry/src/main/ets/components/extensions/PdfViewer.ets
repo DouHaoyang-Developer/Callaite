@@ -260,14 +260,14 @@ pdfjsLib.getDocument(url).promise.then(function(pdf){pdfDoc=pdf;renderPage(pageN
           .fontSize(11)
           .fontColor($r('app.color.muted_text'))
 
-        Button('上一页')
+        Button('上一页').type(ButtonType.Capsule)
           .fontSize(12)
           .height(30)
           .backgroundColor($r('app.color.surface2'))
           .fontColor($r('app.color.text'))
           .onClick(() => { this.prevPage(); })
 
-        Button('下一页')
+        Button('下一页').type(ButtonType.Capsule)
           .fontSize(12)
           .height(30)
           .backgroundColor($r('app.color.surface2'))
