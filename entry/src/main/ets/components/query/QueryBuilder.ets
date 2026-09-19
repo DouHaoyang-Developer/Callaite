@@ -108,6 +108,8 @@ export struct QueryBuilder {
             Row() {
               TablerIcon('x', 14, $r('app.color.muted_text'))
             }
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
             .width(24).height(24)
             .onClick(() => { this.showResults = false; })
           }

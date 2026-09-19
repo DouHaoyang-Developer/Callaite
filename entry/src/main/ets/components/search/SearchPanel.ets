@@ -247,6 +247,7 @@ export struct SearchPanel {
             Row() {
               TablerIcon('x', 16, $r('app.color.muted_text'))
             }
+            .alignItems(VerticalAlign.Center)
             .width(28)
             .height(28)
             .justifyContent(FlexAlign.Center)

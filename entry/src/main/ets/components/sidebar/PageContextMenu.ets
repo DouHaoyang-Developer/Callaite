@@ -261,7 +261,7 @@ export struct PageContextMenu {
                 .layoutWeight(1)
                 .height(36)
                 .backgroundColor($r('app.color.primary'))
-                .fontColor(Color.White)
+                .fontColor($r('app.color.on_primary'))
                 .onClick(() => { this.commitRename(); })
             }
             .width('100%')

@@ -193,7 +193,7 @@ export struct ExportDialog {
           .onClick(() => { this.onClose(); })
         Button(this.isExporting ? '导出中…' : '导出')
           .fontSize(13)
-          .fontColor(Color.White)
+          .fontColor($r('app.color.on_primary'))
           .backgroundColor($r('app.color.primary'))
           .layoutWeight(1)
           .enabled(!this.isExporting)

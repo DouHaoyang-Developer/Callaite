@@ -189,6 +189,8 @@ export struct TaskSchedulePanel {
           Row() {
             TablerIcon(this.isExpanded ? 'chevron-up' : 'chevron-down', 16, $r('app.color.muted_text'))
           }
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
           .width(28).height(28)
           .onClick(() => {
             this.isExpanded = !this.isExpanded;

@@ -127,6 +127,8 @@ export struct PdfPage {
           .padding({ left: 16, right: 16 })
         }
       }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(HorizontalAlign.Center)
       .width('100%')
       .height('100%')
       .backgroundColor($r('app.color.surface0'))

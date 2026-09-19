@@ -85,7 +85,7 @@ export struct ProUpgradePage {
         .height(48)
         .type(ButtonType.Capsule)
         .backgroundColor($r('app.color.primary'))
-        .fontColor(Color.White)
+        .fontColor($r('app.color.on_primary'))
         .enabled(!this.isPurchasing)
         .onClick(() => {
           this.handlePurchase();

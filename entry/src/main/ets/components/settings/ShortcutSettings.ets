@@ -316,6 +316,8 @@ export struct ShortcutSettings {
         Row() {
           TablerIcon('arrow-left', 20, $r('app.color.text'))
         }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .width(36).height(36)
         .onClick(() => {
           this.onBack();
@@ -386,6 +388,7 @@ export struct ShortcutSettings {
       }
       .layoutWeight(1)
       .width('100%')
+      .align(Alignment.TopStart)
       .focusable(true)
       .focusOnTouch(true)
       .onKeyEvent((event: KeyEvent) => {

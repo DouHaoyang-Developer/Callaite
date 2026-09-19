@@ -234,6 +234,8 @@ export struct SettingsPage {
         Row() {
           TablerIcon('arrow-left', 20, $r('app.color.text'))
         }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .width(36).height(36)
         .onClick(() => {
           AppState.setCurrentPage('Journal');
@@ -464,6 +466,8 @@ export struct SettingsPage {
       }
       .layoutWeight(1)
       .width('100%')
+      // 顶对齐：Scroll 默认 align 为 Center，内容不足一屏时会被垂直居中
+      .align(Alignment.TopStart)
     }
     .width('100%')
     .height('100%')
@@ -501,6 +505,7 @@ export struct SettingsPage {
         .fontColor($r('app.color.text'))
         .layoutWeight(1)
       Toggle({ type: ToggleType.Switch, isOn: isOn })
+        .selectedColor($r('app.color.primary'))
         .onChange((on: boolean) => {
           onChange(on);
         })
@@ -563,6 +568,7 @@ export struct SettingsPage {
       .alignItems(HorizontalAlign.Start)
 
       Toggle({ type: ToggleType.Switch, isOn: p.enabled })
+        .selectedColor($r('app.color.primary'))
         .onChange((on: boolean) => {
           const pm = PluginManager.getInstance();
           if (on) {

@@ -55,7 +55,7 @@ export struct PageView {
   getContentPadding(): number {
     try {
       const d = display.getDefaultDisplaySync();
-      if (d.width / d.densityPixels < 768) {
+      if (d.width / d.densityPixels < 600) {
         return 20;
       }
     } catch (_e) {
@@ -189,6 +189,7 @@ export struct PageView {
         }
         .width('100%')
         .layoutWeight(1)
+        .align(Alignment.TopStart)
         .scrollBar(BarState.Auto)
 
         Blank()
@@ -266,6 +267,7 @@ export struct PageView {
       }
       .width('100%')
       .layoutWeight(1)
+      .align(Alignment.TopStart)
       .scrollBar(BarState.Auto)
     }
     .width('100%')

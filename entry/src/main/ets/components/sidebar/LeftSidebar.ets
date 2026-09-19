@@ -4,7 +4,7 @@ import { t } from '../../utils/i18n';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData } from '../../core/models/Page';
 import { SubscriptionService } from '../../services/SubscriptionService';
-import { display } from '@kit.ArkUI';
+import { Breakpoints } from '../../state/Breakpoints';
 
 interface NavItem {
   key: string;          // 唯一标识，对应 AppState.currentPage 值
@@ -13,27 +13,21 @@ interface NavItem {
 }
 
 /**
- * LeftSidebar — 按 logseq left_sidebar.cljs 布局复刻
+ * LeftSidebar — Obsidian 文件树侧栏 + Logseq 分组基因融合。
  *
- * 结构（自上而下）：
+ * 结构（自上而下，对齐 Obsidian 桌面左栏）：
  *   ┌──────────────────────┐
- *   │ App Name Header      │
+ *   │ Vault 行 (bolt+名称)  │  ← Obsidian 仓库标题
  *   ├──────────────────────┤
- *   │ NAVIGATION（导航区）  │  ← 新增：Journal / AllPages / Graph / Flashcards
+ *   │ 视图切换图标行         │  ← files/search/star（Obsidian 左栏顶部图标）
  *   ├──────────────────────┤
- *   │ FAVORITES（收藏夹）   │
+ *   │ 导航（可折叠分组）     │  ← Logseq 基因：Journal/AllPages/Graph/...
+ *   │ 收藏夹（可折叠分组）   │
+ *   │ 最近（可折叠分组）     │
+ *   │ 所有页面（命名空间树） │
  *   ├──────────────────────┤
- *   │ RECENT（最近访问）    │
- *   ├──────────────────────┤
- *   │ ALL PAGES（页面树）   │  按命名空间分组
- *   ├──────────────────────┤
- *   │ Settings Footer      │
+ *   │ 底部 Vault 行（设置） │  ← Obsidian 左下角仓库切换位
  *   └──────────────────────┘
- *
- * 视觉规则：
- *  - 当前页 highlight 用 primary 色文字 + 浅色背景
- *  - section header 全大写、11px、muted_text、左侧带小图标
- *  - 页面项左缩进 20px，hover/current 高亮
  */
 @Component
 export struct LeftSidebar {
@@ -45,8 +39,9 @@ export struct LeftSidebar {
   @State recent: string[] = [];
   @State renamingPage: string = '';
   @State renameText: string = '';
-  // 当前悬停的页面项（操作按钮仅 hover 时显示，Logseq 风格）
   @State hoveredPage: string = '';
+  @State hoveredNavKey: string = '';
+  @State hoveredViewIcon: string = '';
   // 分组折叠态（持久化，Logseq sidebar-content-group）
   @StorageLink('callaite_collapsed_favorites') collapsedFavorites: boolean = false;
   @StorageLink('callaite_collapsed_recent') collapsedRecent: boolean = false;
@@ -58,17 +53,10 @@ export struct LeftSidebar {
     this.refreshSidebarData();
   }
 
-  /**
-   * 修复：favoritesRaw 变化时重新解析收藏列表。
-   * 此前仅在 aboutToAppear 调用 refreshSidebarData，外部添加/删除收藏后左侧栏不刷新。
-   */
   onFavoritesChanged(): void {
     this.refreshFavorites();
   }
 
-  /**
-   * 修复：recentRaw 变化时重新解析最近访问列表。
-   */
   onRecentChanged(): void {
     this.refreshRecent();
   }
@@ -85,7 +73,6 @@ export struct LeftSidebar {
     if (this.recentRaw) {
       try {
         const parsed = JSON.parse(this.recentRaw) as string[] ?? [];
-        // 过滤内部路由键（Settings/Graph 等伪页面，可能来自旧版本残留数据）
         this.recent = parsed.filter((name: string) => !AppState.isInternalRoute(name));
       } catch (e) { this.recent = []; }
     } else {
@@ -98,11 +85,6 @@ export struct LeftSidebar {
     this.refreshRecent();
   }
 
-  /**
-   * 导航项列表 — 对应 logseq sidebar 顶部 nav 区。
-   * 注意：必须是普通方法 —— ArkTS 编译器会静默丢弃 @Component struct 上的
-   * getter（导致 navItems 为 undefined，导航区整体不渲染）。
-   */
   getNavItems(): NavItem[] {
     const items: NavItem[] = [];
     items[0] = { key: 'Journal', label: t('nav_journals'), iconName: 'calendar' };
@@ -114,22 +96,10 @@ export struct LeftSidebar {
     return items;
   }
 
-  /**
-   * 窄屏（<768vp，抽屉模式）判定。切换页面时仅窄屏才自动收起侧栏，
-   * 宽屏（2in1/平板）保持侧栏常开（Logseq 桌面端行为）。
-   */
   isCompact(): boolean {
-    try {
-      const d = display.getDefaultDisplaySync();
-      return d.width / d.densityPixels < 768;
-    } catch (_e) {
-      return false;
-    }
+    return Breakpoints.isCompact();
   }
 
-  /**
-   * 切换分组折叠态（Logseq sidebar-content-group 可折叠交互）。
-   */
   toggleSection(key: string): void {
     if (key === 'favorites') {
       this.collapsedFavorites = !this.collapsedFavorites;
@@ -142,23 +112,46 @@ export struct LeftSidebar {
 
   build() {
     Column({ space: 0 }) {
-      // ─── App Name Header ───
-      Row({ space: 10 }) {
-        TablerIcon('bolt', 20, $r('app.color.primary'))
+      // ─── Vault 行（Obsidian 仓库标题）───
+      Row({ space: 8 }) {
+        TablerIcon('bolt', 16, $r('app.color.primary'))
         Text(t('app_name'))
-          .fontSize(17)
-          .fontWeight(FontWeight.Bold)
+          .fontSize(13.5)
+          .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text'))
           .layoutWeight(1)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        TablerIcon('chevron-down', 12, $r('app.color.muted_text'))
       }
       .width('100%')
-      .height(48)
-      .padding({ left: 18, right: 16 })
+      .height(40)
+      .padding({ left: 16, right: 12 })
+      .margin({ top: 4 })
+
+      // ─── 视图切换图标行（Obsidian 左栏顶部）───
+      Row({ space: 2 }) {
+        this.ViewSwitchIcon('files', true, () => {
+          // 文件视图即本栏默认视图
+        })
+        this.ViewSwitchIcon('search', false, () => {
+          AppState.setSearchPanelOpen(true);
+        })
+        this.ViewSwitchIcon('star', false, () => {
+          if (this.collapsedFavorites) {
+            this.toggleSection('favorites');
+          }
+        })
+      }
+      .width('100%')
+      .height(40)
+      // 左内边距统一为 16vp（与 Vault 行、分组标题、导航行同一基准）
+      .padding({ left: 16, right: 12 })
 
       // ─── 可滚动主体 ───
       Scroll() {
         Column({ space: 0 }) {
-          // 导航区（logseq sidebar 顶部，无分组头）
+          // 导航区
           ForEach(this.getNavItems(), (item: NavItem) => {
             this.NavRow(item)
           }, (item: NavItem) => item.key)
@@ -168,7 +161,7 @@ export struct LeftSidebar {
           this.SectionHeader(t('favorites'), 'favorites', this.collapsedFavorites)
           if (!this.collapsedFavorites) {
             ForEach(this.favorites, (name: string) => { this.PageLink(name); }, (name: string) => name)
-            if (this.favorites.length === 0) this.EmptyHint(t('empty_sidebar_hint'))
+            if (this.favorites.length === 0) this.EmptyHint(t('empty_favorites_hint'))
           }
           this.SectionSpacer()
 
@@ -176,7 +169,7 @@ export struct LeftSidebar {
           this.SectionHeader(t('recent'), 'recent', this.collapsedRecent)
           if (!this.collapsedRecent) {
             ForEach(this.recent.slice(0, 8), (name: string) => { this.PageLink(name); }, (name: string) => name)
-            if (this.recent.length === 0) this.EmptyHint(t('empty_sidebar_hint'))
+            if (this.recent.length === 0) this.EmptyHint(t('empty_recent_hint'))
           }
           this.SectionSpacer()
 
@@ -186,14 +179,15 @@ export struct LeftSidebar {
             ForEach(this.getNamespaceGroups(), (ns: string) => {
               if (ns !== '') {
                 Row({ space: 6 }) {
-                  TablerIcon('folder', 16, $r('app.color.icon_color'))
+                  TablerIcon('folder', 15, $r('app.color.icon_color'))
                   Text(ns)
-                    .fontSize(11)
+                    .fontSize(13)
                     .fontWeight(FontWeight.Medium)
-                    .fontColor($r('app.color.muted_text'))
+                    .fontColor($r('app.color.text'))
                 }
                 .width('100%')
-                .padding({ left: 20, top: 10, bottom: 4 })
+                .height(30)
+                .padding({ left: 22, right: 12 })
               }
               ForEach(this.getPagesByNamespace(ns), (page: PageData) => {
                 this.PageLink(page.originalName);
@@ -201,21 +195,29 @@ export struct LeftSidebar {
             }, (ns: string) => ns)
             if (this.allPages.length === 0) this.EmptyHint(t('empty_page'))
           }
-        }.width('100%')
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
       .layoutWeight(1)
+      // 顶对齐：Scroll 默认 align 为 Center，会把不足一屏的列表垂直居中（侧栏出现大片顶部空白）
+      .align(Alignment.TopStart)
       .scrollBar(BarState.Off)
 
-      // ─── Footer：设置入口 ───
-      Divider().color($r('app.color.border')).width('100%')
+      // ─── 底部 Vault 行（设置入口，Obsidian 左下角）───
       Row({ space: 8 }) {
-        TablerIcon('settings', 18, $r('app.color.icon_color'))
-        Text(t('settings')).fontSize(14).fontColor($r('app.color.muted_text'))
+        TablerIcon('settings', 16, $r('app.color.icon_color'))
+        Text(t('vault') + ' · ' + t('settings'))
+          .fontSize(12.5)
+          .fontColor($r('app.color.muted_text'))
+          .layoutWeight(1)
+          .maxLines(1)
       }
       .width('100%')
-      .height(44)
-      .padding({ left: 18, right: 16 })
+      .height(40)
+      .padding({ left: 16, right: 12 })
+      .border({ width: { top: 0.5 }, color: $r('app.color.border') })
       .onClick(() => {
         if (this.isCompact()) {
           AppState.setLeftSidebarOpen(false);
@@ -225,25 +227,57 @@ export struct LeftSidebar {
     }
     .width('100%')
     .height('100%')
-    .padding({ top: 4, bottom: 4 })
     .backgroundColor($r('app.color.surface1'))
-    .border({ width: { right: 1 }, color: $r('app.color.border') })
+    .border({ width: { right: 0.5 }, color: $r('app.color.border') })
   }
 
   /**
-   * section header — Logseq sidebar-content-group 风格：
-   * 左侧 chevron 指示折叠态 + 普通大小写 13px 弱化文字，点击整行切换。
+   * 视图切换小图标（Obsidian 左栏顶部图标行）。
+   */
+  @Builder
+  ViewSwitchIcon(icon: string, active: boolean, onTap: () => void) {
+    Row() {
+      TablerIcon(icon, 16, active ? $r('app.color.text') : $r('app.color.icon_color'))
+    }
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .width(40)
+    .height(40)
+    .borderRadius(6)
+    .stateStyles({
+      normal: {
+        .backgroundColor(active
+          ? $r('app.color.surface2')
+          : (this.hoveredViewIcon === icon ? $r('app.color.surface1') : Color.Transparent))
+      },
+      pressed: { .backgroundColor($r('app.color.surface3')) }
+    })
+    .animation({ duration: 140, curve: Curve.EaseOut })
+    .onHover((isHover: boolean) => {
+      this.hoveredViewIcon = isHover ? icon : '';
+    })
+    .onClick(() => {
+      onTap();
+    })
+  }
+
+  /**
+   * section header — Logseq 可折叠分组（保留基因，弱化为 Obsidian 树风格）。
    */
   @Builder
   SectionHeader(title: string, sectionKey: string, collapsed: boolean) {
-    Row({ space: 4 }) {
-      TablerIcon(collapsed ? 'chevron-right' : 'chevron-down', 12, $r('app.color.icon_color'))
+    Row({ space: 2 }) {
+      TablerIcon(collapsed ? 'chevron-right' : 'chevron-down', 12, $r('app.color.muted_text'))
       Text(title)
-        .fontSize(13)
+        .fontSize(11)
         .fontColor($r('app.color.muted_text'))
+        .textCase(TextCase.UpperCase)
+        .letterSpacing(0.6)
     }
     .width('100%')
-    .padding({ left: 12, right: 16, top: 14, bottom: 6 })
+    .constraintSize({ minHeight: 40 })
+    // 与导航行同一左基准 16vp（原先 12vp，导致分组标题比导航行左移 4vp）
+    .padding({ left: 16, right: 16, top: 12, bottom: 4 })
     .borderRadius(4)
     .onClick(() => {
       this.toggleSection(sectionKey);
@@ -252,10 +286,7 @@ export struct LeftSidebar {
 
   @Builder
   SectionSpacer() {
-    Divider()
-      .color($r('app.color.border'))
-      .width('100%')
-      .margin({ left: 16, right: 16, top: 2, bottom: 2 })
+    Column().width('100%').height(8)
   }
 
   @Builder
@@ -263,26 +294,39 @@ export struct LeftSidebar {
     Text(text)
       .fontSize(12)
       .fontColor($r('app.color.muted_text'))
-      .padding({ left: 20, right: 16, top: 4, bottom: 4 })
+      // 必须显式占满宽度并左对齐：Column 默认 alignItems 为 Center，否则空态文案会被居中，与列表左对齐不一致
+      .width('100%')
+      .textAlign(TextAlign.Start)
+      .padding({ left: 22, right: 16, top: 4, bottom: 4 })
       .opacity(0.7)
   }
 
   /**
-   * 导航项 row — logseq sidebar nav 风格。
-   * 选中时 primary 色文字 + 浅色背景。
+   * 导航行背景：激活 > 悬停 > 透明（悬停态仅在鼠标设备生效）。
+   */
+  private navRowBackground(item: NavItem): ResourceColor {
+    if (this.currentPage === item.key) {
+      return $r('app.color.accent_soft');
+    }
+    if (this.hoveredNavKey === item.key) {
+      return $r('app.color.surface2');
+    }
+    return Color.Transparent;
+  }
+
+  /**
+   * 导航项 row — Obsidian 树行风格（当前项 accent 软背景）。
    */
   @Builder
   NavRow(item: NavItem) {
-    Row({ space: 10 }) {
-      TablerIcon(item.iconName, 20,
+    Row({ space: 8 }) {
+      TablerIcon(item.iconName, 16,
         this.currentPage === item.key
           ? $r('app.color.primary')
           : $r('app.color.icon_color'))
       Text(item.label)
-        .fontSize(14)
-        .fontColor(this.currentPage === item.key
-          ? $r('app.color.primary')
-          : $r('app.color.text'))
+        .fontSize(13.5)
+        .fontColor($r('app.color.text'))
         .fontWeight(this.currentPage === item.key ? FontWeight.Medium : FontWeight.Normal)
         .layoutWeight(1)
         .maxLines(1)
@@ -290,11 +334,18 @@ export struct LeftSidebar {
     }
     .width('100%')
     .height(40)
-    .padding({ left: 20, right: 14 })
-    .borderRadius(4)
-    .backgroundColor(this.currentPage === item.key
-      ? $r('app.color.surface2')
-      : Color.Transparent)
+    // 4(margin) + 12 = 16vp 左基准，与分组标题/Vault 行对齐
+    .padding({ left: 12, right: 10 })
+    .margin({ left: 4, right: 4 })
+    .borderRadius(6)
+    .stateStyles({
+      normal: { .backgroundColor(this.navRowBackground(item)) },
+      pressed: { .backgroundColor($r('app.color.surface3')) }
+    })
+    .animation({ duration: 140, curve: Curve.EaseOut })
+    .onHover((isHover: boolean) => {
+      this.hoveredNavKey = isHover ? item.key : '';
+    })
     .onClick(() => {
       // 仅窄屏抽屉模式导航后收起侧栏，宽屏保持常开
       if (this.isCompact()) {
@@ -310,12 +361,11 @@ export struct LeftSidebar {
   }
 
   /**
-   * 页面项 row — logseq sidebar page 风格。
-   * 含 rename/delete 操作按钮（hover 时显示）。
+   * 页面项 row — Obsidian 文件树行风格（hover 显示操作按钮）。
    */
   @Builder
   PageLink(name: string) {
-    Row({ space: 10 }) {
+    Row({ space: 8 }) {
       if (this.renamingPage === name) {
         TextInput({ text: this.renameText })
           .fontSize(13)
@@ -324,40 +374,51 @@ export struct LeftSidebar {
           .onChange((value: string) => { this.renameText = value; })
           .onSubmit(() => { this.commitRename(); })
       } else {
+        TablerIcon('file', 14, $r('app.color.muted_text'))
         Text(name)
-          .fontSize(14)
-          .fontColor(this.currentPage === name
-            ? $r('app.color.primary')
-            : $r('app.color.text'))
+          .fontSize(13.5)
+          .fontColor($r('app.color.text'))
           .fontWeight(this.currentPage === name ? FontWeight.Medium : FontWeight.Normal)
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .onClick(() => { AppState.setCurrentPage(name); })
       }
-      // 操作按钮仅 hover 时显示（Logseq 侧栏页项风格）
       if (this.hoveredPage === name) {
-        Row() { TablerIcon('edit', 16, $r('app.color.icon_color')) }
-          .width(28)
-          .height(28)
-          .opacity(0.6)
+        Row() { TablerIcon('edit', 14, $r('app.color.icon_color')) }
+          .width(24)
+          .height(24)
+          .borderRadius(4)
+          .opacity(0.7)
           .onClick(() => { this.startRename(name); })
-        Row() { TablerIcon('trash', 16, $r('app.color.danger')) }
-          .width(28)
-          .height(28)
-          .opacity(0.6)
+        Row() { TablerIcon('trash', 14, $r('app.color.danger')) }
+          .width(24)
+          .height(24)
+          .borderRadius(4)
+          .opacity(0.7)
           .onClick(() => { this.deletePage(name); })
       }
     }
     .width('100%')
     .height(40)
-    .padding({ left: 20, right: 14 })
-    .borderRadius(4)
-    .backgroundColor(this.currentPage === name
-      ? $r('app.color.surface2')
-      : Color.Transparent)
+    // 子级缩进一级：4(margin) + 18 = 22vp
+    .padding({ left: 18, right: 10 })
+    .margin({ left: 4, right: 4 })
+    .borderRadius(6)
+    .stateStyles({
+      normal: {
+        .backgroundColor(this.currentPage === name
+          ? $r('app.color.accent_soft')
+          : (this.hoveredPage === name ? $r('app.color.surface1') : Color.Transparent))
+      },
+      pressed: { .backgroundColor($r('app.color.surface3')) }
+    })
+    .animation({ duration: 140, curve: Curve.EaseOut })
     .onHover((isHover: boolean) => {
       this.hoveredPage = isHover ? name : '';
+    })
+    // 整行命中：原先 onClick 仅挂在 Text 上，行内空白区域点击无效
+    .onClick(() => {
+      AppState.setCurrentPage(name);
     })
   }
 

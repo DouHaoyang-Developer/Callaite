@@ -176,6 +176,7 @@ export struct PropertyEditor {
           Row() {
             TablerIcon('plus', 16, $r('app.color.primary'))
           }
+          .alignItems(VerticalAlign.Center)
           .width(28)
           .height(28)
           .justifyContent(FlexAlign.Center)
@@ -305,7 +306,7 @@ export struct PropertyEditor {
               .layoutWeight(1)
               .height(36)
               .backgroundColor($r('app.color.primary'))
-              .fontColor(Color.White)
+              .fontColor($r('app.color.on_primary'))
               .onClick(() => { this.confirmAddProperty(); })
           }
           .width('100%')
@@ -352,6 +353,7 @@ export struct PropertyEditor {
       Row() {
         TablerIcon('x', 14, $r('app.color.muted_text'))
       }
+      .alignItems(VerticalAlign.Center)
       .width(24)
       .height(24)
       .justifyContent(FlexAlign.Center)

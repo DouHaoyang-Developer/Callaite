@@ -99,6 +99,7 @@ export struct PageTree {
               $r('app.color.muted_text')
             )
           }
+          .alignItems(VerticalAlign.Center)
           .width(16)
           .height(16)
           .justifyContent(FlexAlign.Center)

@@ -193,7 +193,7 @@ export struct SlashMenu {
       .padding({ top: 8, bottom: 8 })
       .backgroundColor($r('app.color.surface1'))
       .borderRadius(8)
-      .shadow({ radius: 8, color: '#00000020' })
+      .shadow({ radius: 8, color: '#20000000' })
     } else {
       // ─── 命令列表主视图 ───
       Column() {
@@ -263,7 +263,7 @@ export struct SlashMenu {
       .padding({ top: 8, bottom: 8 })
       .backgroundColor($r('app.color.surface1'))
       .borderRadius(8)
-      .shadow({ radius: 8, color: '#00000020' })
+      .shadow({ radius: 8, color: '#20000000' })
     }
   }
 

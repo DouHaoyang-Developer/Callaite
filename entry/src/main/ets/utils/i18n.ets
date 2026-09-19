@@ -75,6 +75,15 @@ function buildZhCN(): I18nDict {
   d.add('nav_all_pages', '所有页面');
   d.add('nav_graph_view', '图谱视图');
   d.add('nav_flashcards', '闪卡复习');
+  // 内部路由 → 显示标题（避免把 Settings/AllPages 等内部标识直接暴露在标题栏）
+  d.add('title_whiteboards', '白板');
+  d.add('title_pdf', 'PDF 阅读');
+  d.add('title_pro_upgrade', 'Callaite Pro');
+  d.add('title_settings', '设置');
+  // 移动端「更多」菜单分组标题
+  d.add('menu_group_content', '内容');
+  d.add('menu_group_view', '视图');
+  d.add('menu_group_system', '数据与系统');
   d.add('nav_home', '主页');
   d.add('nav_appearance', '外观');
   d.add('nav_recycle', '回收站');
@@ -105,6 +114,8 @@ function buildZhCN(): I18nDict {
   d.add('add_property_hint', 'key:: value 添加属性');
   d.add('empty_sidebar', '右侧栏为空');
   d.add('empty_sidebar_hint', '点击右侧栏图标查看页面信息');
+  d.add('empty_favorites_hint', '长按页面可加入收藏');
+  d.add('empty_recent_hint', '暂无最近访问');
   // 设置页
   d.add('font_size', '字体大小');
   d.add('show_bullets', '显示 Bullet');
@@ -118,6 +129,37 @@ function buildZhCN(): I18nDict {
   d.add('data', '数据');
   d.add('cloud_sync', '云同步');
   d.add('collab_edit', '协同编辑');
+  // 新增 — Obsidian 对齐 UI（Ribbon / TabBar / StatusBar / 移动端）
+  d.add('onboarding_desc', '融合 Obsidian 与 Logseq 特性的鸿蒙知识管理应用');
+  d.add('ribbon_toggle_sidebar', '切换左侧栏');
+  d.add('ribbon_quick_switcher', '快速切换');
+  d.add('ribbon_graph', '关系图谱');
+  d.add('ribbon_whiteboard', '白板');
+  d.add('ribbon_flashcards', '闪卡复习');
+  d.add('ribbon_command', '命令面板');
+  d.add('ribbon_settings', '设置');
+  d.add('ribbon_theme', '切换主题');
+  d.add('tab_new', '新建标签页');
+  d.add('tab_list', '标签页列表');
+  d.add('tab_close', '关闭标签页');
+  d.add('tab_close_others', '关闭其他标签页');
+  d.add('tab_overview', '标签页总览');
+  d.add('tabs_count', '个标签页');
+  d.add('done', '完成');
+  d.add('quick_switch', '打开快速切换');
+  d.add('view_graph', '查看关系图谱');
+  d.add('new_whiteboard', '新建白板');
+  d.add('open_today_journal', '打开/创建今天的日记');
+  d.add('insert_template', '插入模板');
+  d.add('new_database', '新建数据库');
+  d.add('new_page', '创建新文件');
+  d.add('close_this_tab', '关闭标签页');
+  d.add('status_blocks', '块');
+  d.add('status_words', '字');
+  d.add('status_pages', '页面');
+  d.add('vault', '仓库');
+  d.add('sidebar_files', '文件列表');
+  d.add('reading_mode', '阅读模式');
   return d;
 }
 
@@ -172,6 +214,15 @@ function buildEnUS(): I18nDict {
   d.add('nav_all_pages', 'All Pages');
   d.add('nav_graph_view', 'Graph View');
   d.add('nav_flashcards', 'Flashcards');
+  // Internal route → display title
+  d.add('title_whiteboards', 'Whiteboards');
+  d.add('title_pdf', 'PDF Reader');
+  d.add('title_pro_upgrade', 'Callaite Pro');
+  d.add('title_settings', 'Settings');
+  // Mobile "more" menu group headers
+  d.add('menu_group_content', 'Content');
+  d.add('menu_group_view', 'View');
+  d.add('menu_group_system', 'Data & System');
   d.add('nav_home', 'Home');
   d.add('nav_appearance', 'Appearance');
   d.add('nav_recycle', 'Recycle Bin');
@@ -201,6 +252,8 @@ function buildEnUS(): I18nDict {
   d.add('add_property_hint', 'key:: value to add property');
   d.add('empty_sidebar', 'Sidebar is empty');
   d.add('empty_sidebar_hint', 'Click right sidebar icons to view page info');
+  d.add('empty_favorites_hint', 'Long-press a page to favorite it');
+  d.add('empty_recent_hint', 'No recent pages');
   // Settings
   d.add('font_size', 'Font Size');
   d.add('show_bullets', 'Show Bullet');
@@ -214,6 +267,37 @@ function buildEnUS(): I18nDict {
   d.add('data', 'Data');
   d.add('cloud_sync', 'Cloud Sync');
   d.add('collab_edit', 'Collaborative Editing');
+  // New — Obsidian-aligned UI (Ribbon / TabBar / StatusBar / Mobile)
+  d.add('onboarding_desc', 'HarmonyOS knowledge base blending Obsidian & Logseq');
+  d.add('ribbon_toggle_sidebar', 'Toggle Sidebar');
+  d.add('ribbon_quick_switcher', 'Quick Switcher');
+  d.add('ribbon_graph', 'Graph View');
+  d.add('ribbon_whiteboard', 'Whiteboards');
+  d.add('ribbon_flashcards', 'Flashcards');
+  d.add('ribbon_command', 'Command Palette');
+  d.add('ribbon_settings', 'Settings');
+  d.add('ribbon_theme', 'Toggle Theme');
+  d.add('tab_new', 'New Tab');
+  d.add('tab_list', 'Tab List');
+  d.add('tab_close', 'Close Tab');
+  d.add('tab_close_others', 'Close Other Tabs');
+  d.add('tab_overview', 'Tab Overview');
+  d.add('tabs_count', 'tab(s)');
+  d.add('done', 'Done');
+  d.add('quick_switch', 'Quick Switcher');
+  d.add('view_graph', 'Open Graph View');
+  d.add('new_whiteboard', 'New Whiteboard');
+  d.add('open_today_journal', "Open/Create Today's Journal");
+  d.add('insert_template', 'Insert Template');
+  d.add('new_database', 'New Database');
+  d.add('new_page', 'Create New File');
+  d.add('close_this_tab', 'Close Tab');
+  d.add('status_blocks', 'blocks');
+  d.add('status_words', 'words');
+  d.add('status_pages', 'pages');
+  d.add('vault', 'Vault');
+  d.add('sidebar_files', 'Files');
+  d.add('reading_mode', 'Reading Mode');
   return d;
 }
 

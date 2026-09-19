@@ -289,6 +289,8 @@ export struct DatePicker {
             Row() {
               TablerIcon('chevron-left', 16, $r('app.color.muted_text'))
             }
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
             .width(32).height(32)
             .onClick(() => {
               this.prevMonth();
@@ -304,6 +306,8 @@ export struct DatePicker {
             Row() {
               TablerIcon('chevron-right', 16, $r('app.color.muted_text'))
             }
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
             .width(32).height(32)
             .onClick(() => {
               this.nextMonth();

@@ -79,7 +79,7 @@ export struct MobileToolbar {
         .width('100%')
         .backgroundColor($r('app.color.surface1'))
         .border({ width: 1, color: $r('app.color.border') })
-        .shadow({ radius: 8, color: '#00000020' })
+        .shadow({ radius: 8, color: '#20000000' })
       }
     }
     .width('100%')

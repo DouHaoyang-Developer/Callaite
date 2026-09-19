@@ -148,7 +148,20 @@ export const TABLER_ICONS: IconEntry[] = [
   { name: 'text-caption', pathData: { paths: ['M4 15h16', 'M4 4m0 1a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1z', 'M4 20h12'] } },
   { name: 'ballpen', pathData: { paths: ['M14 6l7 7l-4 4', 'M5.828 18.172a2.828 2.828 0 0 0 4 0l10.586 -10.586a2 2 0 0 0 0 -2.829l-1.171 -1.171a2 2 0 0 0 -2.829 0l-10.586 10.586a2.828 2.828 0 0 0 0 4z', 'M4 20l1.768 -1.768'] } },
   { name: 'highlight', pathData: { paths: ['M3 19h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4', 'M12.5 5.5l4 4', 'M4.5 13.5l4 4', 'M21 15v4h-8l4 -4z'] } },
-  { name: 'eraser', pathData: { paths: ['M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3', 'M18 13.3l-6.3 -6.3'] } }
+  { name: 'eraser', pathData: { paths: ['M19 20h-10.5l-4.21 -4.3a1 1 0 0 1 0 -1.41l10 -10a1 1 0 0 1 1.41 0l5 5a1 1 0 0 1 0 1.41l-9.2 9.3', 'M18 13.3l-6.3 -6.3'] } },
+  // ─── Obsidian 对齐 UI 新增图标（Ribbon / TabBar / 移动端）───
+  { name: 'layout-sidebar', pathData: { paths: ['M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z', 'M9 4l0 16'] } },
+  { name: 'star', pathData: { paths: ['M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z'] } },
+  { name: 'circle-plus', pathData: { paths: ['M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0', 'M9 12l6 0', 'M12 9l0 6'] } },
+  { name: 'moon', pathData: { paths: ['M12 3a9 9 0 1 0 9 9c0 -.46 -.04 -.92 -.1 -1.36a5.389 5.389 0 0 1 -4.4 2.26a5.403 5.403 0 0 1 -3.14 -9.8c-.44 -.06 -.9 -.1 -1.36 -.1z'] } },
+  { name: 'sun', pathData: { paths: ['M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0', 'M12 3l0 2', 'M12 19l0 2', 'M3 12l2 0', 'M19 12l2 0', 'M5.6 5.6l1.4 1.4', 'M17 17l1.4 1.4', 'M5.6 18.4l1.4 -1.4', 'M17 7l1.4 -1.4'] } },
+  { name: 'eye', pathData: { paths: ['M10 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0', 'M2 12c2.5 -4.5 6 -7 10 -7s7.5 2.5 10 7c-2.5 4.5 -6 7 -10 7s-7.5 -2.5 -10 -7'] } },
+  { name: 'file-plus', pathData: { paths: ['M14 3v4a1 1 0 0 0 1 1h4', 'M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z', 'M12 11l0 6', 'M9 14l6 0'] } },
+  { name: 'template', pathData: { paths: ['M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z', 'M4 11l16 0', 'M10 4l0 4'] } },
+  { name: 'terminal-2', pathData: { paths: ['M4 5m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z', 'M7 9l3 3l-3 3', 'M14 15l3 0'] } },
+  { name: 'chevron-down-small', pathData: { paths: ['M9 10l3 3l3 -3'] } },
+  { name: 'help-circle', pathData: { paths: ['M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0', 'M12 17l0 .01', 'M12 13.5a1.5 1.5 0 1 1 3 -1.5c0 1.5 -3 1.5 -3 3'] } },
+  { name: 'zip', pathData: { paths: ['M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1 -1 1h-14a1 1 0 0 1 -1 -1v-14a1 1 0 0 1 1 -1z', 'M11 4l0 2', 'M13 6l0 2', 'M11 8l0 2', 'M13 10l0 2', 'M11 12l0 2', 'M12 15m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0'] } }
 ];
 
 /**

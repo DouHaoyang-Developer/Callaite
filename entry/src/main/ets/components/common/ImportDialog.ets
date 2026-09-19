@@ -149,7 +149,7 @@ export struct ImportDialog {
           .onClick(() => { this.onClose(); })
         Button(this.isImporting ? '导入中…' : '导入')
           .fontSize(13)
-          .fontColor(Color.White)
+          .fontColor($r('app.color.on_primary'))
           .backgroundColor($r('app.color.primary'))
           .layoutWeight(1)
           .enabled(!this.isImporting)

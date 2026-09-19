@@ -38,7 +38,7 @@ export struct JournalFeed {
   getContentPadding(): number {
     try {
       const d = display.getDefaultDisplaySync();
-      if (d.width / d.densityPixels < 768) {
+      if (d.width / d.densityPixels < 600) {
         return 20;
       }
     } catch (_e) {

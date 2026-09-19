@@ -188,6 +188,8 @@ export struct GraphView {
         Row({ space: 4 }) {
           TablerIcon('arrow-left', 20, $r('app.color.text'))
         }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .width(32).height(32)
         .onClick(() => { AppState.setCurrentPage('Journal'); })
 

@@ -72,7 +72,7 @@ export struct TaskDashboard {
                     .fontColor(block.marker === 'DONE' ? $r('app.color.success') : $r('app.color.primary'))
                     .padding({ left: 2, right: 2, top: 0, bottom: 0 })
                     .borderRadius(2)
-                    .backgroundColor(block.marker === 'DONE' ? '#10B98120' : '#0078D420')
+                    .backgroundColor(block.marker === 'DONE' ? '#2010B981' : '#200078D4')
                 }
                 Text(block.content)
                   .fontSize(13)

@@ -74,6 +74,8 @@ export struct CommandPalette {
                 .layoutWeight(1)
                 .alignItems(HorizontalAlign.Start)
               }
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
               .width('100%')
               .height(48)
               .padding({ left: 16, right: 16 })
@@ -94,7 +96,7 @@ export struct CommandPalette {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.surface0'))
+    .backgroundColor(Color.Transparent)
   }
 
   doSearch(query: string): void {

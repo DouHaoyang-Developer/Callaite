@@ -170,6 +170,8 @@ export struct FindInPage {
         Row() {
           TablerIcon('chevron-up', 16, $r('app.color.text'))
         }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .width(28)
         .height(28)
         .borderRadius(4)
@@ -181,6 +183,8 @@ export struct FindInPage {
         Row() {
           TablerIcon('chevron-down', 16, $r('app.color.text'))
         }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .width(28)
         .height(28)
         .borderRadius(4)
@@ -192,6 +196,8 @@ export struct FindInPage {
         Row() {
           TablerIcon('x', 16, $r('app.color.muted_text'))
         }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .width(28)
         .height(28)
         .borderRadius(4)

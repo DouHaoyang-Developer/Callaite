@@ -309,6 +309,8 @@ export struct PropertyConfig {
           Row() {
             TablerIcon('arrow-left', 18, $r('app.color.text'))
           }
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
           .width(36).height(36)
           .onClick(() => {
             AppState.setCurrentPage('Settings');
@@ -323,6 +325,8 @@ export struct PropertyConfig {
           Row() {
             TablerIcon('plus', 16, $r('app.color.primary'))
           }
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
           .width(36).height(36)
           .onClick(() => {
             this.openAddDialog();
@@ -410,6 +414,8 @@ export struct PropertyConfig {
         Row() {
           TablerIcon('edit', 14, $r('app.color.muted_text'))
         }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .width(28).height(28)
         .onClick(() => {
           this.openEditDialog(name);
@@ -418,6 +424,8 @@ export struct PropertyConfig {
         Row() {
           TablerIcon('trash', 14, $r('app.color.danger'))
         }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .width(28).height(28)
         .onClick(() => {
           this.deleteSchema(name);
@@ -549,7 +557,7 @@ export struct PropertyConfig {
             .fontSize(13)
             .layoutWeight(1)
             .backgroundColor($r('app.color.primary'))
-            .fontColor(Color.White)
+            .fontColor($r('app.color.on_primary'))
             .onClick(() => {
               this.confirmSave();
             })

@@ -162,6 +162,8 @@ export struct BlockView {
               Row() {
                 TablerIcon('dots', 16, $r('app.color.muted_text'))
               }
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
               .width(20).height(20)
               .onClick(() => {
                 this.showActions = !this.showActions;

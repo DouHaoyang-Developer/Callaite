@@ -194,7 +194,9 @@ export class AppState {
     // 否则与 bindSheet 初始绑定产生框架竞态导致抽屉打开后立即关闭。
     try {
       const disp = display.getDefaultDisplaySync();
-      if (disp.width / disp.densityPixels < 768) {
+      // 手机与折叠屏/小平板（<840vp）首次进入不自动展开侧栏，
+      // 为内容区留出足够宽度（对齐 Obsidian 窄窗口行为）；宽屏默认展开。
+      if (disp.width / disp.densityPixels < 840) {
         leftDefault = false;
       }
     } catch (_e) {
@@ -216,6 +218,9 @@ export class AppState {
     AppStorage.setOrCreate(STORAGE_KEYS.exportDialogOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.importDialogOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.rightSidebarBlocks, JSON.stringify([]));
+    // 移动端浮层（Obsidian iOS：标签总览 / 更多菜单）
+    AppStorage.setOrCreate('callaite_tabOverviewOpen', false);
+    AppStorage.setOrCreate('callaite_mobileMenuOpen', false);
 
     // 历史栈初始化
     const initHistory: HistoryStack = { pages: [AppStorage.get<string>(STORAGE_KEYS.currentPage) ?? 'Journal'], current: 0 };

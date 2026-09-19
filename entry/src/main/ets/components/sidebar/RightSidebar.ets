@@ -74,12 +74,13 @@ export struct RightSidebar {
       }
       .width('100%')
       .layoutWeight(1)
+      .align(Alignment.TopStart)
       .scrollBar(BarState.Auto)
     }
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.surface1'))
-    .border({ width: { left: 1 }, color: $r('app.color.border') })
+    .border({ width: { left: 0.5 }, color: $r('app.color.border') })
   }
 
   /**
@@ -88,16 +89,21 @@ export struct RightSidebar {
   @Builder
   Toolbar() {
     Row({ space: 8 }) {
+      TablerIcon('link', 14, $r('app.color.icon_color'))
       Text(t('sidebar_right_title'))
-        .fontSize(12)
-        .fontWeight(FontWeight.Bold)
+        .fontSize(11)
+        .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.muted_text'))
+        .textCase(TextCase.UpperCase)
+        .letterSpacing(0.6)
         .layoutWeight(1)
 
       // collapse all
       Row() {
         TablerIcon('chevron-up', 16, $r('app.color.muted_text'))
       }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
       .width(28)
       .height(28)
       .borderRadius(4)
@@ -107,6 +113,8 @@ export struct RightSidebar {
       Row() {
         TablerIcon('chevron-down', 16, $r('app.color.muted_text'))
       }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
       .width(28)
       .height(28)
       .borderRadius(4)
@@ -116,6 +124,8 @@ export struct RightSidebar {
       Row() {
         TablerIcon('x', 16, $r('app.color.muted_text'))
       }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
       .width(28)
       .height(28)
       .borderRadius(4)
@@ -146,6 +156,8 @@ export struct RightSidebar {
         Row() {
           TablerIcon('x', 16, $r('app.color.muted_text'))
         }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
         .width(20)
         .height(20)
         .onClick(() => { AppState.removeRightSidebarBlock(block.id); })

@@ -56,7 +56,7 @@ export struct Toolbar {
       .padding({ left: 4, right: 4, top: 2, bottom: 2 })
       .borderRadius(6)
       .backgroundColor($r('app.color.surface0'))
-      .shadow({ radius: 4, color: '#00000010' })
+      .shadow({ radius: 4, color: '#10000000' })
     }
   }
 

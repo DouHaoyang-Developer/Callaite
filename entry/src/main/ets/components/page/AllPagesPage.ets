@@ -332,6 +332,7 @@ export struct AllPagesPage {
         }
         .width('100%')
         .layoutWeight(1)
+        .align(Alignment.TopStart)
         .scrollBar(BarState.Off)
       }
     }
@@ -349,6 +350,7 @@ export struct AllPagesPage {
             TablerIcon('check', 14, $r('app.color.primary'))
           }
         }
+        .alignItems(VerticalAlign.Center)
         .width(20)
         .height(20)
         .borderRadius(4)
