@@ -115,46 +115,7 @@ export struct LeftSidebar {
 
   build() {
     Column({ space: 0 }) {
-      // ─── Vault 行（Obsidian 仓库标题）───
-      Row({ space: 8 }) {
-        TablerIcon('bolt', 16, $r('app.color.primary'))
-        Text(t('app_name'))
-          .fontSize(13.5)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text'))
-          .layoutWeight(1)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        TablerIcon('chevron-down', 12, $r('app.color.muted_text'))
-      }
-      .width('100%')
-      .height(40)
-      .padding({ left: 16, right: 12 })
-      .margin({ top: 4 })
-      .onClick(() => {
-        AppStorage.setOrCreate('callaite_vaultSwitcherOpen', true);
-      })
-
-      // ─── 视图切换图标行（Obsidian 左栏顶部）───
-      Row({ space: 2 }) {
-        this.ViewSwitchIcon('files', true, () => {
-          // 文件视图即本栏默认视图
-        })
-        this.ViewSwitchIcon('search', false, () => {
-          AppState.setSearchPanelOpen(true);
-        })
-        this.ViewSwitchIcon('star', false, () => {
-          if (this.collapsedFavorites) {
-            this.toggleSection('favorites');
-          }
-        })
-      }
-      .width('100%')
-      .height(40)
-      // 左内边距统一为 16vp（与 Vault 行、分组标题、导航行同一基准）
-      .padding({ left: 16, right: 12 })
-
-      // ─── 搜索框（Obsidian 左栏顶部，点击打开搜索面板）───
+      // ─── 搜索框（导航区唯一元素，形状对齐 Obsidian）───
       Row({ space: 8 }) {
         TablerIcon('search', 14, $r('app.color.muted_text'))
         Text('搜索或开始搜索...')
@@ -162,24 +123,29 @@ export struct LeftSidebar {
           .fontColor($r('app.color.muted_text'))
           .layoutWeight(1)
           .maxLines(1)
-        Text('Aa')
-          .fontSize(10)
-          .fontColor($r('app.color.muted_text'))
       }
       .width('100%')
-      .height(32)
+      .height(30)
       .padding({ left: 10, right: 10 })
-      .margin({ left: 10, right: 10, top: 6 })
-      .borderRadius(8)
+      .margin({ left: 8, right: 8, top: 8 })
+      .borderRadius(6)
       .backgroundColor($r('app.color.surface2'))
       .onClick(() => {
         AppState.setSearchPanelOpen(true);
       })
 
-      // ─── 文件树工具行（对齐 Obsidian 左栏第二行：新建笔记 / 新建文件夹 / 排序 / 全部折叠）───
+      // ─── 文件树（严格 Obsidian：缩进 / 箭头 / 图标区分 / 高亮 / 悬停 / 统计）───
+      PageTree()
+        .layoutWeight(1)
+
+      // ─── 分隔线 ───
+      Divider()
+        .width('100%')
+        .color($r('app.color.border'))
+
+      // ─── 文件树工具行（迁移自顶部；对齐 Obsidian 移动端底部工具行）───
       Row({ space: 2 }) {
         this.TreeToolIcon('file-plus', 'tree_new_note', () => {
-          // 新建改为三选项（Markdown 笔记 / 白板 / 大纲笔记）
           AppStorage.setOrCreate('callaite_newFileDialogOpen', true);
         })
         this.TreeToolIcon('folder', 'tree_new_folder', () => {
@@ -195,7 +161,13 @@ export struct LeftSidebar {
       }
       .width('100%')
       .height(40)
-      .padding({ left: 16, right: 12 })
+      .padding({ left: 12, right: 12 })
+
+      // ─── 导航区（迁移：日志 / 所有页面 / 图谱 / 白板 / 闪卡 / PDF）───
+      ForEach(this.getNavItems(), (item: NavItem) => {
+        this.NavRow(item)
+      }, (item: NavItem) => item.key)
+      this.SectionSpacer()
 
       // ─── 收藏夹（可折叠分组）───
       this.SectionHeader(t('favorites'), 'favorites', this.collapsedFavorites)
@@ -213,9 +185,20 @@ export struct LeftSidebar {
       }
       this.SectionSpacer()
 
-      // ─── 文件树（Obsidian 式层级树：命名空间分级存储，组件化 PageTree）───
-      PageTree()
-        .layoutWeight(1)
+      // ─── 仓库切换入口（迁移自顶部 Vault 行）───
+      Row({ space: 8 }) {
+        TablerIcon('database', 14, $r('app.color.icon_color'))
+        Text('仓库切换')
+          .fontSize(12.5)
+          .fontColor($r('app.color.muted_text'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(36)
+      .padding({ left: 16, right: 12 })
+      .onClick(() => {
+        AppStorage.setOrCreate('callaite_vaultSwitcherOpen', true);
+      })
 
       // ─── 底部 Vault 行（设置入口，Obsidian 左下角）───
       Row({ space: 8 }) {

@@ -12,6 +12,7 @@ import { NamespaceUtils, NamespaceNode } from '../../utils/NamespaceUtils';
 @Component
 export struct PageTree {
   @State treeNodes: NamespaceNode[] = [];
+  @State hoveredKey: string = '';
   /** 已折叠的命名空间节点（默认全部展开，对齐 Obsidian 文件树） */
   @State collapsedNodes: Map<string, boolean> = new Map<string, boolean>();
   /** 当前打开页（高亮 + 展开刷新），来自全局标签页状态 */
@@ -76,6 +77,14 @@ export struct PageTree {
             ForEach(this.treeNodes, (node: NamespaceNode) => {
               this.RenderNode(node, 0)
             }, (node: NamespaceNode) => node.fullName)
+
+            // 统计行（对齐 Obsidian 移动端文件列表计数）
+            Text(this.treeStats())
+              .fontSize(10)
+              .fontColor($r('app.color.muted_text'))
+              .width('100%')
+              .padding({ left: 14, top: 12, bottom: 12 })
+              .textAlign(TextAlign.Start)
           }
           .width('100%')
         }
@@ -117,11 +126,11 @@ export struct PageTree {
           Row().width(16).height(16)
         }
 
-        // 图标
+        // 图标区分：文件夹 / 文件（对齐 Obsidian 移动端文件列表）
         TablerIcon(
           node.isPage ? 'file' : 'folder',
           14,
-          node.isPage ? $r('app.color.muted_text') : $r('app.color.primary')
+          node.isPage ? $r('app.color.muted_text') : $r('app.color.icon_color')
         )
 
         // 名称
@@ -143,8 +152,16 @@ export struct PageTree {
       }
       .width('100%')
       .height(28)
-      .padding({ left: depth * 14 + 4, right: 8 })
-      .borderRadius(4)
+      .padding({ left: depth * 14 + 6, right: 8 })
+      .borderRadius(6)
+      .backgroundColor(
+        (node.isPage && this.currentPageName === node.fullName) || this.hoveredKey === node.fullName
+          ? $r('app.color.surface2') : Color.Transparent
+      )
+      .animation({ duration: 120, curve: Curve.EaseOut })
+      .onHover((isHover: boolean) => {
+        this.hoveredKey = isHover ? node.fullName : (this.hoveredKey === node.fullName ? '' : this.hoveredKey);
+      })
       .onClick(() => {
         if (node.isPage) {
           this.currentPageName = node.fullName;
@@ -162,5 +179,24 @@ export struct PageTree {
       }
     }
     .width('100%')
+  }
+
+  /** 递归统计文件与文件夹数量（对齐 Obsidian 文件列表计数行） */
+  private countNodes(nodes: NamespaceNode[], files: number[], folders: number[]): void {
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i].isPage) {
+        files[0] = files[0] + 1;
+      } else {
+        folders[0] = folders[0] + 1;
+        this.countNodes(nodes[i].children, files, folders);
+      }
+    }
+  }
+
+  private treeStats(): string {
+    const files: number[] = [0];
+    const folders: number[] = [0];
+    this.countNodes(this.treeNodes, files, folders);
+    return files[0] + ' 个文件，' + folders[0] + ' 个文件夹';
   }
 }

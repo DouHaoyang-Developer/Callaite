@@ -1,77 +1,69 @@
-import { TablerIcon } from '../common/Icons';
 import { AppState } from '../../state/AppState';
+import { Breakpoints } from '../../state/Breakpoints';
+import { TabState } from '../../state/TabState';
 
 /**
- * HomePage —— 启动首页（复刻 Obsidian 新标签页布局，图 2/5/6 风格）。
+ * HomePage —— 新标签页（忠实复刻 Obsidian 新标签页：图 Laptop 1 桌面 / 图 iphone 1 移动）。
  *
- * 结构：居中 Logo + 标题 → 居中搜索框（点击打开快速切换）→ 常用操作快捷入口按钮组。
- * 启动行为调整后，应用每次启动默认进入本页；大纲/日志仍可经
- * 「今日日志」快捷入口、左栏文件树与导航行正常访问。
+ * 桌面：垂直居中的三条文字链接 —— 创建新文件 (Ctrl + N) / 打开文件 (Ctrl + O) / 关闭当前页。
+ * 移动：垂直居中的两个 pill 按钮 —— 创建新文件 / 关闭标签页。
+ * 无 Logo / 搜索框 / 按钮组（按截图效果处理，与此前版本冲突处以截图为准）。
+ * 大纲与日志经左栏文件树、导航行、「今日日志」快捷入口与标签页正常访问。
  */
-interface HomeAction {
-  icon: string;
-  label: string;
-  page: string;      // 跳转目标路由；'' 表示走特殊动作（新建对话框）
-}
-
-const HOME_ACTIONS: HomeAction[] = [
-  { icon: 'file-plus', label: '新建', page: '' },
-  { icon: 'search', label: '搜索', page: 'search' },
-  { icon: 'command', label: '命令面板', page: 'search' },
-  { icon: 'calendar', label: '今日日志', page: 'Journal' },
-  { icon: 'layout-grid', label: '白板', page: 'Whiteboards' },
-  { icon: 'files', label: '所有页面', page: 'AllPages' }
-];
-
 @Component
 export struct HomePage {
-  @State hoveredAction: string = '';
+  @State hoveredLink: string = '';
+
+  private openCreateDialog(): void {
+    // 新建 → 三选项对话框（Markdown 笔记 / 白板 / 大纲笔记）
+    AppStorage.setOrCreate('callaite_newFileDialogOpen', true);
+  }
 
   private openSearch(): void {
+    // 打开文件（Ctrl + O）→ 快速切换 / 搜索面板
     AppState.setSearchPanelOpen(true);
   }
 
-  private openAction(action: HomeAction): void {
-    if (action.page === '') {
-      // 新建 → 三选项对话框（Markdown 笔记 / 白板 / 大纲笔记）
-      AppStorage.setOrCreate('callaite_newFileDialogOpen', true);
-      return;
+  private closeCurrentTab(): void {
+    // 关闭当前标签页；仅剩一个标签时不关闭（保持工作区可用）
+    if (TabState.getTabs().length > 1) {
+      TabState.closeTab(TabState.getActiveTabId());
     }
-    if (action.page === 'search') {
-      this.openSearch();
-      return;
-    }
-    AppState.setCurrentPage(action.page);
   }
 
+  /** 桌面：居中文字链接（Obsidian 新标签页样式，主题紫） */
   @Builder
-  ActionButton(action: HomeAction) {
-    Row({ space: 8 }) {
-      TablerIcon(action.icon, 16,
-        this.hoveredAction === action.label ? $r('app.color.primary') : $r('app.color.muted_text'))
-      Text(action.label)
-        .fontSize(13)
-        .fontColor(this.hoveredAction === action.label ? $r('app.color.primary') : $r('app.color.text'))
+  TextLink(label: string, onTap: () => void) {
+    Text(label)
+      .fontSize(14)
+      .fontColor($r('app.color.primary'))
+      .padding({ top: 5, bottom: 5, left: 10, right: 10 })
+      .opacity(this.hoveredLink === label ? 0.7 : 1)
+      .animation({ duration: 140, curve: Curve.EaseOut })
+      .onHover((isHover: boolean) => {
+        this.hoveredLink = isHover ? label : '';
+      })
+      .onClick(() => {
+        onTap();
+      })
+  }
+
+  /** 移动端：pill 按钮（浅紫底 + 主题紫文字，对齐 iphone 截图） */
+  @Builder
+  PillButton(label: string, onTap: () => void) {
+    Row() {
+      Text(label)
+        .fontSize(14)
+        .fontColor($r('app.color.primary'))
     }
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .height(40)
-    .padding({ left: 16, right: 16 })
-    .borderRadius(8)
-    .backgroundColor($r('app.color.surface1'))
-    .border({ width: 1, color: $r('app.color.border') })
-    .stateStyles({
-      normal: {
-        .backgroundColor($r('app.color.surface1'))
-      },
-      pressed: { .backgroundColor($r('app.color.surface2')) }
-    })
-    .animation({ duration: 140, curve: Curve.EaseOut })
-    .onHover((isHover: boolean) => {
-      this.hoveredAction = isHover ? action.label : '';
-    })
+    .height(38)
+    .padding({ left: 26, right: 26 })
+    .borderRadius(10)
+    .backgroundColor($r('app.color.accent_soft'))
     .onClick(() => {
-      this.openAction(action);
+      onTap();
     })
   }
 
@@ -79,56 +71,35 @@ export struct HomePage {
     Column({ space: 0 }) {
       Blank()
 
-      // ─── 居中标题区（Obsidian 新标签页：Logo + 仓库/应用名）───
-      Column({ space: 10 }) {
-        TablerIcon('bolt', 52, $r('app.color.primary'))
-        Text('Callaite')
-          .fontSize(24)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text'))
-        Text('输入以搜索或创建文件，或选择下方操作')
-          .fontSize(12.5)
-          .fontColor($r('app.color.muted_text'))
+      if (Breakpoints.isCompact()) {
+        // ─── 移动端（Obsidian iphone 新标签页）：两个竖排 pill 按钮 ───
+        Column({ space: 14 }) {
+          this.PillButton('创建新文件', (): void => {
+            this.openCreateDialog();
+          })
+          this.PillButton('关闭标签页', (): void => {
+            this.closeCurrentTab();
+          })
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Center)
+      } else {
+        // ─── 桌面（Obsidian 桌面新标签页）：三条居中文字链接 ───
+        Column({ space: 6 }) {
+          this.TextLink('创建新文件 (Ctrl + N)', (): void => {
+            this.openCreateDialog();
+          })
+          this.TextLink('打开文件 (Ctrl + O)', (): void => {
+            this.openSearch();
+          })
+          this.TextLink('关闭当前页', (): void => {
+            this.closeCurrentTab();
+          })
+        }
+        .alignItems(HorizontalAlign.Center)
       }
-      .alignItems(HorizontalAlign.Center)
-
-      // ─── 居中搜索框（对齐 Obsidian 新标签页「搜索或创建文件」）───
-      Row({ space: 10 }) {
-        TablerIcon('search', 16, $r('app.color.muted_text'))
-        Text('搜索或创建文件...')
-          .fontSize(14)
-          .fontColor($r('app.color.muted_text'))
-          .layoutWeight(1)
-      }
-      .width('86%')
-      .constraintSize({ maxWidth: 480 })
-      .height(46)
-      .padding({ left: 16, right: 16 })
-      .margin({ top: 22 })
-      .borderRadius(10)
-      .backgroundColor($r('app.color.surface1'))
-      .border({ width: 1, color: $r('app.color.border') })
-      .onClick(() => {
-        this.openSearch();
-      })
-
-      // ─── 常用操作快捷入口 ───
-      Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
-        ForEach(HOME_ACTIONS, (action: HomeAction) => {
-          this.ActionButton(action)
-        }, (action: HomeAction) => action.label)
-      }
-      .width('86%')
-      .constraintSize({ maxWidth: 520 })
-      .margin({ top: 18 })
 
       Blank()
-
-      // ─── 底部提示（Obsidian 新标签页底部说明风格）───
-      Text('大纲与日志可通过左栏文件树、快捷入口与标签页随时访问')
-        .fontSize(11)
-        .fontColor($r('app.color.muted_text'))
-        .margin({ bottom: 24 })
     }
     .width('100%')
     .height('100%')
