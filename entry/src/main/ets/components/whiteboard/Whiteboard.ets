@@ -8,6 +8,9 @@ import { FileService } from '../../services/FileService';
 import { WhiteboardFileService } from '../../services/WhiteboardFileService';
 import { promptAction } from '@kit.ArkUI';
 import { CanvasMath } from '../../utils/CanvasMath';
+import { WhiteboardToolbar } from './WhiteboardToolbar';
+import { WhiteboardBrushPanel } from './WhiteboardBrushPanel';
+import { WhiteboardStatusBar } from './WhiteboardStatusBar';
 
 /**
  * 白板视口数据（缩放 + 平移），随画布一起持久化。
@@ -32,11 +35,6 @@ interface WbExportData {
 /**
  * 工具栏按钮配置。
  */
-interface ToolConfig {
-  icon: string;
-  tool: string;
-}
-
 /**
  * Whiteboard — Logseq 风格白板组件。
  *
@@ -75,11 +73,6 @@ export struct Whiteboard {
   // 注意：两种引擎共享同一 StrokeData 模型（.canvas 持久化 / 撤销重做 / 笔刷面板），
   //       引擎切换不改变数据格式，实现「Pen Kit 核心 + Canvas 集成」协同。
   private handwriteCapable: boolean = canIUse('SystemCapability.Stylus.Handwrite');
-
-  /** 当前笔迹引擎名（状态栏与笔刷面板展示） */
-  private inkEngineName(): string {
-    return this.handwriteCapable ? 'Pen Kit 原生' : 'Canvas 压感';
-  }
 
   // ─── 交互状态 ───
   @State private selectedShapeId: string = '';
@@ -130,16 +123,6 @@ export struct Whiteboard {
   private presetColors: number[] = [];
 
   // ─── 工具栏配置 ───
-  private tools: ToolConfig[] = [
-    { icon: 'mouse', tool: 'select' },
-    { icon: 'rectangle', tool: 'rect' },
-    { icon: 'circle', tool: 'ellipse' },
-    { icon: 'diamond', tool: 'diamond' },
-    { icon: 'text-caption', tool: 'text' },
-    { icon: 'line', tool: 'line' },
-    { icon: 'pencil', tool: 'pen' }
-  ];
-
   aboutToAppear(): void {
     // 初始化手写笔服务
     this.brushPresets = this.penKit.getBrushPresets();
@@ -850,140 +833,6 @@ export struct Whiteboard {
   // ═══════════════════════════════════════════
 
   /**
-   * 工具栏按钮。
-   * pen 工具点击时切换笔刷面板。
-   */
-  @Builder ToolButton(icon: string, tool: string) {
-    Row() {
-      TablerIcon(icon, 18,
-        this.currentTool === tool ? $r('app.color.primary') : $r('app.color.muted_text'))
-    }
-    .width(36)
-    .height(36)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(6)
-    .backgroundColor(this.currentTool === tool ? $r('app.color.surface2') : Color.Transparent)
-    .onClick(() => {
-      if (tool === 'pen' && this.currentTool === 'pen') {
-        // 已选中手写笔时切换面板显隐
-        this.showBrushPanel = !this.showBrushPanel;
-      } else {
-        this.currentTool = tool;
-        this.showBrushPanel = (tool === 'pen');
-      }
-      this.selectedShapeId = '';
-      this.editingShapeId = '';
-    })
-  }
-
-  private brushIcon(type: PenBrushType): string {
-    if (type === PenBrushType.PEN) {
-      return 'ballpen';
-    }
-    if (type === PenBrushType.PENCIL) {
-      return 'pencil';
-    }
-    if (type === PenBrushType.MARKER) {
-      return 'highlight';
-    }
-    return 'eraser';
-  }
-
-  /**
-   * 笔刷选择面板（4 种笔刷 + 颜色 + 粗细）。
-   */
-  @Builder BrushPanel() {
-    Column({ space: 10 }) {
-      // 笔迹引擎标识（Pen Kit 原生 / Canvas 压感，运行时 SysCap 探测）
-      Row({ space: 6 }) {
-        TablerIcon('pencil', 12, $r('app.color.muted_text'))
-        Text('笔迹引擎: ' + this.inkEngineName())
-          .fontSize(10)
-          .fontColor($r('app.color.muted_text'))
-        if (this.handwriteCapable) {
-          Text('原生管线已就绪')
-            .fontSize(10)
-            .fontColor($r('app.color.primary'))
-        } else {
-          Text('SysCap 未支持 · Canvas 兜底')
-            .fontSize(10)
-            .fontColor($r('app.color.muted_text'))
-        }
-      }
-      .alignItems(VerticalAlign.Center)
-
-      // 笔刷类型按钮
-      Row({ space: 8 }) {
-        ForEach(this.brushPresets, (preset: BrushPresetItem) => {
-          Column({ space: 2 }) {
-            TablerIcon(this.brushIcon(preset.type), 16,
-              this.currentBrushType === preset.type ? $r('app.color.primary') : $r('app.color.text'))
-            Text(preset.label)
-              .fontSize(9)
-              .fontColor(this.currentBrushType === preset.type ? $r('app.color.primary') : $r('app.color.muted_text'))
-          }
-          .width(48)
-          .height(40)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(HorizontalAlign.Center)
-          .borderRadius(6)
-          .backgroundColor(this.currentBrushType === preset.type ? $r('app.color.surface2') : Color.Transparent)
-          .onClick(() => {
-            this.penKit.setBrushType(preset.type);
-            this.currentBrushType = preset.type;
-          })
-        }, (preset: BrushPresetItem) => preset.type)
-      }
-
-      // 颜色选择
-      Row({ space: 8 }) {
-        ForEach(this.presetColors, (color: number, index: number) => {
-          Row()
-            .width(24)
-            .height(24)
-            .borderRadius(12)
-            .backgroundColor(PenKitService.colorToHex(color))
-            .border({
-              width: this.currentBrushColor === color ? 2 : 1,
-              color: this.currentBrushColor === color ? $r('app.color.primary') : $r('app.color.border')
-            })
-            .onClick(() => {
-              this.penKit.setBrushColor(color);
-              this.currentBrushColor = color;
-            })
-        }, (color: number, index: number) => index.toString())
-      }
-
-      // 粗细滑块
-      Row({ space: 8 }) {
-        Text('细')
-          .fontSize(10)
-          .fontColor($r('app.color.muted_text'))
-        Slider({ value: this.currentBrushSize, min: 1, max: 20, step: 1 })
-          .layoutWeight(1)
-          .onChange((value: number) => {
-            const rounded = Math.round(value);
-            this.penKit.setBrushSize(rounded);
-            this.currentBrushSize = rounded;
-          })
-        Text('粗')
-          .fontSize(10)
-          .fontColor($r('app.color.muted_text'))
-        Text(this.currentBrushSize.toString())
-          .fontSize(11)
-          .fontColor($r('app.color.text'))
-          .width(24)
-          .textAlign(TextAlign.Center)
-      }
-      .width('100%')
-    }
-    .width('100%')
-    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-    .backgroundColor($r('app.color.surface0'))
-  }
-
-  /**
    * 缩放控件按钮（缩小/放大/重置视图）。
    */
   @Builder ZoomButton(mode: string) {
@@ -1006,123 +855,42 @@ export struct Whiteboard {
     })
   }
 
-  /**
-   * 操作按钮（撤销/重做）。
-   */
-  @Builder UndoButton() {
-    Row() {
-      TablerIcon('arrow-back-up', 18,
-        this.undoStack.length > 0 ? $r('app.color.text') : $r('app.color.muted_text'))
-    }
-    .width(36)
-    .height(36)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(6)
-    .opacity(this.undoStack.length > 0 ? 1 : 0.4)
-    .onClick(() => {
-      this.undo();
-    })
-  }
-
-  @Builder RedoButton() {
-    Row() {
-      TablerIcon('arrow-forward-up', 18,
-        this.redoStack.length > 0 ? $r('app.color.text') : $r('app.color.muted_text'))
-    }
-    .width(36)
-    .height(36)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(6)
-    .opacity(this.redoStack.length > 0 ? 1 : 0.4)
-    .onClick(() => {
-      this.redo();
-    })
-  }
-
   build() {
     Column({ space: 0 }) {
-      // ─── 顶部工具栏 ───
-      Row({ space: 4 }) {
-        // 返回按钮
-        Row() {
-          TablerIcon('arrow-left', 20, $r('app.color.text'))
-        }
-        .width(36)
-        .height(36)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => {
+      // ─── 顶部工具栏（组件化：WhiteboardToolbar）───
+      WhiteboardToolbar({
+        currentTool: $currentTool,
+        canUndo: this.undoStack.length > 0,
+        canRedo: this.redoStack.length > 0,
+        hasSelection: this.selectedShapeId !== '',
+        onBack: (): void => {
           AppState.setCurrentPage('Journal');
-        })
-
-        // 分隔线
-        Divider()
-          .vertical(true)
-          .height(20)
-          .color($r('app.color.border'))
-          .strokeWidth(1)
-          .margin({ left: 2, right: 2 })
-
-        // 工具按钮组（横向可滚动，窄屏不再溢出裁切）
-        Scroll() {
-          Row({ space: 4 }) {
-            ForEach(this.tools, (tc: ToolConfig) => {
-              this.ToolButton(tc.icon, tc.tool)
-            }, (tc: ToolConfig) => tc.tool)
+        },
+        onToolTap: (tool: string): void => {
+          if (tool === 'pen' && this.currentTool === 'pen') {
+            // 已选中手写笔时切换面板显隐
+            this.showBrushPanel = !this.showBrushPanel;
+          } else {
+            this.currentTool = tool;
+            this.showBrushPanel = (tool === 'pen');
           }
-        }
-        .layoutWeight(1)
-        .height(36)
-        .scrollable(ScrollDirection.Horizontal)
-        .scrollBar(BarState.Off)
-        .align(Alignment.Start)
-
-        // 分隔线
-        Divider()
-          .vertical(true)
-          .height(20)
-          .color($r('app.color.border'))
-          .strokeWidth(1)
-          .margin({ left: 2, right: 2 })
-
-        // 撤销/重做（固定右侧，不随工具组滚动）
-        this.UndoButton()
-        this.RedoButton()
-
-        // 删除按钮（选中时显示）
-        if (this.selectedShapeId !== '') {
-          Row() {
-            TablerIcon('trash', 16, $r('app.color.danger'))
-          }
-          .width(36)
-          .height(36)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .borderRadius(6)
-          .onClick(() => {
-            this.deleteShape(this.selectedShapeId);
-          })
-        }
-
-        // 保存按钮（持久化到 .canvas 文件并提示）
-        Row() {
-          TablerIcon('download', 18, $r('app.color.muted_text'))
-        }
-        .width(36)
-        .height(36)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .borderRadius(6)
-        .onClick(() => {
+          this.selectedShapeId = '';
+          this.editingShapeId = '';
+        },
+        onUndo: (): void => {
+          this.undo();
+        },
+        onRedo: (): void => {
+          this.redo();
+        },
+        onDelete: (): void => {
+          this.deleteShape(this.selectedShapeId);
+        },
+        onSave: (): void => {
           this.persist();
           promptAction.openToast({ message: '白板已保存' });
-        })
-      }
-      .width('100%')
-      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-      .backgroundColor($r('app.color.surface0'))
+        }
+      })
 
       // ─── 画布区域 ───
       Stack() {
@@ -1361,55 +1129,26 @@ export struct Whiteboard {
         }
       })
 
-      // ─── 笔刷选择面板（手写笔模式时显示） ───
+      // ─── 笔刷选择面板（组件化：WhiteboardBrushPanel）───
       if (this.showBrushPanel) {
-        this.BrushPanel()
+        WhiteboardBrushPanel({
+          currentBrushType: $currentBrushType,
+          currentBrushColor: $currentBrushColor,
+          currentBrushSize: $currentBrushSize,
+          handwriteCapable: this.handwriteCapable
+        })
       }
 
-      // ─── 底部状态栏 ───
-      Row({ space: 12 }) {
-        Text('工具: ' + this.currentTool)
-          .fontSize(11)
-          .fontColor($r('app.color.muted_text'))
-        Text('·')
-          .fontSize(11)
-          .fontColor($r('app.color.muted_text'))
-        Text(this.shapes.length + ' 形状')
-          .fontSize(11)
-          .fontColor($r('app.color.muted_text'))
-        Text('·')
-          .fontSize(11)
-          .fontColor($r('app.color.muted_text'))
-        Text(this.connectors.length + ' 连线')
-          .fontSize(11)
-          .fontColor($r('app.color.muted_text'))
-        Text('·')
-          .fontSize(11)
-          .fontColor($r('app.color.muted_text'))
-        Text(this.strokes.length + ' 笔触')
-          .fontSize(11)
-          .fontColor($r('app.color.muted_text'))
-        Blank()
-        if (this.selectedShapeId !== '') {
-          Text('已选中')
-            .fontSize(11)
-            .fontColor($r('app.color.primary'))
-        }
-        if (this.currentTool === 'pen') {
-          Text(this.penKit.isPenAvailable() ? '手写笔' : '触摸模式')
-            .fontSize(11)
-            .fontColor($r('app.color.muted_text'))
-          Text('·')
-            .fontSize(11)
-            .fontColor($r('app.color.muted_text'))
-          Text('引擎: ' + this.inkEngineName())
-            .fontSize(11)
-            .fontColor($r('app.color.muted_text'))
-        }
-      }
-      .width('100%')
-      .padding({ left: 12, right: 12, top: 4, bottom: 4 })
-      .backgroundColor($r('app.color.surface0'))
+      // ─── 底部状态栏（组件化：WhiteboardStatusBar）───
+      WhiteboardStatusBar({
+        currentTool: this.currentTool,
+        shapeCount: this.shapes.length,
+        connectorCount: this.connectors.length,
+        strokeCount: this.strokes.length,
+        hasSelection: this.selectedShapeId !== '',
+        penAvailable: this.penKit.isPenAvailable(),
+        handwriteCapable: this.handwriteCapable
+      })
     }
     .width('100%')
     .height('100%')
