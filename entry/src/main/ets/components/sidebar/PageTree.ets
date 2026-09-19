@@ -12,10 +12,19 @@ import { NamespaceUtils, NamespaceNode } from '../../utils/NamespaceUtils';
 @Component
 export struct PageTree {
   @State treeNodes: NamespaceNode[] = [];
-  @State expandedNodes: Map<string, boolean> = new Map<string, boolean>();
-  @State currentPageName: string = '';
+  /** 已折叠的命名空间节点（默认全部展开，对齐 Obsidian 文件树） */
+  @State collapsedNodes: Map<string, boolean> = new Map<string, boolean>();
+  /** 当前打开页（高亮 + 展开刷新），来自全局标签页状态 */
+  @StorageLink('callaite_currentPage') @Watch('onStateRebuild') currentPageName: string = '';
+  /** 页面/块变更计数（新建页面后刷新树） */
+  @StorageLink('callaite_blocksVersion') @Watch('onStateRebuild') blocksVersion: number = 0;
 
   aboutToAppear(): void {
+    this.buildTree();
+  }
+
+  /** 当前页或页面集变化时重建树 */
+  onStateRebuild(): void {
     this.buildTree();
   }
 
@@ -30,7 +39,7 @@ export struct PageTree {
    */
   toggleExpand(fullName: string): void {
     const newMap = new Map<string, boolean>();
-    this.expandedNodes.forEach((value: boolean, key: string) => {
+    this.collapsedNodes.forEach((value: boolean, key: string) => {
       newMap.set(key, value);
     });
     if (newMap.has(fullName)) {
@@ -38,11 +47,11 @@ export struct PageTree {
     } else {
       newMap.set(fullName, true);
     }
-    this.expandedNodes = newMap;
+    this.collapsedNodes = newMap;
   }
 
   isExpanded(fullName: string): boolean {
-    return this.expandedNodes.has(fullName);
+    return !this.collapsedNodes.has(fullName);
   }
 
   hasChildren(node: NamespaceNode): boolean {

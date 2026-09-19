@@ -149,12 +149,26 @@ export struct NewFileDialog {
             materialRole: MaterialRole.MODAL
           }) {
             Column({ space: 6 }) {
-              Text('新建')
-                .fontSize(16)
-                .fontWeight(FontWeight.Medium)
-                .fontColor($r('app.color.text'))
-                .width('100%')
-                .margin({ bottom: 6 })
+              Row() {
+                Text('新建')
+                  .fontSize(16)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor($r('app.color.text'))
+                  .layoutWeight(1)
+                Row() {
+                  TablerIcon('x', 14, $r('app.color.muted_text'))
+                }
+                .width(24)
+                .height(24)
+                .justifyContent(FlexAlign.Center)
+                .alignItems(VerticalAlign.Center)
+                .borderRadius(4)
+                .onClick(() => {
+                  this.close();
+                })
+              }
+              .width('100%')
+              .margin({ bottom: 6 })
 
               this.OptionRow('md', 'file-description', '新建 Markdown 笔记',
                 '文档式页面，适合连续撰写', (): void => {

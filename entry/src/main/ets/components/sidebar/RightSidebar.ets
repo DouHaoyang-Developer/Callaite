@@ -201,32 +201,81 @@ export struct RightSidebar {
 
   @Builder
   BacklinksContent(block: RightSidebarBlock) {
+    // ─── 标题 + 筛选工具行（对齐 Obsidian 图 10）───
+    Row({ space: 8 }) {
+      Text('反向链接 · ' + this.backlinksCache.length + ' 个结果')
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text'))
+        .layoutWeight(1)
+      TablerIcon('filter', 13, $r('app.color.muted_text'))
+      TablerIcon('search', 13, $r('app.color.muted_text'))
+      TablerIcon('plus', 13, $r('app.color.primary'))
+    }
+    .width('100%')
+    .padding({ top: 2, bottom: 6 })
+
     if (this.backlinksCache.length === 0) {
       Text(t('no_backlinks'))
         .fontSize(12)
         .fontColor($r('app.color.muted_text'))
         .width('100%')
     } else {
-      ForEach(this.backlinksCache, (info: BacklinkInfo) => {
-        Row({ space: 8 }) {
-          TablerIcon('arrow-right', 12, $r('app.color.muted_text'))
-          Column({ space: 2 }) {
-            Text(info.sourceContent)
-              .fontSize(12)
-              .fontColor($r('app.color.text'))
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text(t('from_page') + ': ' + info.sourcePageName)
-              .fontSize(10)
-              .fontColor($r('app.color.muted_text'))
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
+      // 按来源页分组（时间线分组，对齐 Obsidian 图 10）
+      ForEach(this.backlinkGroups(), (pageName: string) => {
+        Column({ space: 4 }) {
+          Text(pageName)
+            .fontSize(11)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.muted_text'))
+            .width('100%')
+            .padding({ top: 4 })
+          ForEach(this.groupItems(pageName), (info: BacklinkInfo) => {
+            Row({ space: 8 }) {
+              TablerIcon('arrow-right', 12, $r('app.color.muted_text'))
+              Column({ space: 2 }) {
+                Text(info.sourceContent)
+                  .fontSize(12)
+                  .fontColor($r('app.color.text'))
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                if (info.isBlockRef) {
+                  Text('块引用')
+                    .fontSize(9)
+                    .fontColor($r('app.color.muted_text'))
+                }
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
+            }
+            .width('100%')
+            .padding({ top: 4, bottom: 4 })
+          }, (info: BacklinkInfo) => info.sourceBlockId)
         }
         .width('100%')
-        .padding({ top: 4, bottom: 4 })
-      }, (info: BacklinkInfo) => info.sourceBlockId)
+      }, (pageName: string) => pageName)
     }
+  }
+
+  /** 反链来源页名（按出现顺序去重） */
+  private backlinkGroups(): string[] {
+    const order: string[] = [];
+    this.backlinksCache.forEach((info: BacklinkInfo) => {
+      if (order.indexOf(info.sourcePageName) < 0) {
+        order.push(info.sourcePageName);
+      }
+    });
+    return order;
+  }
+
+  private groupItems(pageName: string): BacklinkInfo[] {
+    const items: BacklinkInfo[] = [];
+    this.backlinksCache.forEach((info: BacklinkInfo) => {
+      if (info.sourcePageName === pageName) {
+        items.push(info);
+      }
+    });
+    return items;
   }
 
   @Builder

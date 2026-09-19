@@ -13,7 +13,7 @@ const STATE_KEYS: string[] = [
   'callaite_themeMode',
   'callaite_language',
   'callaite_config',
-  'callaite_currentPage',
+  // 'callaite_currentPage', —— 启动页固定为 Home，不再恢复上次页面（见 AppState.initialize）
   'callaite_leftSidebarOpen',
   'callaite_rightSidebarOpen',
   'callaite_favorites',

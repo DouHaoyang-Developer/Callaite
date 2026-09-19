@@ -93,10 +93,45 @@ export struct CommandPalette {
       .width('100%')
       .layoutWeight(1)
       .scrollBar(BarState.Auto)
+
+      // 底部快捷键提示行
+      this.KeyHintFooter()
     }
     .width('100%')
     .height('100%')
     .backgroundColor(Color.Transparent)
+  }
+
+  /**
+   * 底部快捷键提示行（对齐 Obsidian 图 6：↑↓ 选择 / ↵ 打开 / esc 关闭）。
+   */
+  @Builder
+  KeyHintFooter() {
+    Row({ space: 10 }) {
+      this.HintPair('↑↓', '选择')
+      this.HintPair('↵', '打开')
+      this.HintPair('esc', '关闭')
+      Blank()
+    }
+    .width('100%')
+    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+    .border({ width: { top: 1 }, color: $r('app.color.border') })
+  }
+
+  @Builder
+  HintPair(key: string, label: string) {
+    Row({ space: 4 }) {
+      Text(key)
+        .fontSize(10)
+        .fontColor($r('app.color.text'))
+        .padding({ left: 5, right: 5, top: 2, bottom: 2 })
+        .borderRadius(4)
+        .backgroundColor($r('app.color.surface2'))
+      Text(label)
+        .fontSize(10)
+        .fontColor($r('app.color.muted_text'))
+    }
+    .alignItems(VerticalAlign.Center)
   }
 
   doSearch(query: string): void {

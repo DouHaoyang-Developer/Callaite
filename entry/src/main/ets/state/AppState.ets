@@ -184,8 +184,9 @@ export class AppState {
     AppStorage.setOrCreate('language', config.preferredLanguage);
     AppStorage.setOrCreate('themeMode', config.themeMode);
 
-    const storedPage = AppStorage.get<string>(STORAGE_KEYS.currentPage);
-    AppStorage.setOrCreate(STORAGE_KEYS.currentPage, storedPage ?? 'AllPages');
+    // 启动行为调整：不再恢复上次页面/直接加载大纲，统一进入首页（Obsidian 新标签页式）。
+    // 上次页面键仍持久化（供历史栈等使用），但启动初始页固定为 Home。
+    AppStorage.setOrCreate(STORAGE_KEYS.currentPage, 'Home');
 
     const storedLeft = AppStorage.get<boolean>(STORAGE_KEYS.leftSidebarOpen);
     let leftDefault = storedLeft ?? config.leftSidebarOpen;
@@ -223,7 +224,7 @@ export class AppState {
     AppStorage.setOrCreate('callaite_mobileMenuOpen', false);
 
     // 历史栈初始化
-    const initHistory: HistoryStack = { pages: [AppStorage.get<string>(STORAGE_KEYS.currentPage) ?? 'AllPages'], current: 0 };
+    const initHistory: HistoryStack = { pages: [AppStorage.get<string>(STORAGE_KEYS.currentPage) ?? 'Home'], current: 0 };
     AppStorage.setOrCreate('callaite_historyStack', JSON.stringify(initHistory));
     // 历史栈触发器初始化（驱动 Header 前进/后退按钮状态）
     AppStorage.setOrCreate('callaite_historyBack', 0);
@@ -256,7 +257,7 @@ export class AppState {
 
   // ─── Current Page ───
   static getCurrentPage(): string {
-    return AppStorage.get<string>(STORAGE_KEYS.currentPage) ?? 'AllPages';
+    return AppStorage.get<string>(STORAGE_KEYS.currentPage) ?? 'Home';
   }
 
   static setCurrentPage(pageName: string): void {

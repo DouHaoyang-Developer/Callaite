@@ -1,5 +1,5 @@
 import { TablerIcon } from '../common/Icons';
-import { AppState } from '../../state/AppState';
+import { PageTree } from './PageTree';import { AppState } from '../../state/AppState';
 import { t } from '../../utils/i18n';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData } from '../../core/models/Page';
@@ -131,6 +131,9 @@ export struct LeftSidebar {
       .height(40)
       .padding({ left: 16, right: 12 })
       .margin({ top: 4 })
+      .onClick(() => {
+        AppStorage.setOrCreate('callaite_vaultSwitcherOpen', true);
+      })
 
       // ─── 视图切换图标行（Obsidian 左栏顶部）───
       Row({ space: 2 }) {
@@ -150,6 +153,28 @@ export struct LeftSidebar {
       .height(40)
       // 左内边距统一为 16vp（与 Vault 行、分组标题、导航行同一基准）
       .padding({ left: 16, right: 12 })
+
+      // ─── 搜索框（Obsidian 左栏顶部，点击打开搜索面板）───
+      Row({ space: 8 }) {
+        TablerIcon('search', 14, $r('app.color.muted_text'))
+        Text('搜索或开始搜索...')
+          .fontSize(12.5)
+          .fontColor($r('app.color.muted_text'))
+          .layoutWeight(1)
+          .maxLines(1)
+        Text('Aa')
+          .fontSize(10)
+          .fontColor($r('app.color.muted_text'))
+      }
+      .width('100%')
+      .height(32)
+      .padding({ left: 10, right: 10 })
+      .margin({ left: 10, right: 10, top: 6 })
+      .borderRadius(8)
+      .backgroundColor($r('app.color.surface2'))
+      .onClick(() => {
+        AppState.setSearchPanelOpen(true);
+      })
 
       // ─── 文件树工具行（对齐 Obsidian 左栏第二行：新建笔记 / 新建文件夹 / 排序 / 全部折叠）───
       Row({ space: 2 }) {
@@ -172,62 +197,25 @@ export struct LeftSidebar {
       .height(40)
       .padding({ left: 16, right: 12 })
 
-      // ─── 可滚动主体 ───
-      Scroll() {
-        Column({ space: 0 }) {
-          // 导航区
-          ForEach(this.getNavItems(), (item: NavItem) => {
-            this.NavRow(item)
-          }, (item: NavItem) => item.key)
-          this.SectionSpacer()
-
-          // 收藏夹（可折叠分组）
-          this.SectionHeader(t('favorites'), 'favorites', this.collapsedFavorites)
-          if (!this.collapsedFavorites) {
-            ForEach(this.favorites, (name: string) => { this.PageLink(name); }, (name: string) => name)
-            if (this.favorites.length === 0) this.EmptyHint(t('empty_favorites_hint'))
-          }
-          this.SectionSpacer()
-
-          // 最近页面（可折叠分组）
-          this.SectionHeader(t('recent'), 'recent', this.collapsedRecent)
-          if (!this.collapsedRecent) {
-            ForEach(this.recent.slice(0, 8), (name: string) => { this.PageLink(name); }, (name: string) => name)
-            if (this.recent.length === 0) this.EmptyHint(t('empty_recent_hint'))
-          }
-          this.SectionSpacer()
-
-          // 所有页面（按命名空间分组，可折叠）
-          this.SectionHeader(t('all_pages'), 'allpages', this.collapsedAllPages)
-          if (!this.collapsedAllPages) {
-            ForEach(this.getNamespaceGroups(), (ns: string) => {
-              if (ns !== '') {
-                Row({ space: 6 }) {
-                  TablerIcon('folder', 15, $r('app.color.icon_color'))
-                  Text(ns)
-                    .fontSize(13)
-                    .fontWeight(FontWeight.Medium)
-                    .fontColor($r('app.color.text'))
-                }
-                .width('100%')
-                .height(30)
-                .padding({ left: 22, right: 12 })
-              }
-              ForEach(this.getPagesByNamespace(ns), (page: PageData) => {
-                this.PageLink(page.originalName);
-              }, (page: PageData) => page.uuid)
-            }, (ns: string) => ns)
-            if (this.allPages.length === 0) this.EmptyHint(t('empty_page'))
-          }
-        }
-        .width('100%')
-        .alignItems(HorizontalAlign.Start)
+      // ─── 收藏夹（可折叠分组）───
+      this.SectionHeader(t('favorites'), 'favorites', this.collapsedFavorites)
+      if (!this.collapsedFavorites) {
+        ForEach(this.favorites, (name: string) => { this.PageLink(name); }, (name: string) => name)
+        if (this.favorites.length === 0) this.EmptyHint(t('empty_favorites_hint'))
       }
-      .width('100%')
-      .layoutWeight(1)
-      // 顶对齐：Scroll 默认 align 为 Center，会把不足一屏的列表垂直居中（侧栏出现大片顶部空白）
-      .align(Alignment.TopStart)
-      .scrollBar(BarState.Off)
+      this.SectionSpacer()
+
+      // ─── 最近页面（可折叠分组）───
+      this.SectionHeader(t('recent'), 'recent', this.collapsedRecent)
+      if (!this.collapsedRecent) {
+        ForEach(this.recent.slice(0, 8), (name: string) => { this.PageLink(name); }, (name: string) => name)
+        if (this.recent.length === 0) this.EmptyHint(t('empty_recent_hint'))
+      }
+      this.SectionSpacer()
+
+      // ─── 文件树（Obsidian 式层级树：命名空间分级存储，组件化 PageTree）───
+      PageTree()
+        .layoutWeight(1)
 
       // ─── 底部 Vault 行（设置入口，Obsidian 左下角）───
       Row({ space: 8 }) {

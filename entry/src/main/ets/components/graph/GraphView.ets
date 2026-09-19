@@ -484,13 +484,11 @@ export struct GraphView {
    * 节点颜色：日志页绿 / 命名空间页蓝 / 普通页紫。
    */
   private nodeColor(node: GraphNode): string {
-    if (node.isJournal) {
-      return '#10B981';
+    // 对齐 Obsidian（图7/8/14）：当前打开页 = 主题紫，其余 = 深灰
+    if (node.pageName === AppState.getCurrentPage()) {
+      return '#705DCF';
     }
-    if (node.namespace.length > 0) {
-      return '#0078D4';
-    }
-    return '#8B5CF6';
+    return '#4B5563';
   }
 
   /**

@@ -1,3 +1,4 @@
+import { HomePage } from './HomePage';
 import { BlockList } from '../outliner/BlockList';
 import { JournalFeed } from './JournalFeed';
 import { JournalService } from '../../services/JournalService';
@@ -126,6 +127,8 @@ export struct PageView {
       PdfPage()
     } else if (this.page() === 'ProUpgrade') {
       ProUpgradePage()
+    } else if (this.page() === 'Home') {
+      HomePage()
     } else if (this.page() === 'AllPages') {
       this.AllPagesView()
     } else if (this.page() === 'Recycle') {

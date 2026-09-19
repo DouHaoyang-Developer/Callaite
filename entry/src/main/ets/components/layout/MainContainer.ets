@@ -10,6 +10,7 @@ import { MobileHeader } from './MobileHeader';
 import { MobileBottomBar } from './MobileBottomBar';
 import { MarkdownToolbar } from '../mobile/MarkdownToolbar';
 import { NewFileDialog } from '../common/NewFileDialog';
+import { VaultSwitcherDialog } from '../common/VaultSwitcherDialog';
 import { TabOverviewSheet } from './TabOverviewSheet';
 import { MobileMenuSheet } from './MobileMenuSheet';
 import { FloatingPanel } from '../common/FloatingPanel';
@@ -361,6 +362,9 @@ export struct MainContainer {
       // ─── 移动端浮层：标签页总览（Obsidian iOS 卡片式）───
       // ─── 全局浮层：新建文件三选项对话框 ───
       NewFileDialog()
+
+      // ─── 全局浮层：仓库切换器（深色模态）───
+      VaultSwitcherDialog()
 
       if (this.getIsCompact() && this.tabOverviewOpen) {
         Column() {

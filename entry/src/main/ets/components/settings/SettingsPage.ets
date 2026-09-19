@@ -55,8 +55,31 @@ interface PluginInfo {
   enabled: boolean;
 }
 
+/**
+ * SettingCategory —— 设置分类（Obsidian 式左分类 + 右内容）。
+ */
+interface SettingCategory {
+  key: string;
+  icon: string;
+  label: string;
+}
+
+/** 设置分类清单（顺序与 Obsidian 设置一致） */
+const SETTING_CATEGORIES: SettingCategory[] = [
+  { key: 'interface', icon: 'settings', label: '外观与语言' },
+  { key: 'editor', icon: 'edit', label: '编辑器' },
+  { key: 'shortcuts', icon: 'keyboard', label: '快捷键' },
+  { key: 'sync', icon: 'refresh', label: '同步' },
+  { key: 'account', icon: 'user', label: '账户' },
+  { key: 'plugins', icon: 'stack-2', label: '插件' },
+  { key: 'data', icon: 'database', label: '数据' },
+  { key: 'about', icon: 'bulb', label: '关于' }
+];
+
 @Component
 export struct SettingsPage {
+  /** 当前显示的设置分类（Obsidian 式一次一个分类） */
+  @State activeCategory: string = 'interface';
   @State selectedTheme: string = '';
   @State selectedLanguage: string = '';
   @State fontSizeIndex: number = 3;
@@ -249,10 +272,45 @@ export struct SettingsPage {
       .width('100%')
       .padding({ top: 24, bottom: 12, left: 24, right: 24 })
 
-      // 可滚动内容（限宽 760 居中，Logseq 设置页内容列宽）
-      Scroll() {
-        Column({ space: 0 }) {
-          Column({ space: 4 }) {
+      // ─── 双栏：左分类列表 + 右分类内容（对齐 Obsidian 设置窗口，图12）───
+      Row({ space: 0 }) {
+        // 左：分类列表
+        Column({ space: 2 }) {
+          ForEach(SETTING_CATEGORIES, (cat: SettingCategory) => {
+            Row({ space: 10 }) {
+              TablerIcon(cat.icon, 16,
+                this.activeCategory === cat.key ? $r('app.color.primary') : $r('app.color.icon_color'))
+              Text(cat.label)
+                .fontSize(13)
+                .fontColor(this.activeCategory === cat.key ? $r('app.color.primary') : $r('app.color.text'))
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .height(36)
+            .padding({ left: 12, right: 12 })
+            .borderRadius(6)
+            .backgroundColor(this.activeCategory === cat.key ? $r('app.color.surface2') : Color.Transparent)
+            .onClick(() => {
+              this.activeCategory = cat.key;
+            })
+          }, (cat: SettingCategory) => cat.key)
+        }
+        .width(150)
+        .height('100%')
+        .padding({ left: 8, right: 8, top: 8 })
+        .backgroundColor($r('app.color.surface1'))
+
+        Divider()
+          .vertical(true)
+          .height('100%')
+          .color($r('app.color.border'))
+          .strokeWidth(1)
+
+        // 右：当前分类内容
+        Scroll() {
+          Column({ space: 0 }) {
+            if (this.activeCategory === 'interface') {
+              Column({ space: 4 }) {
           // ─── 外观 ───
           this.SectionHeader('theme')
           this.ThemeOption('theme_light', ThemeMode.LIGHT)
@@ -272,6 +330,12 @@ export struct SettingsPage {
 
           this.SectionDivider()
 
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: 760 })
+              .alignItems(HorizontalAlign.Start)
+            } else if (this.activeCategory === 'editor') {
+              Column({ space: 4 }) {
           // ─── 编辑器 ───
           this.SectionHeader('editor')
           this.ToggleRow(t('show_bullets'), this.showBullets, (on: boolean) => {
@@ -289,6 +353,12 @@ export struct SettingsPage {
 
           this.SectionDivider()
 
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: 760 })
+              .alignItems(HorizontalAlign.Start)
+            } else if (this.activeCategory === 'shortcuts') {
+              Column({ space: 4 }) {
           // ─── 快捷键 ───
           this.SectionHeader('shortcuts')
           this.ButtonRow('自定义快捷键', 'keyboard', () => {
@@ -330,6 +400,12 @@ export struct SettingsPage {
 
           this.SectionDivider()
 
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: 760 })
+              .alignItems(HorizontalAlign.Start)
+            } else if (this.activeCategory === 'sync') {
+              Column({ space: 4 }) {
           // ─── 同步 ───
           this.SectionHeader('sync')
           this.ToggleRow(t('cloud_sync'), this.cloudSyncEnabled, (on: boolean) => {
@@ -364,6 +440,12 @@ export struct SettingsPage {
 
           this.SectionDivider()
 
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: 760 })
+              .alignItems(HorizontalAlign.Start)
+            } else if (this.activeCategory === 'account') {
+              Column({ space: 4 }) {
           // ─── 账户 ───
           this.SectionHeader('account')
           Row({ space: 8 }) {
@@ -420,6 +502,12 @@ export struct SettingsPage {
 
           this.SectionDivider()
 
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: 760 })
+              .alignItems(HorizontalAlign.Start)
+            } else if (this.activeCategory === 'plugins') {
+              Column({ space: 4 }) {
           // ─── 插件 ───
           this.SectionHeader('plugins')
           ForEach(this.plugins, (p: PluginInfo) => {
@@ -428,6 +516,12 @@ export struct SettingsPage {
 
           this.SectionDivider()
 
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: 760 })
+              .alignItems(HorizontalAlign.Start)
+            } else if (this.activeCategory === 'data') {
+              Column({ space: 4 }) {
           // ─── 数据 ───
           this.SectionHeader('data')
           this.ButtonRow('导出数据', 'download', () => { AppState.setExportDialogOpen(true); })
@@ -436,6 +530,12 @@ export struct SettingsPage {
 
           this.SectionDivider()
 
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: 760 })
+              .alignItems(HorizontalAlign.Start)
+            } else if (this.activeCategory === 'about') {
+              Column({ space: 4 }) {
           // ─── 关于 ───
           this.SectionHeader('about')
           Row({ space: 12 }) {
@@ -455,19 +555,23 @@ export struct SettingsPage {
           this.ButtonRow('反馈', 'message', () => { this.showFeedback(); })
 
           Blank().height(24)
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: 760 })
+              .alignItems(HorizontalAlign.Start)
+            }
+          }
+          .width('100%')
+          .padding({ left: 24, right: 24 })
+          .alignItems(HorizontalAlign.Center)
         }
+        .layoutWeight(1)
         .width('100%')
-        .constraintSize({ maxWidth: 760 })
-        .alignItems(HorizontalAlign.Start)
-        }
-        .width('100%')
-        .padding({ left: 24, right: 24 })
-        .alignItems(HorizontalAlign.Center)
+        // 顶对齐：Scroll 默认 align 为 Center，内容不足一屏时会被垂直居中
+        .align(Alignment.TopStart)
       }
       .layoutWeight(1)
       .width('100%')
-      // 顶对齐：Scroll 默认 align 为 Center，内容不足一屏时会被垂直居中
-      .align(Alignment.TopStart)
     }
     .width('100%')
     .height('100%')
