@@ -68,6 +68,19 @@ export struct Whiteboard {
   @State private currentBrushColor: number = 0xFF0458A6;
   @State private currentBrushSize: number = 4;
 
+  // ─── 手写引擎选择（官方 SysCap 运行时探测）───
+  // true  → 设备具备 SystemCapability.Stylus.Handwrite（真机手写笔），可启用 Pen Kit
+  //          原生笔迹管线（HandwriteComponent，经 PenCanvasPage 按需模块接入）
+  // false → 走 Canvas 压感引擎（PenKitService 映射 + 本组件 Canvas 渲染），全设备兜底
+  // 注意：两种引擎共享同一 StrokeData 模型（.canvas 持久化 / 撤销重做 / 笔刷面板），
+  //       引擎切换不改变数据格式，实现「Pen Kit 核心 + Canvas 集成」协同。
+  private handwriteCapable: boolean = canIUse('SystemCapability.Stylus.Handwrite');
+
+  /** 当前笔迹引擎名（状态栏与笔刷面板展示） */
+  private inkEngineName(): string {
+    return this.handwriteCapable ? 'Pen Kit 原生' : 'Canvas 压感';
+  }
+
   // ─── 交互状态 ───
   @State private selectedShapeId: string = '';
   @State private editingShapeId: string = '';
@@ -882,6 +895,24 @@ export struct Whiteboard {
    */
   @Builder BrushPanel() {
     Column({ space: 10 }) {
+      // 笔迹引擎标识（Pen Kit 原生 / Canvas 压感，运行时 SysCap 探测）
+      Row({ space: 6 }) {
+        TablerIcon('pencil', 12, $r('app.color.muted_text'))
+        Text('笔迹引擎: ' + this.inkEngineName())
+          .fontSize(10)
+          .fontColor($r('app.color.muted_text'))
+        if (this.handwriteCapable) {
+          Text('原生管线已就绪')
+            .fontSize(10)
+            .fontColor($r('app.color.primary'))
+        } else {
+          Text('SysCap 未支持 · Canvas 兜底')
+            .fontSize(10)
+            .fontColor($r('app.color.muted_text'))
+        }
+      }
+      .alignItems(VerticalAlign.Center)
+
       // 笔刷类型按钮
       Row({ space: 8 }) {
         ForEach(this.brushPresets, (preset: BrushPresetItem) => {
@@ -1366,6 +1397,12 @@ export struct Whiteboard {
         }
         if (this.currentTool === 'pen') {
           Text(this.penKit.isPenAvailable() ? '手写笔' : '触摸模式')
+            .fontSize(11)
+            .fontColor($r('app.color.muted_text'))
+          Text('·')
+            .fontSize(11)
+            .fontColor($r('app.color.muted_text'))
+          Text('引擎: ' + this.inkEngineName())
             .fontSize(11)
             .fontColor($r('app.color.muted_text'))
         }

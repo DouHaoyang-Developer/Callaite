@@ -154,7 +154,8 @@ export struct LeftSidebar {
       // ─── 文件树工具行（对齐 Obsidian 左栏第二行：新建笔记 / 新建文件夹 / 排序 / 全部折叠）───
       Row({ space: 2 }) {
         this.TreeToolIcon('file-plus', 'tree_new_note', () => {
-          this.createNewNote();
+          // 新建改为三选项（Markdown 笔记 / 白板 / 大纲笔记）
+          AppStorage.setOrCreate('callaite_newFileDialogOpen', true);
         })
         this.TreeToolIcon('folder', 'tree_new_folder', () => {
           this.createNewNamespace();

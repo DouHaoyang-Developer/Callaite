@@ -185,7 +185,7 @@ export class AppState {
     AppStorage.setOrCreate('themeMode', config.themeMode);
 
     const storedPage = AppStorage.get<string>(STORAGE_KEYS.currentPage);
-    AppStorage.setOrCreate(STORAGE_KEYS.currentPage, storedPage ?? 'Journal');
+    AppStorage.setOrCreate(STORAGE_KEYS.currentPage, storedPage ?? 'AllPages');
 
     const storedLeft = AppStorage.get<boolean>(STORAGE_KEYS.leftSidebarOpen);
     let leftDefault = storedLeft ?? config.leftSidebarOpen;
@@ -223,7 +223,7 @@ export class AppState {
     AppStorage.setOrCreate('callaite_mobileMenuOpen', false);
 
     // 历史栈初始化
-    const initHistory: HistoryStack = { pages: [AppStorage.get<string>(STORAGE_KEYS.currentPage) ?? 'Journal'], current: 0 };
+    const initHistory: HistoryStack = { pages: [AppStorage.get<string>(STORAGE_KEYS.currentPage) ?? 'AllPages'], current: 0 };
     AppStorage.setOrCreate('callaite_historyStack', JSON.stringify(initHistory));
     // 历史栈触发器初始化（驱动 Header 前进/后退按钮状态）
     AppStorage.setOrCreate('callaite_historyBack', 0);
@@ -256,7 +256,7 @@ export class AppState {
 
   // ─── Current Page ───
   static getCurrentPage(): string {
-    return AppStorage.get<string>(STORAGE_KEYS.currentPage) ?? 'Journal';
+    return AppStorage.get<string>(STORAGE_KEYS.currentPage) ?? 'AllPages';
   }
 
   static setCurrentPage(pageName: string): void {

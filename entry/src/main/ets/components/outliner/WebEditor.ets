@@ -221,6 +221,11 @@ const WebEditorHTML: string = `<!DOCTYPE html><html><head>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:__FS__px;line-height:28px;color:#1a1a1a;background:transparent;padding:0 4px;}
 #editor{outline:none;min-height:28px;word-break:break-word;white-space:pre-wrap;}
 #editor:empty:before{content:attr(data-placeholder);color:#9ca3af;}
+/* Live Preview 实时预览行内格式元素 */
+#editor code.md-code{font-family:Consolas,Menlo,monospace;font-size:0.92em;background:#eef1f4;border-radius:3px;padding:1px 4px;}
+#editor mark.md-hl{background:#fff59d;border-radius:3px;padding:1px 2px;}
+#editor .md-wikilink{color:#106BA3;text-decoration:underline;}
+#editor .md-tag{color:#059669;font-weight:500;}
 </style></head><body>
 <div id="editor" contenteditable="true" data-placeholder="输入内容...">__CONTENT__</div>
 <script>
@@ -253,6 +258,101 @@ window.applyFormat=function(cmd){
   }
   editor.dispatchEvent(new Event('input',{bubbles:true}));
 };
+// ─── Live Preview 实时预览 ───
+// 1) DOM → Markdown 序列化：格式化元素在保存时还原为 Markdown 标记（防丢标记）
+function nodeToMd(n){
+  if(n.nodeType===3)return n.nodeValue;
+  if(n.nodeType!==1)return '';
+  var inner='';
+  for(var c=n.firstChild;c;c=c.nextSibling){inner+=nodeToMd(c);}
+  var tag=n.tagName;
+  if(tag==='BR')return '\\n';
+  if(tag==='STRONG')return '**'+inner+'**';
+  if(tag==='EM')return '*'+inner+'*';
+  if(tag==='MARK')return '=='+inner+'==';
+  if(tag==='CODE')return '\\x60'+inner+'\\x60';
+  var cls=n.getAttribute? (n.getAttribute('class')||'') : '';
+  if(cls.indexOf('md-wikilink')>=0)return '[['+inner+']]';
+  if(cls.indexOf('md-tag')>=0)return inner;
+  if(tag==='DIV'||tag==='P')return inner;
+  return inner;
+}
+function editorToMarkdown(){
+  var out='';var first=true;
+  for(var c=editor.firstChild;c;c=c.nextSibling){
+    var isBlock=(c.nodeType===1&&(c.tagName==='DIV'||c.tagName==='P'));
+    if(isBlock&&!first)out+='\\n';
+    out+=nodeToMd(c);
+    first=false;
+  }
+  return out;
+}
+function rangeToMarkdown(caretContainer,caretOffset,beforeCaret){
+  var tmp=document.createElement('div');
+  var r=document.createRange();
+  if(beforeCaret){r.setStart(editor,0);r.setEnd(caretContainer,caretOffset);}
+  else{r.setStart(caretContainer,caretOffset);r.setEnd(editor,editor.childNodes.length);}
+  tmp.appendChild(r.cloneContents());
+  var out='';var first=true;
+  for(var c=tmp.firstChild;c;c=c.nextSibling){
+    var isBlock=(c.nodeType===1&&(c.tagName==='DIV'||c.tagName==='P'));
+    if(isBlock&&!first)out+='\\n';
+    out+=nodeToMd(c);
+    first=false;
+  }
+  return out;
+}
+// 2) 闭合标记即时格式化：输入触发符后把光标前的完整 Markdown 令牌转为样式元素，
+//    光标保持原位。仅操作光标所在文本节点，不重排全文。
+function livePreviewAutoformat(){
+  var sel=window.getSelection();
+  if(!sel||sel.rangeCount===0)return;
+  var range=sel.getRangeAt(0);
+  var node=range.startContainer;
+  if(!node||node.nodeType!==3)return;
+  var off=range.startOffset;
+  var head=node.textContent.substring(0,off);
+  var tail=node.textContent.substring(off);
+  var rules=[
+    {re:/\\*\\*([^*\\n]+)\\*\\* $/,tag:'strong',trail:' '},
+    {re:/\\*([^*\\n]+)\\* $/,tag:'em',trail:' '},
+    {re:/==([^=\\n]+)== $/,tag:'mark',cls:'md-hl',trail:' '},
+    {re:/\\x60([^\\x60\\n]+)\\x60 $/,tag:'code',cls:'md-code',trail:' '},
+    {re:/\\[\\[([^\\[\\]\\n]+)\\]\\]$/,tag:'span',cls:'md-wikilink',trail:''},
+    {re:/(#[^\\s#]+) $/,tag:'span',cls:'md-tag',trail:' '}
+  ];
+  for(var i=0;i<rules.length;i++){
+    var r=rules[i];
+    var m=head.match(r.re);
+    if(!m)continue;
+    var full=m[0];
+    var inner=m[1];
+    var start=off-full.length;
+    var el=document.createElement(r.tag);
+    if(r.cls)el.setAttribute('class',r.cls);
+    if(r.cls==='md-wikilink')el.setAttribute('data-wikilink',inner);
+    el.textContent=inner;
+    var tok=document.createRange();
+    tok.setStart(node,start);
+    tok.setEnd(node,off);
+    tok.deleteContents();
+    tok.insertNode(el);
+    if(r.trail===' '){
+      var sp=document.createTextNode(' ');
+      el.parentNode.insertBefore(sp,el.nextSibling);
+    }
+    var nr=document.createRange();
+    if(r.trail===' '){nr.setStart(sp,1);}else{nr.setStartAfter(el);}
+    nr.collapse(true);
+    sel.removeAllRanges();sel.addRange(nr);
+    editor.dispatchEvent(new Event('input',{bubbles:true}));
+    return;
+  }
+}
+editor.addEventListener('keyup',function(e){
+  if(e.key===' '||e.key===']'||e.key==='\\x60'||e.key==='='||e.key==='*'){livePreviewAutoformat();}
+});
+
 
 // 键盘拦截
 editor.addEventListener('keydown',function(e){
@@ -265,8 +365,8 @@ editor.addEventListener('keydown',function(e){
     const sel=window.getSelection();
     if(sel.rangeCount>0){
       const range=sel.getRangeAt(0);
-      const before=range.startContainer.textContent?.substring(0,range.startOffset)||'';
-      const after=editor.innerText?.substring(range.startOffset)||'';
+      const before=rangeToMarkdown(range.startContainer,range.startOffset,true);
+      const after=rangeToMarkdown(range.startContainer,range.startOffset,false);
       // 更新当前 Block 为光标前的内容
       editor.innerText=before;
       // 通知 ArkTS 创建新 Block，内容为光标后
@@ -297,7 +397,7 @@ editor.addEventListener('keydown',function(e){
   }
 
   // Backspace(空行): 删除并合并
-  if(e.key==='Backspace' && (text===''||text==='\\n')){
+  if(e.key==='Backspace' && (text===''||text==='\\\\n')){
     if(window.nativeProxy) window.nativeProxy.onAction('delete','');
     return;
   }
@@ -336,7 +436,7 @@ editor.addEventListener('keydown',function(e){
 
 // 失焦时保存
 editor.addEventListener('blur',function(){
-  if(window.nativeProxy) window.nativeProxy.onAction('save',editor.innerText||'');
+  if(window.nativeProxy) window.nativeProxy.onAction('save',editorToMarkdown());
 });
 
 // 输入防抖自动保存（只落库不退出编辑态；配合 ArkTS 侧焦点切换退出逻辑）
@@ -344,7 +444,7 @@ let saveTimer=null;
 editor.addEventListener('input',function(){
   if(saveTimer)clearTimeout(saveTimer);
   saveTimer=setTimeout(function(){
-    if(window.nativeProxy)window.nativeProxy.onAction('autosave',editor.innerText||'');
+    if(window.nativeProxy)window.nativeProxy.onAction('autosave',editorToMarkdown());
   },400);
 });
 

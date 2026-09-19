@@ -283,7 +283,7 @@ export struct PropertyEditor {
               .fontColor($r('app.color.muted_text'))
             Flex({ wrap: FlexWrap.Wrap }) {
               ForEach(this.getTypeOptions(), (opt: TypeOption) => {
-                this.TypeButton(opt).type(ButtonType.Capsule)
+                this.TypeButton(opt)
               }, (opt: TypeOption) => opt.type.toString())
             }
             .width('100%')
@@ -323,7 +323,7 @@ export struct PropertyEditor {
   }
 
   @Builder
-  TypeButton(opt: TypeOption).type(ButtonType.Capsule) {
+  TypeButton(opt: TypeOption) {
     Text(opt.label)
       .fontSize(12)
       .fontColor(this.newPropType === opt.type ? Color.White : $r('app.color.text'))

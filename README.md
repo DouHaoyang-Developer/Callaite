@@ -1,10 +1,12 @@
 # Callaite
 
-**Logseq 风格的鸿蒙知识管理应用** — 基于 HarmonyOS ArkTS 构建，完整复刻 Logseq 的大纲编辑、双向链接、知识图谱等核心体验。
+**Logseq 风格的鸿蒙知识管理应用** — 基于 HarmonyOS ArkTS 构建，完整复刻 Logseq 的大纲编辑、双向链接、知识图谱等核心体验，并对齐 Obsidian 的桌面多窗格与移动端编辑工具条交互。
 
-> **SDK**: 6.1.1(24) / API 12 · **语言**: ArkTS · **模型**: Stage Model  
-> **规模**: 116 源文件 · ~29,550 行代码 · 0 第三方运行时依赖 · 当前版本 4.1.1 Beta  
+> **SDK**: targetSdkVersion 26.0.0（HarmonyOS 7）· **语言**: ArkTS · **模型**: Stage Model  
+> **规模**: 134 源文件 · ~33,300 行代码 · 0 第三方运行时依赖 · 当前版本 4.1.5 Beta  
 > **架构**: MVVM + Service + Plugin + Query 四层架构
+
+> ⚠️ **兼容性说明**：`compatibleSdkVersion` 当前为 `26.0.0`，仅 API 26+ 设备可安装（实测 API 24 模拟器安装报 `9568297`）。若需覆盖 API 24 设备，将 `compatibleSdkVersion` 改为 `"6.1.1(24)"`——注意 SDK 格式规则：API 10–25 必须写 `"X.Y.Z(NN)"`，API 26+ 必须写 `"26.0.0"`，混用会报 `00306042 Specification Limit Violation`。
 
 ---
 
@@ -278,6 +280,36 @@ Logseq Whiteboards 风格的无限画布白板，支持形状/连线/手写笔/�
 **PenKit 手写笔**（详见 [鸿蒙特性](#鸿蒙特性)）
 - 4 种笔刷：钢笔 / 铅笔 / 马克笔 / 橡皮擦
 - 压感映射 + 手掌误触过滤 + 笔触平滑
+
+### 11. 桌面分屏（内容区左右双窗格）
+
+平板 / 2in1 桌面形态下，内容区可开启左右分屏（对齐 Obsidian 桌面 split）：
+
+- **入口**：标签栏右侧分屏开关（激活态高亮），开启后标签栏同步出现副窗格页面选择器（内置路由 + 全部页面，`Select` 下拉）
+- **双窗格**：主窗格跟随全局 `currentPage`，副窗格经 `PageView.pageOverride` 独立渲染，复用同一套渲染与数据逻辑
+- **可拖拽分隔条**（`SplitDivider`）：PanGesture 调整左窗格占比（0.2–0.8 钳制）、单击复位 50%、拖拽态主题色高亮；比例经 `splitAreaWidth()` 把像素位移换算为权重
+- **独立焦点域**：两窗格 Scroll 的 `id` 按窗格区分，仅主窗格抢焦点，快捷键路由不串扰
+- 紧凑形态（手机）自动关闭分屏，TabBar 不渲染
+
+### 12. 文件树工具行（左侧栏）
+
+对齐 Obsidian 左栏第二行工具条，4 个按钮均绑定真实动作（无空壳按钮）：
+
+| 图标 | 功能 | 行为 |
+|------|------|------|
+| `file-plus` | 新建笔记 | `WorkspaceService.createPage()` + 自动进入内联重命名 |
+| `folder` | 新建命名空间页面 | 创建 `新文件夹/未命名`（页面名含 `/` 即构成层级），文件树生成可折叠分组 |
+| `arrows-up-down` | 排序切换 | 名称升/降序（`@StorageLink` 持久），同时作用于命名空间分组与页面列表 |
+| `arrows-minimize` | 全部折叠/展开 | 收藏夹 / 最近 / 所有页面三组折叠状态一键切换 |
+
+### 13. 键盘上方 Markdown 工具行（移动端）
+
+手机编辑态（存在获焦 Block）时，底部胶囊栏上方浮出玻璃工具条，复刻 Obsidian iOS 编辑器工具行：
+
+- **9 个按钮**：撤销 / 重做 / 页面双链 `[[]]` / 插入文件 / `#` 标签 / 链接 / `H` 标题（循环 h1→h2→h3→正文）/ `B` 加粗 / 收起键盘
+- 「H」「B」按参考设计使用**字母字形**（`Text`）而非近义图标
+- **命令通道**：按钮写入 AppStorage（`callaite_editorCommand`，格式 `cmd|seq`，序号保证连点同一按钮也能触发），仅**当前获焦块**的 WebEditor 响应，经 `runJavaScript` 在编辑器内部以 `document.execCommand` 执行（contenteditable 原生复用选区），执行后派发 `input` 事件复用 400ms 防抖持久化链路
+- 为什么不直接改 store：块编辑态由 WebEditor（contenteditable WebView）承载，仅创建时读取 `initialContent`，直接写库不会反映到正在编辑的编辑器
 
 ---
 
@@ -669,6 +701,8 @@ onRestoreData(want: Want): void {
 - 笔触平滑：3 点移动平均
 - 模拟器降级：检测不到手写笔时 pressure 固定 1.0，通过 `TouchEvent.force` 运行时检测
 
+> **按需启用说明（4.1.5）**：Pen Kit 以 HSP 形式提供（HMS 能力），OpenHarmony 模拟器不含该 HSP；ArkTS 不支持动态 import，静态引用即构成硬依赖（实测在无该 HSP 的设备上启动即 `SIGABRT`，崩溃点 `LoadJSPandaFile: com.huawei.hmos.hwstylusfeature/Penkit`）。因此 Pen Kit 渲染页独立于启动路径（`components/whiteboard/PenCanvasPage.ets`），仅在具备手写笔能力的真机构建中接入（需 product flavor 或独立 HSP 模块）。`PenKitService` 的笔刷/压感映射与白板 Canvas 渲染逻辑可独立工作，不受影响。
+
 ### IAP Kit 订阅
 
 | 方法 | API |
@@ -736,6 +770,34 @@ Pro 状态缓存到沙箱文件，启动时先恢复未过期缓存，随后网�
 - `appRecovery.enableAppRecovery` — JS 崩溃 / 主线程卡死 / Native 崩溃自动重启
 - `errorManager.on('error')` — 全局捕获未处理异常，落日志并保存数据
 - `onSaveState` 回调 — 框架触发时执行 `WorkspaceService.saveAll()`
+
+### 沉浸光感与系统栏（API 26）
+
+**材质 Token 体系**（`theme/MaterialTokens.ets` + `components/common/GlassSurface.ets`）
+
+- 5 档语义角色 `MaterialRole`：TOP_FLOATING（顶栏）/ BOTTOM_FLOATING（底栏）/ OVERLAY（浮层）/ DIALOG（弹窗）/ DRAWER（抽屉），映射官方沉浸光感 ULTRA_THIN → ULTRA_THICK 五档
+- 每档定义模糊半径 / 填充色 / 高光不透明度 / 阴影半径与透明度，由 `ImmersiveMaterialResolver` 统一解析；顶栏 56vp 玻璃面同步支持按压弹性反馈（官方六特性之一）
+- 运行时能力探测：`isImmersiveMaterialSupported()` 为 false 时自动走 Token 降级参数，低算力设备按 `getGlobalMaterialLevel()` 细化
+- **系统材质（`systemMaterial`）当前未启用**：官方约束其仅在 `Navigation`/`NavDestination` 标题栏或横向 Tabs 底部 TabBar 生效；实测在自研容器外壳上调用会触发 `THREAD_BLOCK_6S` 冻结（且 Navigation 简单包裹会导致桌面壳布局回归）。外壳按 Navigation 布局模型重设计后，经预留入口 `ImmersiveMaterialResolver.buildSystemMaterial()` 启用
+
+**系统栏颜色统一**（`utils/SystemBarHelper.ets`）
+
+- `statusBarColor` / `navigationBarColor` 显式置 `#00000000` —— SDK 默认值为 `#66000000`（40% 黑色半透明），沉浸式布局下会让应用背景透出灰色条，与顶栏/底栏颜色不一致
+- 内容色随主题：浅色 `#1F2328` / 深色 `#FFFFFF`；`ThemeManager.setThemeMode` 切换主题时实时刷新
+- 沉浸式避让区由 `EntryAbility.publishAvoidArea()` 写入 AppStorage（`safeTop`/`safeBottom`），Header、底栏胶囊、内容区内边距统一消费，并监听 `avoidAreaChange` 动态更新（折叠/旋转/分屏）
+
+### API 26 行为变更适配
+
+针对 API 26 SDK 升级扫描出的行为变更（P0 级）逐项适配：
+
+| 变更 | 适配方式 |
+|------|---------|
+| `setWindowLayoutFullScreen` / `setImmersiveModeEnabledState` 在 PC/2in1 自由多窗禁用 | 按 `deviceInfo.deviceType` 分支：PC/2in1 跳过全屏切换，仅采集避让区 + 系统栏样式 |
+| Canvas 方法传 NaN/Infinity 后污染整幅画面（其它绘制由不绘制变更为正常绘制） | `utils/CanvasMath.ets` 有限性防护接入 Whiteboard（网格/笔触）与 GraphView（连线/节点/文本）；**绘制热路径使用定参比较（`notFinite2/3/4`），禁止数组字面量**——每帧每段分配临时数组会引发 GC 风暴（实测主线程冻结，`BCStub_*` 桩 CPU 忙等） |
+| ArkUI 双指长按行为变更 | 三处 `LongPressGesture` 显式 `fingers: 1` |
+| `Button` 默认 type 变更为新增圆角矩形 | 全项目 Button 显式 `.type(ButtonType.Capsule/Circle)`，保持 API 26 前外观 |
+| `getOsAccountDistributedInfo` 返回值生成规则变更 | 登录判定以 `status` 枚举为主，`id` 仅作空值兜底，不比较具体值 |
+| 属性动画 `onFinish` 退后台提前触发 | 项目未使用 `onFinish` 回调，无需适配 |
 
 ### 安全
 
@@ -840,9 +902,14 @@ WebView + mermaid.js 10 CDN，支持流程图/时序图/类图等，主题自动
 
 ### 布局规范
 
+- **响应式三形态外壳**（`state/Breakpoints.ets`，遵循 HarmonyOS 一多断点：sm < 600vp ≤ md < 840vp ≤ lg）：
+  - **compact**（手机，<600vp）：Obsidian iOS 式沉浸玻璃 —— 悬浮玻璃顶栏 + 底部 6 单元胶囊栏（宽度 80%、上限 336vp）+ 抽屉侧栏 + 编辑态键盘上方 Markdown 工具行
+  - **medium**（600–840vp，折叠屏展开/小平板）：桌面布局，侧栏默认收起
+  - **expanded**（>840vp，平板/2in1/PC）：完整 Obsidian 桌面 —— Ribbon + 双侧栏 + 标签栏（`⌄` 标签列表在最左 / 分屏开关 / 新建）+ StatusBar，内容区支持左右分屏
 - 主内容区限宽 960vp 并水平居中（`--ls-main-content-max-width`），宽屏两侧留白；窄屏（<768vp）左右内边距 20vp，宽屏 48vp。
 - Journal 首页为日志流 feed：最近日期在上，初始 7 天，滚动到底追加 7 天；点击日期标题进入单日页。
-- 左侧栏 FAVORITES / RECENT / ALL PAGES 为可折叠分组（chevron 切换，折叠态持久化到 `callaite_collapsed_*`）。
+- 左侧栏 FAVORITES / RECENT / ALL PAGES 为可折叠分组（chevron 切换，折叠态持久化到 `callaite_collapsed_*`），顶部含文件树工具行（见功能特性 12）。
+- 左右双侧栏与分屏比例支持拖拽调整并持久化。
 
 ### 图标系统
 
@@ -901,8 +968,9 @@ EntryAbility.onRestoreData（仅多端流转目标端）
   └── ContinuationManager.restoreFromContinue(want)   // 恢复迁移状态
 
 EntryAbility.onWindowStageCreate
+  ├── GlobalContext.setContext(this.context) // 全局上下文（Pen Kit 等按需模块消费）
   ├── FileService.initGraph()                // 加载 .md 文件到内存
-  ├── CollaborationService.init(ctx)         // 初始化分布式 KVStore
+  ├── CollaborationService.getInstance().init(ctx)      // 初始化分布式 KVStore
   ├── SubscriptionService.initCachedProState()          // 恢复缓存的 Pro 状态（先展示，不等网络）
   ├── SubscriptionService.startPeriodicRefresh()        // 24h 定时刷新
   ├── SubscriptionService.refreshProStatus()            // 网络刷新 IAP 订阅状态
@@ -911,9 +979,16 @@ EntryAbility.onWindowStageCreate
   ├── CloudSyncService.initCloudDir()        // 端云协同目录创建
   ├── registerBuiltinPlugins()               // 插件系统初始化
   ├── AppState.initialize()                  // 主题 → i18n → AppStorage → 侧栏状态
+  ├── TabState.initialize()                  // 标签页状态初始化
   ├── ThemeManager.applyPersistedTheme()     // 必须在 AppStorage 初始化后、loadContent 前，
   │                                          // 否则 dark/light 资源限定符不切换
   └── loadContent('pages/Index')             // 渲染主界面
+        └── 回调内 setupImmersiveLayout(windowStage)   // 沉浸式布局（API 26 适配）
+              ├── PC/2in1 → 跳过 setWindowLayoutFullScreen（自由多窗禁用），仅采集避让区
+              ├── 其它设备 → setWindowLayoutFullScreen(true)
+              ├── SystemBarHelper.apply(isDark)          // 系统栏背景全透明 + 主题内容色
+              ├── publishAvoidArea()                     // safeTop/safeBottom → AppStorage
+              └── on('avoidAreaChange')                  // 折叠/旋转/分屏动态更新
 
 EntryAbility.onBackground
   ├── WorkspaceService.saveAll()             // 保存所有页面
@@ -944,12 +1019,16 @@ EntryAbility.onSaveState（崩溃恢复）
 | 图表 | WebView + Mermaid 10.9.0 CDN | 流程图/时序图 |
 | 分布式 | DistributedKVStore + autoSync | P2P 实时协同 |
 | 多端流转 | continuable Ability + onContinue/onRestoreData | 跨设备状态迁移 |
-| 手写笔 | PenKit（运行时检测 + TouchEvent.force） | 压感映射 + 模拟器降级 |
+| 目标 SDK | API 26.0.0（HarmonyOS 7） | API 26 行为变更已逐项适配（见鸿蒙特性） |
+| 沉浸光感 | MaterialTokens 五档语义 Token + GlassSurface | 能力探测自动降级；系统材质待外壳迁移 Navigation 后启用 |
+| 桌面分屏 | layoutWeight 权重 + PanGesture 分隔条 | 0.2–0.8 钳制、双窗格独立焦点域 |
+| 系统栏 | SystemBarHelper | 背景全透明 + 内容色随主题实时刷新 |
+| 手写笔 | PenKit（HSP 按需启用模块） | 压感映射；无 HSP 设备走 Canvas 降级，详见鸿蒙特性 |
 | 订阅 | IAP Kit | 华为应用市场 |
 | 云同步 | Core File Kit 端云协同 | 零服务器 |
 | 加密 | cryptoFramework AES-256-CBC | 随机 IV |
 | 闪卡 | FSRS-4.5 算法 | 稳定性/难度/可提取性 |
-| 图标 | 137 个 Tabler SVG → ArkTS Shape | MIT 协议 |
+| 图标 | 149 个 Tabler SVG → ArkTS Shape | MIT 协议 |
 | 插件 | 预编译 + 静态注册表 | ArkTS 安全兼容 |
 | i18n | 自定义 I18nDict class | 中/英双语 |
 | 状态持久化 | StatePersistence 自管 JSON | 替代 PersistentStorage（冷启动恢复不可靠） |
@@ -974,6 +1053,7 @@ EntryAbility.onSaveState（崩溃恢复）
 | `switch` 语句 | if/else 链 |
 | `in` 操作符 | tagged union 字段检测 |
 | `for...of` | 传统 for 循环 + Map.forEach |
+| 绘制热路径数组字面量 | `CanvasMath.notFinite2/3/4` 定参比较（每帧分配临时数组会引发 GC 风暴，实测主线程冻结） |
 
 ---
 
@@ -981,14 +1061,15 @@ EntryAbility.onSaveState（崩溃恢复）
 
 ```
 Callaite/entry/src/main/ets/
-├── components/              57 文件 (UI 层)
+├── components/              68 文件 (UI 层)
 │   ├── outliner/            11  (BlockView / BlockList / BlockChildren / BlockDragHandler / BlockSelection /
 │   │                            WebEditor / RichBlockEditor / SlashMenu / AutoComplete / Toolbar / FindInPage)
 │   ├── sidebar/              5  (LeftSidebar / RightSidebar / PageTree / PageContextMenu / BacklinkFilters)
 │   ├── page/                 4  (PageView / ContentArea / JournalFeed / AllPagesPage)
-│   ├── layout/               2  (Header / MainContainer)
+│   ├── layout/               9  (MainContainer / Ribbon / TabBar / StatusBar / MobileHeader /
+│   │                            MobileBottomBar / TabOverviewSheet / MobileMenuSheet / SplitDivider)
 │   ├── graph/                3  (GraphView / GraphLayout / GraphActions)
-│   ├── whiteboard/           4  (Whiteboard / WbShape / WbConnector / WbPageRef)
+│   ├── whiteboard/           5  (Whiteboard / WbShape / WbConnector / WbPageRef / PenCanvasPage*)
 │   ├── search/               3  (SearchPanel / TaskDashboard / TaskSchedulePanel)
 │   ├── settings/             4  (SettingsPage / ProUpgradePage / RecycleBinPage / ShortcutSettings)
 │   ├── property/             3  (PropertyEditor / PropertyConfig / PropertyValueEditor)
@@ -996,9 +1077,11 @@ Callaite/entry/src/main/ets/
 │   ├── commandpalette/       1  (CommandPalette)
 │   ├── flashcard/            1  (FlashcardPage)
 │   ├── onboarding/           1  (OnboardingPage)
-│   ├── mobile/               1  (MobileToolbar)
-│   ├── common/               6  (Icons / TablerIconPaths / ThemeManager / DatePicker / ExportDialog / ImportDialog)
+│   ├── mobile/               2  (MobileToolbar / MarkdownToolbar — 键盘上方 Markdown 工具行)
+│   ├── common/               8  (Icons / TablerIconPaths / ThemeManager / DatePicker / ExportDialog /
+│   │                            ImportDialog / FloatingPanel / GlassSurface)
 │   └── extensions/           5  (MathRenderer / MermaidRenderer / CodeBlock / PdfViewer / PdfPage)
+├── theme/                    1  (MaterialTokens — 沉浸光感五档语义 Token)
 ├── core/                    22 文件 (引擎层)
 │   ├── models/               4  (Block / Page / Property / Constants)
 │   ├── engine/               9  (BlockTree / OutlinerOps / OutlinerEngine / Validator /
@@ -1014,27 +1097,33 @@ Callaite/entry/src/main/ets/
 │   HuaweiAccount / BlockMetadataSync / ErrorRecovery
 ├── plugins/                  4 文件 (插件框架)
 │   CallaitePlugin / PluginAPI / PluginManager / BuiltinPlugins
-├── state/                    2  (AppState / StatePersistence)
-├── utils/                    4  (i18n / UUID / ContentRenderer / NamespaceUtils)
+├── state/                    4  (AppState / StatePersistence / TabState / Breakpoints)
+├── utils/                    8  (i18n / UUID / ContentRenderer / NamespaceUtils / PageTitle /
+│                                CanvasMath / SystemBarHelper / GlobalContext)
 ├── pages/                    1  (Index)
-├── entryability/             1  (EntryAbility — 含 onContinue/onRestoreData)
+├── entryability/             1  (EntryAbility — onContinue/onRestoreData + PC/2in1 沉浸式分支)
 ├── entryformability/         1  (EntryFormAbility — 速记卡片 + 30 分钟刷新)
 ├── entrybackupability/       1  (EntryBackupAbility)
 ├── shareability/             1  (ShareReceiveAbility — 接收分享创建 Block)
 └── widget/pages/             1  (WidgetCard — 概览/速记双卡片)
 ```
 
+\* `PenCanvasPage` 为 Pen Kit 按需启用模块，不在应用启动路径（原因与启用方式见[鸿蒙特性](#鸿蒙特性)）。
+
 ---
 
 ## 构建说明
 
 ```bash
+# 快捷方式（工作区根目录）：bash build_callaite.sh debug
 # 构建模式在 build-profile.json5 中配置
 # 编译日志输出到工作区根目录的 errorlog.txt
-# 构建产物: entry/build/default/outputs/default/entry-default-signed.hap
+# 构建产物: entry/build/default/outputs/default/entry-default-unsigned.hap
 ```
 
-**系统要求**: HarmonyOS SDK 6.1.1(24) / DevEco Studio 5.0+ / API 12 模拟器或真机
+**系统要求**: HarmonyOS SDK（targetSdkVersion 26.0.0）/ DevEco Studio 6.x+ / API 26 模拟器或真机
+
+> **SDK 兼容性实测**：`compatibleSdkVersion: "26.0.0"` 仅允许 API 26+ 设备安装（API 24 模拟器安装报 `9568297 older sdk version`）。已验证的模拟器：MatePad Pro 13（API 24）与 Pura 90 Pro Max（API 26 / OpenHarmony 7.0.0.105）。若需覆盖 API 24 设备，将 `compatibleSdkVersion` 改为 `"6.1.1(24)"`（格式规则见文档开头）；`target 26.0.0 + compatible 6.1.1(24)` 组合已实测可行，API 26 设备不受影响。
 
 **权限声明** (`module.json5`):
 - `ohos.permission.DISTRIBUTED_DATASYNC` — 分布式协同编辑

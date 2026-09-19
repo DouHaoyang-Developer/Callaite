@@ -9,6 +9,7 @@ import { StatusBar } from './StatusBar';
 import { MobileHeader } from './MobileHeader';
 import { MobileBottomBar } from './MobileBottomBar';
 import { MarkdownToolbar } from '../mobile/MarkdownToolbar';
+import { NewFileDialog } from '../common/NewFileDialog';
 import { TabOverviewSheet } from './TabOverviewSheet';
 import { MobileMenuSheet } from './MobileMenuSheet';
 import { FloatingPanel } from '../common/FloatingPanel';
@@ -358,6 +359,9 @@ export struct MainContainer {
       }
 
       // ─── 移动端浮层：标签页总览（Obsidian iOS 卡片式）───
+      // ─── 全局浮层：新建文件三选项对话框 ───
+      NewFileDialog()
+
       if (this.getIsCompact() && this.tabOverviewOpen) {
         Column() {
           Column()
