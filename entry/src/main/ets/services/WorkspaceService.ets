@@ -1,3 +1,4 @@
+import { SaveQueue } from './SaveQueue';
 import { DataStore } from '../core/db/DataStore';
 import { OutlinerEngine } from '../core/engine/OutlinerEngine';
 import { PageData } from '../core/models/Page';
@@ -27,6 +28,11 @@ export class WorkspaceService {
   static getInstance(): WorkspaceService {
     if (!WorkspaceService.instance) {
       WorkspaceService.instance = new WorkspaceService();
+      // O1：向保存队列注入落盘回调（静默 1.2s 自动 saveAll，原子写逐页落盘）
+      const created = WorkspaceService.instance;
+      SaveQueue.getInstance().init((): void => {
+        created!.saveAll();
+      });
     }
     return WorkspaceService.instance;
   }
@@ -83,6 +89,18 @@ export class WorkspaceService {
     return this.dataStore.getTopLevelBlocks(pageId);
   }
 
+  /**
+   * 取页面**全部** Block（含子块）。
+   *
+   * 与 getPageBlocks（仅顶层，走 childrenMap 查表）不同，此方法遍历 blockMap 按
+   * pageId 过滤，不依赖父子索引是否健全 —— 整页编辑器导出 markdown 时应用它。
+   * 背景：O4 整页编辑器曾因块列表为空导致 markdown 为空（诊断 toast 实测
+   * `md=0 uuid=OK`），「应用并重建」因此被空内容闸门拦下。
+   */
+  getAllPageBlocks(pageId: string): BlockData[] {
+    return this.dataStore.getPageBlocks(pageId);
+  }
+
   getChildrenOfBlock(blockUuid: string): BlockData[] {
     return this.dataStore.getChildrenOfBlock(blockUuid);
   }
@@ -92,15 +110,28 @@ export class WorkspaceService {
   }
 
   executeOp(op: OutlinerOp): OpResult {
-    return this.outlinerEngine.execute(op);
+    const result = this.outlinerEngine.execute(op);
+    // O1：变更成功即标记脏（静默 1.2s 落盘，强杀丢失窗口 ≤1.2s）
+    if (result.success) {
+      SaveQueue.getInstance().markDirty();
+    }
+    return result;
   }
 
   undo(): OpResult {
-    return this.outlinerEngine.undo();
+    const result = this.outlinerEngine.undo();
+    if (result.success) {
+      SaveQueue.getInstance().markDirty();
+    }
+    return result;
   }
 
   redo(): OpResult {
-    return this.outlinerEngine.redo();
+    const result = this.outlinerEngine.redo();
+    if (result.success) {
+      SaveQueue.getInstance().markDirty();
+    }
+    return result;
   }
 
   // ─── 搜索 ───
@@ -129,5 +160,12 @@ export class WorkspaceService {
 
   saveAll(): void {
     this.dataStore.saveAll();
+  }
+
+  /**
+   * O4：整页编辑器保存 —— 用 Markdown 重建页面块（保留页面身份）。
+   */
+  replacePageBlocks(pageId: string, markdown: string): boolean {
+    return this.dataStore.replacePageBlocks(pageId, markdown);
   }
 }

@@ -1,4 +1,5 @@
 import { HomePage } from './HomePage';
+import { IntegralEditor } from '../outliner/IntegralEditor';
 import { BlockList } from '../outliner/BlockList';
 import { JournalFeed } from './JournalFeed';
 import { JournalService } from '../../services/JournalService';
@@ -27,6 +28,8 @@ export struct PageView {
   @Prop @Watch('onPageChanged') pageOverride: string = '';
   @State displayName: string = '';
   @State showProperties: boolean = false;
+  /** O4：整页四模式编辑器开关（页面切换时重置） */
+  @State integralMode: boolean = false;
   @State pagePropKeys: string[] = [];
   @State pagePropValues: string[] = [];
   @State versionText: string = '';
@@ -87,6 +90,8 @@ export struct PageView {
   }
 
   resolvePage(): void {
+    // 页面切换时退出整页编辑模式
+    this.integralMode = false;
     if (this.page() === 'Journal') {
       JournalService.ensureTodayJournal();
       this.displayName = JournalService.getTodayDateString();
@@ -199,6 +204,29 @@ export struct PageView {
           }
         }
 
+        // ─── 编辑模式切换（O4：整页四模式编辑器）───
+        Row({ space: 8 }) {
+          Row({ space: 6 }) {
+            TablerIcon(this.integralMode ? 'list' : 'edit', 14,
+              this.integralMode ? $r('app.color.primary') : $r('app.color.muted_text'))
+            Text(this.integralMode ? '返回大纲视图' : '整页编辑')
+              .fontSize(11)
+              .fontColor(this.integralMode ? $r('app.color.primary') : $r('app.color.muted_text'))
+          }
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .borderRadius(4)
+          .backgroundColor($r('app.color.surface2'))
+          .onClick(() => { this.integralMode = !this.integralMode; })
+          Blank()
+        }
+        .width('100%')
+        .padding({ top: 2, bottom: 2 })
+
+        if (this.integralMode) {
+          IntegralEditor({ pageName: this.page(), onClose: (): void => {
+            this.integralMode = false;
+          }})
+        } else {
         // Block 列表
         Scroll() {
           BlockList({ pageName: this.displayName })
@@ -209,6 +237,7 @@ export struct PageView {
         .scrollBar(BarState.Auto)
 
         Blank()
+        }
       }
       .width('100%')
       .height('100%')

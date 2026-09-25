@@ -119,6 +119,52 @@ export class DataStore {
   }
 
   /**
+   * O4：整页编辑器 —— 用新 Markdown 重建页面块（保留页面身份：uuid/元数据不变）。
+   * 块间引用自洽（parse 新 uuid）；跨页 ((块uuid)) 引用会因重建失效（v1 已知限制）。
+   */
+  replacePageBlocks(pageUuid: string, markdown: string): boolean {
+    const oldPage = this.indexStore.getPage(pageUuid);
+    if (!oldPage) {
+      return false;
+    }
+    const result = MarkdownParser.parse(markdown, oldPage.originalName, oldPage.filePath);
+    // ⚠️ 防误删硬闸（实测缺陷）：整页编辑器切换模式会重建 RichEditor，曾导致
+    // markdown 退化为空/不可解析文本，此处照常重建 → 整页块被清空并落盘（页面变
+    // 0 字节）。数据层必须自保：解析结果为空而页面原本有块时，拒绝重建。
+    const oldCount = this.blockTree.getPageBlocks(pageUuid).length;
+    if (result.blocks.length === 0 && oldCount > 0) {
+      console.error('[DataStore] replacePageBlocks refused: parsed 0 blocks, page had '
+        + oldCount.toString() + ', mdLen=' + markdown.length.toString()
+        + ', md=' + markdown.substring(0, 120));
+      return false;
+    }
+    // ⚠️ 先记下解析时生成的页面 uuid，再覆盖为既有页面 uuid。
+    // 必须同时改写顶层块的 parentId：MarkdownParser 用**解析时新生成的页面 uuid**
+    // 作为顶层块的 parentId，而 MarkdownExporter.filterTopLevel 以
+    // `parentId === page.uuid` 挑选顶层块。若只改 pageId 不改 parentId，导出时一个
+    // 顶层块都选不中 → 写出 0 字节文件（实测「应用并重建」后块行数 1 → 0、页面被清空）。
+    const parsedPageUuid = result.page.uuid;
+    result.page.uuid = pageUuid;
+    result.page.createdAt = oldPage.createdAt;
+    result.page.journalDay = oldPage.journalDay;
+    result.page.namespace = oldPage.namespace;
+    result.page.filePath = oldPage.filePath;
+    for (let i = 0; i < result.blocks.length; i++) {
+      const blk = result.blocks[i];
+      blk.pageId = pageUuid;
+      if (blk.parentId === parsedPageUuid) {
+        blk.parentId = pageUuid;
+      }
+    }
+    this.blockTree.loadPageBlocks(pageUuid, result.blocks);
+    this.indexStore.addPage(result.page);
+    this.indexStore.indexBlocks(result.blocks);
+    this.indexStore.rebuildReferences(result.blocks);
+    this.savePage(pageUuid);
+    return true;
+  }
+
+  /**
    * 删除页面（从索引和文件系统）。
    */
   deletePage(pageUuid: string): void {

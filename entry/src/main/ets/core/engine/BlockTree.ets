@@ -328,7 +328,12 @@ export class BlockTree {
   }
 
   /**
-   * 按 leftId 链对单个 children 列表排序。
+   * 按 leftId 链对单个 children 列表排序（**保证不丢节点**）。
+   *
+   * 早期实现以 `Map<leftId, uuid>` 为桶：同层多个节点 leftId 相同时（典型是
+   * leftId 未被赋值，全为 ''）后写入覆盖先写入，链走完后剩余项已不在 Map 中，
+   * 结果 childrenMap 里**只剩最后一个兄弟**，其余在树中不可达。现改为在候选池上
+   * 按 uuid 标记消费，未能入链的一律按原顺序追加。
    */
   private sortChildrenList(parentId: string): void {
     const uuids = this.childrenMap.get(parentId);
@@ -336,32 +341,34 @@ export class BlockTree {
       return;
     }
 
-    // 找到第一个 block (leftId = '')
     const sorted: string[] = [];
-    const remaining = new Map<string, string>();
-    for (let i = 0; i < uuids.length; i++) {
-      const block = this.blockMap.get(uuids[i]);
-      if (block) {
-        remaining.set(block.leftId, uuids[i]);
-      }
-    }
-
+    const consumed = new Set<string>();
     let leftId = '';
-    while (remaining.has(leftId)) {
-      const uuid = remaining.get(leftId);
-      if (uuid) {
-        sorted.push(uuid);
-        remaining.delete(leftId);
-        leftId = uuid;
-      } else {
-        break;
+    let progressed = true;
+    while (progressed) {
+      progressed = false;
+      for (let i = 0; i < uuids.length; i++) {
+        const uuid = uuids[i];
+        if (consumed.has(uuid)) {
+          continue;
+        }
+        const block = this.blockMap.get(uuid);
+        if (block && block.leftId === leftId) {
+          sorted.push(uuid);
+          consumed.add(uuid);
+          leftId = uuid;
+          progressed = true;
+          break;
+        }
       }
     }
 
-    // 追加剩余（以防 leftId 链破损）
-    remaining.forEach((uuid: string) => {
-      sorted.push(uuid);
-    });
+    // 兜底：leftId 链破损的节点按原顺序补齐（绝不丢弃）
+    for (let i = 0; i < uuids.length; i++) {
+      if (!consumed.has(uuids[i])) {
+        sorted.push(uuids[i]);
+      }
+    }
 
     this.childrenMap.set(parentId, sorted);
   }

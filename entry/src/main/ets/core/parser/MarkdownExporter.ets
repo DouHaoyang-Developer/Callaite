@@ -109,30 +109,41 @@ export class MarkdownExporter {
         topLevel.push(blocks[i]);
       }
     }
-    // 按 leftId 链排序
-    const sorted: BlockData[] = [];
-    const remaining = new Map<string, BlockData>();
-    for (let i = 0; i < topLevel.length; i++) {
-      remaining.set(topLevel[i].leftId, topLevel[i]);
-    }
+    return MarkdownExporter.sortByLeftChain(topLevel);
+  }
 
-    let leftId = '';
-    while (remaining.has(leftId)) {
-      const b = remaining.get(leftId);
-      if (b) {
-        sorted.push(b);
-        remaining.delete(leftId);
-        leftId = b.uuid;
-      } else {
-        break;
+  /**
+   * 按 leftId 链排序，**保证不丢块**。
+   *
+   * 早期实现用 `Map<leftId, block>` 做桶：当多个兄弟的 leftId 相同（典型场景是
+   * leftId 未被赋值，全为 ''）时，后写入者会覆盖先写入者，链走完后剩余项已不在
+   * Map 中，导致**同层只导出最后一个块**——静默数据丢失。现改为在候选池上按
+   * uuid 标记消费：链能走多远走多远，未能入链的一律按原顺序追加，绝不丢弃。
+   */
+  private static sortByLeftChain(items: BlockData[]): BlockData[] {
+    const sorted: BlockData[] = [];
+    const consumed = new Set<string>();
+    let cursor = '';
+    let progressed = true;
+    while (progressed) {
+      progressed = false;
+      for (let i = 0; i < items.length; i++) {
+        const b = items[i];
+        if (!consumed.has(b.uuid) && b.leftId === cursor) {
+          sorted.push(b);
+          consumed.add(b.uuid);
+          cursor = b.uuid;
+          progressed = true;
+          break;
+        }
       }
     }
-
-    // 追加剩余
-    remaining.forEach((b: BlockData) => {
-      sorted.push(b);
-    });
-
+    // 兜底：leftId 链破损（空值/重复/悬空）的块按原顺序补齐
+    for (let i = 0; i < items.length; i++) {
+      if (!consumed.has(items[i].uuid)) {
+        sorted.push(items[i]);
+      }
+    }
     return sorted;
   }
 
@@ -146,30 +157,7 @@ export class MarkdownExporter {
         children.push(blocks[i]);
       }
     }
-    // 按 leftId 链排序
-    const sorted: BlockData[] = [];
-    const remaining = new Map<string, BlockData>();
-    for (let i = 0; i < children.length; i++) {
-      remaining.set(children[i].leftId, children[i]);
-    }
-
-    let leftId = '';
-    while (remaining.has(leftId)) {
-      const b = remaining.get(leftId);
-      if (b) {
-        sorted.push(b);
-        remaining.delete(leftId);
-        leftId = b.uuid;
-      } else {
-        break;
-      }
-    }
-
-    remaining.forEach((b: BlockData) => {
-      sorted.push(b);
-    });
-
-    return sorted;
+    return MarkdownExporter.sortByLeftChain(children);
   }
 
   /**

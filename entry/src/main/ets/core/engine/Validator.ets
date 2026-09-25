@@ -15,19 +15,22 @@ export class Validator {
    */
   static validateInsert(
     blockTree: BlockTree,
-    _pageId: string,
+    pageId: string,
     parentId: string,
     _leftId: string,
     _level: number
   ): string | undefined {
-    // 父节点必须存在（或者是 page UUID）
-    // page UUID 不在 BlockTree 中，所以跳过检查
-    if (parentId.length < 36) {
-      // 短 ID，可能是 page UUID — 跳过
+    // 顶层块的 parentId 即所属页面（见 Block.parentId 语义）；页面不是 Block，
+    // 不在 BlockTree 中，必须直接放行。
+    // ⚠️ 早期实现用「父 ID 长度 < 36」识别页面 UUID，但 UUID.generate() 产生的
+    // 页面 UUID 同样是 36 位，该短路分支永不命中 → **顶层块插入永远被判
+    // Parent block not found**。此前 OutlinerEngine.execute 未接 Validator，
+    // 缺陷一直潜伏；M0 单测将其暴露。
+    if (parentId === pageId || parentId === '') {
       return undefined;
     }
     const parent = blockTree.getBlock(parentId);
-    if (!parent && parentId.length === 36) {
+    if (!parent) {
       return 'Parent block not found';
     }
     return undefined;

@@ -241,6 +241,10 @@ export class MarkdownParser {
 
       const uuid = UUID.generate();
       const block = createBlockData(uuid, pageUuid, parentId, level);
+      // ⚠️ 必须回写 leftId：导出器（MarkdownExporter）与 BlockTree 都依赖
+      // leftId 兄弟链遍历。此前只计算未赋值 → 所有解析出的块 leftId 均为 ''，
+      // 导出时同层兄弟在 Map 中互相覆盖，**每层只保留最后一个块**，保存即丢内容。
+      block.leftId = leftId;
       block.content = finalContent;
       block.marker = marker;
       block.priority = priority;

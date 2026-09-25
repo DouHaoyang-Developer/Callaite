@@ -1,5 +1,6 @@
 import { TablerIcon } from '../common/Icons';
-import { PageTree } from './PageTree';import { AppState } from '../../state/AppState';
+import { PageTree } from './PageTree';
+import { AppState } from '../../state/AppState';
 import { t } from '../../utils/i18n';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData } from '../../core/models/Page';
@@ -115,114 +116,103 @@ export struct LeftSidebar {
   }
 
   build() {
-    Column({ space: 0 }) {
-      // ─── 搜索框（Obsidian 形状）───
-      Row({ space: 8 }) {
-        TablerIcon('search', 14, $r('app.color.muted_text'))
-        Text('搜索或开始搜索...')
-          .fontSize(12.5)
-          .fontColor($r('app.color.muted_text'))
-          .layoutWeight(1)
-          .maxLines(1)
-      }
-      .width('100%')
-      .height(30)
-      .padding({ left: 10, right: 10 })
-      .margin({ left: 8, right: 8, top: 8 })
-      .borderRadius(6)
-      .backgroundColor($r('app.color.surface2'))
-      .onClick(() => {
-        AppState.setSearchPanelOpen(true);
-      })
-
-      // ─── 文件树（Obsidian 原生风格，占主体）───
-      PageTree()
-        .layoutWeight(1)
-
-      // ─── 分隔线 ───
-      Divider()
-        .width('100%')
-        .color($r('app.color.border'))
-
-      // ─── 文件树工具行 ───
-      Row({ space: 2 }) {
-        this.TreeToolIcon('file-plus', 'tree_new_note', () => {
+    Row({ space: 0 }) {
+      // ─── 窄图标活动栏（44vp）───
+      Column({ space: 2 }) {
+        this.StripIcon('file-plus', 'strip_new', false, (): void => {
           AppStorage.setOrCreate('callaite_newFileDialogOpen', true);
         })
-        this.TreeToolIcon('folder', 'tree_new_folder', () => {
-          this.createNewNamespace();
-        })
-        this.TreeToolIcon('arrows-up-down',
-          this.sortDesc ? 'tree_sort_desc' : 'tree_sort_asc', () => {
-            this.sortDesc = !this.sortDesc;
+        ForEach(this.getNavItems(), (item: NavItem) => {
+          this.StripIcon(item.iconName, 'nav_' + item.key, this.currentPage === item.key, (): void => {
+            AppState.setCurrentPage(item.key);
           })
-        this.TreeToolIcon('arrows-minimize', 'tree_collapse_all', () => {
-          this.toggleCollapseAll();
+        }, (item: NavItem) => 'nav_' + item.key)
+        Blank()
+        this.StripIcon('star', 'strip_fav', !this.collapsedFavorites, (): void => {
+          this.toggleSection('favorites');
+        })
+        this.StripIcon('database', 'strip_vault', false, (): void => {
+          AppStorage.setOrCreate('callaite_vaultSwitcherOpen', true);
+        })
+        this.StripIcon('settings', 'strip_settings', false, (): void => {
+          if (this.isCompact()) {
+            AppState.setLeftSidebarOpen(false);
+          }
+          AppState.setCurrentPage('Settings');
         })
       }
-      .width('100%')
-      .height(40)
-      .padding({ left: 12, right: 12 })
+      .width(44)
+      .height('100%')
+      .padding({ top: 8, bottom: 8 })
+      .border({ width: { right: 1 }, color: $r('app.color.border') })
+      .backgroundColor($r('app.color.surface1'))
 
-      // ─── 导航区 ───
-      ForEach(this.getNavItems(), (item: NavItem) => {
-        this.NavRow(item)
-      }, (item: NavItem) => item.key)
-      this.SectionSpacer()
-
-      // ─── 收藏夹（可折叠分组）───
-      this.SectionHeader(t('favorites'), 'favorites', this.collapsedFavorites)
-      if (!this.collapsedFavorites) {
-        ForEach(this.favorites, (name: string) => { this.PageLink(name); }, (name: string) => name)
-        if (this.favorites.length === 0) this.EmptyHint(t('empty_favorites_hint'))
-      }
-      this.SectionSpacer()
-
-      // ─── 最近页面（可折叠分组）───
-      this.SectionHeader(t('recent'), 'recent', this.collapsedRecent)
-      if (!this.collapsedRecent) {
-        ForEach(this.recent.slice(0, 8), (name: string) => { this.PageLink(name); }, (name: string) => name)
-        if (this.recent.length === 0) this.EmptyHint(t('empty_recent_hint'))
-      }
-      this.SectionSpacer()
-
-      // ─── 仓库切换入口 ───
-      Row({ space: 8 }) {
-        TablerIcon('database', 14, $r('app.color.icon_color'))
-        Text('仓库切换')
-          .fontSize(12.5)
-          .fontColor($r('app.color.muted_text'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(36)
-      .padding({ left: 16, right: 12 })
-      .onClick(() => {
-        AppStorage.setOrCreate('callaite_vaultSwitcherOpen', true);
-      })
-
-      // ─── 底部 Vault 行（设置入口）───
-      Row({ space: 8 }) {
-        TablerIcon('settings', 16, $r('app.color.icon_color'))
-        Text(t('vault') + ' · ' + t('settings'))
-          .fontSize(12.5)
-          .fontColor($r('app.color.muted_text'))
-          .layoutWeight(1)
-          .maxLines(1)
-      }
-      .width('100%')
-      .height(40)
-      .padding({ left: 16, right: 12 })
-      .border({ width: { top: 0.5 }, color: $r('app.color.border') })
-      .onClick(() => {
-        if (this.isCompact()) {
-          AppState.setLeftSidebarOpen(false);
+      // ─── 右：资源管理器面板（搜索框 + 收藏/最近 + 文件树占满剩余空间）───
+      Column({ space: 0 }) {
+        Row({ space: 8 }) {
+          TablerIcon('search', 14, $r('app.color.muted_text'))
+          Text('搜索或开始搜索...')
+            .fontSize(12.5)
+            .fontColor($r('app.color.muted_text'))
+            .layoutWeight(1)
+            .maxLines(1)
         }
-        AppState.setCurrentPage('Settings');
-      })
+        .width('100%')
+        .height(30)
+        .padding({ left: 10, right: 10 })
+        .margin({ left: 8, right: 8, top: 8 })
+        .borderRadius(6)
+        .backgroundColor($r('app.color.surface2'))
+        .onClick(() => {
+          AppState.setSearchPanelOpen(true);
+        })
+
+        this.SectionHeader(t('favorites'), 'favorites', this.collapsedFavorites)
+        if (!this.collapsedFavorites) {
+          ForEach(this.favorites, (name: string) => { this.PageLink(name); }, (name: string) => name)
+          if (this.favorites.length === 0) this.EmptyHint(t('empty_favorites_hint'))
+        }
+        this.SectionSpacer()
+
+        this.SectionHeader(t('recent'), 'recent', this.collapsedRecent)
+        if (!this.collapsedRecent) {
+          ForEach(this.recent.slice(0, 8), (name: string) => { this.PageLink(name); }, (name: string) => name)
+          if (this.recent.length === 0) this.EmptyHint(t('empty_recent_hint'))
+        }
+        this.SectionSpacer()
+
+        PageTree()
+          .layoutWeight(1)
+      }
+      .layoutWeight(1)
+      .height('100%')
     }
     .width('100%')
     .height('100%')
+  }
+
+  /**
+   * 活动栏图标按钮（40vp 热区 + 选中高亮 + 悬停/按压三态）。
+   */
+  @Builder
+  StripIcon(icon: string, key: string, active: boolean, onTap: () => void) {
+    Row() {
+      TablerIcon(icon, 18, active ? $r('app.color.primary') : $r('app.color.icon_color'))
+    }
+    .width(36)
+    .height(36)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(6)
+    .margin({ left: 4, right: 4 })
+    .backgroundColor(active || this.hoveredStrip === key ? $r('app.color.surface2') : Color.Transparent)
+    .animation({ duration: 140, curve: Curve.EaseOut })
+    .onHover((isHover: boolean) => {
+      this.hoveredStrip = isHover ? key : '';
+    })
+    .onClick(() => {
+      onTap();
+    })
   }
 
   @Builder
