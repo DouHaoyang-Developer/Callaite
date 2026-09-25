@@ -2,6 +2,7 @@ import { TablerIcon } from '../common/Icons';
 import { AppState } from '../../state/AppState';
 import { FlashcardService, Rating, CardData } from '../../services/FlashcardService';
 import { BlockData } from '../../core/models/Block';
+import { promptAction } from '@kit.ArkUI';
 
 /**
  * FlashcardPage — FSRS 闪卡复习页面。
@@ -76,8 +77,8 @@ export struct FlashcardPage {
         this.buildFinished()
       } else {
         this.buildCard()
+        Blank()
       }
-      Blank()
     }
     .width('100%').height('100%').padding({ left: 24, right: 24 }).alignItems(HorizontalAlign.Start)
   }
@@ -89,52 +90,98 @@ export struct FlashcardPage {
       Text('今日复习完成')
         .fontSize(20).fontWeight(FontWeight.Bold).fontColor($r('app.color.text'))
 
-      Column({ space: 12 }) {
-        Row({ space: 32 }) {
-          Column({ space: 4 }) {
-            Text('已复习').fontSize(12).fontColor($r('app.color.muted_text'))
-            Text(this.reviewedCount.toString()).fontSize(20).fontColor($r('app.color.text'))
-          }.alignItems(HorizontalAlign.Center)
+      // 6 项统计收进「卡片统计」信息块（标题行 + 分隔线 + 两行三列共享网格）
+      this.buildStatsCard()
 
-          Column({ space: 4 }) {
-            Text('总卡片').fontSize(12).fontColor($r('app.color.muted_text'))
-            Text(this.statsTotal.toString()).fontSize(20).fontColor($r('app.color.text'))
-          }.alignItems(HorizontalAlign.Center)
-
-          Column({ space: 4 }) {
-            Text('复习中').fontSize(12).fontColor($r('app.color.muted_text'))
-            Text(this.statsReview.toString()).fontSize(20).fontColor($r('app.color.text'))
-          }.alignItems(HorizontalAlign.Center)
-        }
-
-        Row({ space: 32 }) {
-          Column({ space: 4 }) {
-            Text('学习中').fontSize(12).fontColor($r('app.color.muted_text'))
-            Text(this.statsLearning.toString()).fontSize(20).fontColor($r('app.color.text'))
-          }.alignItems(HorizontalAlign.Center)
-
-          Column({ space: 4 }) {
-            Text('未开始').fontSize(12).fontColor($r('app.color.muted_text'))
-            Text(this.statsNewCount.toString()).fontSize(20).fontColor($r('app.color.text'))
-          }.alignItems(HorizontalAlign.Center)
-
-          Column({ space: 4 }) {
-            Text('平均难度').fontSize(12).fontColor($r('app.color.muted_text'))
-            Text(this.avgDifficulty.toFixed(2)).fontSize(20).fontColor($r('app.color.text'))
-          }.alignItems(HorizontalAlign.Center)
-        }
-
-        if (this.nextDue > 0) {
-          Text('下次到期：' + this.formatDate(this.nextDue))
-            .fontSize(13).fontColor($r('app.color.muted_text')).margin({ top: 8 })
-        }
+      if (this.nextDue > 0) {
+        Text('下次到期：' + this.formatDate(this.nextDue))
+          .fontSize(13).fontColor($r('app.color.muted_text'))
       }
-      .width('100%').alignItems(HorizontalAlign.Center)
 
-      Button('刷新').type(ButtonType.Capsule).fontSize(14).backgroundColor($r('app.color.surface1'))
-        .onClick(() => { this.refreshCards(); })
+      // 操作区：主 CTA（实心主色，原「刷新」的 surface1 与侧栏同色，白底页上形似禁用态）
+      Row({ space: 12 }) {
+        Button('开始复习')
+          .type(ButtonType.Normal)
+          .fontSize(15)
+          .fontColor($r('app.color.on_primary'))
+          .backgroundColor($r('app.color.primary'))
+          .height(40)
+          .borderRadius(6)
+          .padding({ left: 24, right: 24 })
+          .onClick(() => { this.startReview(); })
+
+        Button('刷新')
+          .type(ButtonType.Normal)
+          .fontSize(14)
+          .fontColor($r('app.color.text'))
+          .backgroundColor($r('app.color.surface2'))
+          .height(40)
+          .borderRadius(6)
+          .padding({ left: 20, right: 20 })
+          .onClick(() => { this.refreshCards(); })
+      }
+      .margin({ top: 8 })
     }
-    .width('100%').alignItems(HorizontalAlign.Center).padding({ top: 60 })
+    .width('100%')
+    .layoutWeight(1)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .padding({ top: 24, bottom: 24 })
+  }
+
+  /**
+   * 卡片统计信息块。
+   * 结构性修复：统计项由「Row({ space: 32 }) + 自适应宽度 Column」改为
+   * 等宽 layoutWeight(1) 单元格 —— 此前两行列心因数值位数不同各差 6vp，无法严格同列。
+   * 数据来源与口径不变（FlashcardService.getReviewStats + 本页会话计数）。
+   */
+  @Builder
+  buildStatsCard() {
+    Column({ space: 0 }) {
+      // 标题行：小号弱化文字 + 底部分隔线
+      Text('卡片统计')
+        .fontSize(12)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.muted_text'))
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 12, bottom: 8 })
+
+      Divider().color($r('app.color.border'))
+
+      Row() {
+        this.StatCell('已复习', this.reviewedCount.toString())
+        this.StatCell('总卡片', this.statsTotal.toString())
+        this.StatCell('复习中', this.statsReview.toString())
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 12, bottom: 6 })
+
+      Row() {
+        this.StatCell('学习中', this.statsLearning.toString())
+        this.StatCell('未开始', this.statsNewCount.toString())
+        this.StatCell('平均难度', this.avgDifficulty.toFixed(2))
+      }
+      .width('100%')
+      .padding({ left: 8, right: 8, top: 6, bottom: 12 })
+    }
+    .width('100%')
+    .backgroundColor($r('app.color.surface1'))
+    .borderRadius(8)
+  }
+
+  /**
+   * 统计单元格：等宽（layoutWeight(1)）—— 两行三列共用同一套列宽，保证严格同列对齐。
+   */
+  @Builder
+  StatCell(label: string, value: string) {
+    Column({ space: 4 }) {
+      Text(label)
+        .fontSize(12).fontColor($r('app.color.muted_text'))
+      Text(value)
+        .fontSize(20).fontColor($r('app.color.text'))
+    }
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Center)
   }
 
   @Builder
@@ -188,6 +235,20 @@ export struct FlashcardPage {
       }
     }
     .width('100%')
+  }
+
+  /**
+   * 主 CTA「开始复习」：先查到期卡片（与 refreshCards 同一数据源 FlashcardService.getDueCards），
+   * 有卡才重置会话并进入复习；无卡时保留本轮统计并给出明确反馈，
+   * 避免「点了没反应」或把刚完成的复习数据清零。
+   */
+  private startReview(): void {
+    const due: BlockData[] = FlashcardService.getDueCards();
+    if (due.length === 0) {
+      promptAction.openToast({ message: '暂无到期卡片，可稍后再复习' }).catch(() => {});
+      return;
+    }
+    this.refreshCards();
   }
 
   private progressPercent(): string {

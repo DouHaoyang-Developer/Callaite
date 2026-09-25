@@ -107,7 +107,8 @@ export struct TabBar {
         .fontWeight(tab.id === this.activeTabId ? FontWeight.Medium : FontWeight.Normal)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .constraintSize({ maxWidth: 150 })
+        // 文本上限 156vp = 页签上限 220 − 固定开销 64（内边距 16 + 图标 14 + 间距 6+6 + 关闭按钮 22）
+        .constraintSize({ maxWidth: 156 })
 
       // 关闭按钮：激活或 hover 时显示（命中区 22vp，避免 18vp 过小难点）
       if (tab.id === this.activeTabId || this.hoveredTabId === tab.id) {
@@ -138,6 +139,10 @@ export struct TabBar {
     // 页签整体高度 40vp：满足官方点击热区下限（原 30vp 不达标），
     // 页签填满标签栏高度也是编辑器标签栏的常规形态
     .height(40)
+    // 宽度随标题自适应（Obsidian 形态）：不使用固定等宽，仅设上下限
+    //   minWidth 88vp = 固定开销 64vp（内边距 16 + 图标 14 + 间距 6+6 + 关闭按钮 22）+ 24vp 文本
+    //   maxWidth 220vp：长标题不挤占整条标签栏，超出交给 Text 省略号截断
+    .constraintSize({ minWidth: 88, maxWidth: 220 })
     .padding({ left: 12, right: 4 })
     .borderRadius(6)
     .margin({ left: 2, right: 2 })
@@ -272,6 +277,9 @@ export struct TabBar {
 
     }
     .width('100%')
+    // 标签栏容器高度 40vp：与页签 40vp 等高（页签才完整贴合栏底、不溢出栏外），
+    // 同时满足官方 40vp 点击热区下限。
+    // 这里是该高度的唯一定义处 —— MainContainer 的 TabBar() 调用点（约 L275）未加任何尺寸修饰符。
     .height(40)
     .padding({ left: 4, right: 0 })
     .backgroundColor($r('app.color.surface1'))

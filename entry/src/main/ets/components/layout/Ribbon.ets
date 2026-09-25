@@ -61,6 +61,13 @@ export struct Ribbon {
     items[3] = { key: 'Whiteboards', icon: 'layout-grid', label: t('ribbon_whiteboard'), action: 'route', route: 'Whiteboards' };
     items[4] = { key: 'Flashcards', icon: 'stack-2', label: t('ribbon_flashcards'), action: 'route', route: 'Flashcards' };
     items[5] = { key: 'palette', icon: 'terminal-2', label: t('ribbon_command'), action: 'palette' };
+    // ─── W1（方案三）：活动栏图标列下线后迁入的入口 ───
+    //   原活动栏 44vp 图标列的独有入口统一收敛到 Ribbon 这一条图标条上，
+    //   与 Obsidian「只有一条 Ribbon」的形态一致（见 UI 改造计划 §2.2）。
+    items[6] = { key: 'new', icon: 'file-plus', label: t('new_page'), action: 'newFile' };
+    items[7] = { key: 'Journal', icon: 'calendar', label: t('nav_journals'), action: 'route', route: 'Journal' };
+    items[8] = { key: 'AllPages', icon: 'files', label: t('nav_all_pages'), action: 'route', route: 'AllPages' };
+    items[9] = { key: 'Pdf', icon: 'file', label: 'PDF', action: 'route', route: 'Pdf' };
     return items;
   }
 
@@ -69,6 +76,9 @@ export struct Ribbon {
       AppState.toggleLeftSidebar();
     } else if (item.action === 'palette') {
       AppState.setSearchPanelOpen(true);
+    } else if (item.action === 'newFile') {
+      // 原活动栏「新建」入口（打开新建文件对话框）
+      AppStorage.setOrCreate('callaite_newFileDialogOpen', true);
     } else if (item.action === 'route' && item.route !== undefined) {
       // 订阅限制沿用原导航逻辑（闪卡受限 → 引导升级页）
       if (item.route === 'Flashcards' && !SubscriptionService.canUseFeature('flashcard')) {

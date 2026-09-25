@@ -1,3 +1,4 @@
+import { display } from '@kit.ArkUI';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData } from '../../core/models/Page';
 import { GraphLayout, GraphNode } from './GraphLayout';
@@ -61,7 +62,18 @@ export struct GraphView {
 
   private layout: GraphLayout = new GraphLayout();
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
-  private ctx: CanvasRenderingContext2D | undefined;
+  /**
+   * ⚠️ 必须实例化并作为 Canvas 的入参。
+   * 缺陷复现（2026-09-25 设备实测）：原实现声明为 `CanvasRenderingContext2D | undefined`
+   * 且**从未赋值**，导致
+   *   ① `Canvas(this.ctx)` 收到 undefined → 画布不渲染；
+   *   ② `drawGraph()` 开头的 `if (!this.ctx) return;` 每次都提前返回 → 一个图元都不画。
+   * 现象：头部显示「4 节点 · 0 连线」，但 2260×1358px 的画布内除缩放控件外零元素。
+   */
+  private ctx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
+  /** 画布实测尺寸（vp），由 onAreaChange 同步 —— 用于 clearRect 与布局居中 */
+  /** 屏幕密度（vp→px 换算，用于 canvas 内字号与描边宽度） */
+  private density: number = 2;
   private canvasWidth: number = 800;
   private canvasHeight: number = 600;
 
@@ -84,6 +96,11 @@ export struct GraphView {
   @State private allNamespaces: string[] = [];
 
   aboutToAppear(): void {
+    try {
+      this.density = display.getDefaultDisplaySync().densityPixels;
+    } catch (e) {
+      this.density = 2;
+    }
     this.rebuildLayout();
     const tags = WorkspaceService.getInstance().getAllTags();
     this.allTags = tags;
@@ -273,6 +290,19 @@ export struct GraphView {
           .backgroundColor($r('app.color.surface1'))
           .onReady(() => {
             this.drawGraph();
+          })
+          .onAreaChange((_oldArea: Area, newArea: Area) => {
+            // 同步画布实测尺寸：原先 canvasWidth/Height 恒为默认 800×600，
+            // 与实际画布（平板 1130×679vp）不符 → clearRect 只清局部、图元定位偏移。
+            const w = Number(newArea.width);
+            const h = Number(newArea.height);
+            if (w > 0 && h > 0 && (w !== this.canvasWidth || h !== this.canvasHeight)) {
+              this.canvasWidth = w;
+              this.canvasHeight = h;
+              // 重建布局而非仅重绘：GraphLayout.build(pages, w, h) 以画布尺寸决定
+              // 初始散布范围与斥力中心，尺寸变化后需重新布局才能居中。
+              this.rebuildLayout();
+            }
           })
           .gesture(
             // 缩放（双指）
@@ -469,7 +499,10 @@ export struct GraphView {
 
       // 标签（仅当缩放足够大时显示）
       if (s > 0.5) {
-        ctx.font = '11px sans-serif';
+        // ⚠️ 单位统一：节点坐标按 vp 计算，故字号也必须按 vp 换算为物理 px（density 2.0 → 22px）。
+  //    原写法固定 '11px' 使标签只有设计意图的一半大小（实测标签 ink 9–10px vs 圆点 36px，
+  //    比值 0.28，而 Obsidian 约为 1.0）。
+  ctx.font = (11 * this.density).toString() + 'px sans-serif';
         ctx.fillStyle = '#1A1A1A';
         ctx.textAlign = 'center';
         const label = nodes[i].pageName.length > 12

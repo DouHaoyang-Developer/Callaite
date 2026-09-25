@@ -1,4 +1,5 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { promptAction } from '@kit.ArkUI';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { AppState } from '../../state/AppState';
 import { TablerIcon } from '../common/Icons';
@@ -37,6 +38,14 @@ export struct PdfPage {
 
   private openPdf(fileName: string): void {
     this.selectedFile = fileName;
+  }
+
+  /**
+   * 「导入 PDF」——项目当前未接入系统文件选择器（picker）能力，
+   * 因此给出明确的落盘路径提示，而不是静默失效或臆造不存在的 API。
+   */
+  private showImportHint(): void {
+    promptAction.openToast({ message: '请将 .pdf 放入知识库目录后点击刷新' }).catch(() => {});
   }
 
   private fullPath(fileName: string): string {
@@ -96,6 +105,31 @@ export struct PdfPage {
             Text('将 .pdf 文件放入知识库目录后刷新')
               .fontSize(12)
               .fontColor($r('app.color.muted_text'))
+
+            // 空状态操作区：此前仅有图标 + 两行文案，无任何可点控件（死胡同）。
+            // 主按钮 = 重新扫描知识库目录（复用本页 loadPdfFiles）；次按钮 = 导入路径提示。
+            Row({ space: 12 }) {
+              Button('刷新')
+                .type(ButtonType.Normal)
+                .fontSize(14)
+                .fontColor($r('app.color.on_primary'))
+                .backgroundColor($r('app.color.primary'))
+                .height(40)
+                .borderRadius(6)
+                .padding({ left: 24, right: 24 })
+                .onClick(() => { this.loadPdfFiles(); })
+
+              Button('导入 PDF')
+                .type(ButtonType.Normal)
+                .fontSize(14)
+                .fontColor($r('app.color.text'))
+                .backgroundColor($r('app.color.surface2'))
+                .height(40)
+                .borderRadius(6)
+                .padding({ left: 24, right: 24 })
+                .onClick(() => { this.showImportHint(); })
+            }
+            .margin({ top: 12 })
           }
           .width('100%')
           .layoutWeight(1)

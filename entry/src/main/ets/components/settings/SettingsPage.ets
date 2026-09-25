@@ -76,10 +76,31 @@ const SETTING_CATEGORIES: SettingCategory[] = [
   { key: 'about', icon: 'bulb', label: '关于' }
 ];
 
+/**
+ * SettingGroup —— 左列分组（组标题 + 组内分类 key）。
+ * 只描述分组归属，分类对象仍从 SETTING_CATEGORIES 按序取，避免重复定义。
+ */
+interface SettingGroup {
+  title: string;
+  keys: string[];
+}
+
+/**
+ * 左列分组划分（对齐 Obsidian 设置窗口左栏「选项 / 核心插件」两级结构）：
+ *  - 选项：应用自身的偏好与账号配置（外观与语言 / 编辑器 / 快捷键 / 同步 / 账户）
+ *  - 扩展与信息：扩展能力与数据、版本信息（插件 / 数据 / 关于）
+ */
+const SETTING_GROUPS: SettingGroup[] = [
+  { title: '选项', keys: ['interface', 'editor', 'shortcuts', 'sync', 'account'] },
+  { title: '扩展与信息', keys: ['plugins', 'data', 'about'] }
+];
+
 @Component
 export struct SettingsPage {
   /** 当前显示的设置分类（Obsidian 式一次一个分类） */
   @State activeCategory: string = 'interface';
+  /** 左列「搜索设置」输入内容：非空时只显示 label 命中的分类（包含匹配、忽略大小写） */
+  @State settingsQuery: string = '';
   @State selectedTheme: string = '';
   @State selectedLanguage: string = '';
   @State fontSizeIndex: number = 3;
@@ -170,6 +191,61 @@ export struct SettingsPage {
       }
     }
     return 0;
+  }
+
+  // ─── 左列「搜索设置」过滤 ───
+
+  /** 搜索框是否有有效输入（去除首尾空白后非空）。 */
+  private hasQuery(): boolean {
+    return this.settingsQuery.trim().length > 0;
+  }
+
+  /** 把分组定义解析为分类数组，顺序沿用 SETTING_CATEGORIES。 */
+  private groupCategories(group: SettingGroup): SettingCategory[] {
+    const result: SettingCategory[] = [];
+    for (let i = 0; i < SETTING_CATEGORIES.length; i++) {
+      const cat = SETTING_CATEGORIES[i];
+      for (let j = 0; j < group.keys.length; j++) {
+        if (group.keys[j] === cat.key) {
+          result.push(cat);
+          break;
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * 按 settingsQuery 过滤某个分组：label 包含匹配、忽略大小写。
+   * 查询为空时返回该组全部分类。
+   */
+  private filterCategories(group: SettingGroup): SettingCategory[] {
+    const cats = this.groupCategories(group);
+    const query = this.settingsQuery.trim().toLowerCase();
+    if (query.length === 0) {
+      return cats;
+    }
+    const result: SettingCategory[] = [];
+    for (let i = 0; i < cats.length; i++) {
+      if (cats[i].label.toLowerCase().indexOf(query) >= 0) {
+        result.push(cats[i]);
+      }
+    }
+    return result;
+  }
+
+  /** 是否有任意分类命中搜索（用于「无匹配设置项」提示）。 */
+  private hasAnyMatch(): boolean {
+    const query = this.settingsQuery.trim().toLowerCase();
+    if (query.length === 0) {
+      return true;
+    }
+    for (let i = 0; i < SETTING_CATEGORIES.length; i++) {
+      if (SETTING_CATEGORIES[i].label.toLowerCase().indexOf(query) >= 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -272,28 +348,61 @@ export struct SettingsPage {
       .width('100%')
       .padding({ top: 24, bottom: 12, left: 24, right: 24 })
 
-      // ─── 双栏：左分类列表 + 右分类内容（对齐 Obsidian 设置窗口，图12）───
+      // ─── 双栏：左搜索 + 分组分类列表｜右分类内容（对齐 Obsidian 设置窗口，图12）───
       Row({ space: 0 }) {
-        // 左：分类列表
+        // 左：搜索设置 + 分组分类列表
         Column({ space: 2 }) {
-          ForEach(SETTING_CATEGORIES, (cat: SettingCategory) => {
-            Row({ space: 10 }) {
-              TablerIcon(cat.icon, 16,
-                this.activeCategory === cat.key ? $r('app.color.primary') : $r('app.color.icon_color'))
-              Text(cat.label)
-                .fontSize(13)
-                .fontColor(this.activeCategory === cat.key ? $r('app.color.primary') : $r('app.color.text'))
-                .layoutWeight(1)
-            }
+          // 搜索设置：高 32vp、圆角 6、底色 surface2、字号 12.5；
+          // 父列已有 8vp 左右内边距（与分类项对齐），输入框内部再留 8vp 文字内边距
+          TextInput({ placeholder: '搜索设置', text: this.settingsQuery })
             .width('100%')
-            .height(36)
-            .padding({ left: 12, right: 12 })
+            .height(32)
             .borderRadius(6)
-            .backgroundColor(this.activeCategory === cat.key ? $r('app.color.surface2') : Color.Transparent)
-            .onClick(() => {
-              this.activeCategory = cat.key;
+            .backgroundColor($r('app.color.surface2'))
+            .fontSize(12.5)
+            .fontColor($r('app.color.text'))
+            .placeholderFont({ size: 12.5 })
+            .placeholderColor($r('app.color.muted_text'))
+            .caretColor($r('app.color.primary'))
+            .padding({ left: 8, right: 8 })
+            .margin({ bottom: 4 })
+            .onChange((value: string) => {
+              this.settingsQuery = value;
             })
-          }, (cat: SettingCategory) => cat.key)
+
+          // 无命中提示
+          if (this.hasQuery() && !this.hasAnyMatch()) {
+            Text('无匹配设置项')
+              .fontSize(12)
+              .fontColor($r('app.color.muted_text'))
+              .width('100%')
+              .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+          }
+
+          // 分组：组标题 + 组内分类（搜索时隐藏空组）
+          ForEach(SETTING_GROUPS, (group: SettingGroup) => {
+            if (this.filterCategories(group).length > 0) {
+              this.GroupHeader(group.title)
+              ForEach(this.filterCategories(group), (cat: SettingCategory) => {
+                Row({ space: 10 }) {
+                  TablerIcon(cat.icon, 16,
+                    this.activeCategory === cat.key ? $r('app.color.primary') : $r('app.color.icon_color'))
+                  Text(cat.label)
+                    .fontSize(13)
+                    .fontColor(this.activeCategory === cat.key ? $r('app.color.primary') : $r('app.color.text'))
+                    .layoutWeight(1)
+                }
+                .width('100%')
+                .height(36)
+                .padding({ left: 12, right: 12 })
+                .borderRadius(6)
+                .backgroundColor(this.activeCategory === cat.key ? $r('app.color.surface2') : Color.Transparent)
+                .onClick(() => {
+                  this.activeCategory = cat.key;
+                })
+              }, (cat: SettingCategory) => cat.key)
+            }
+          }, (group: SettingGroup) => group.title)
         }
         .width(150)
         .height('100%')
@@ -508,10 +617,10 @@ export struct SettingsPage {
               .alignItems(HorizontalAlign.Start)
             } else if (this.activeCategory === 'plugins') {
               Column({ space: 4 }) {
-          // ─── 插件 ───
+          // ─── 插件（三段式示范：加粗标题 + 11px 灰色说明 + 右侧开关）───
           this.SectionHeader('plugins')
-          ForEach(this.plugins, (p: PluginInfo) => {
-            this.PluginRow(p)
+          ForEach(this.plugins, (p: PluginInfo, index: number) => {
+            this.PluginRow(p, index === this.plugins.length - 1)
           }, (p: PluginInfo) => p.id)
 
           this.SectionDivider()
@@ -572,6 +681,11 @@ export struct SettingsPage {
       }
       .layoutWeight(1)
       .width('100%')
+      // ⚠️ 顶对齐必须加在**父 Row** 上：Row 的默认 alignItems 为 VerticalAlign.Center，
+      //    右侧 Scroll 的 layoutWeight 只作用于主轴（宽度），交叉轴高度不足时整列会被
+      //    垂直居中 —— 实测块中心 y=1057px 恰为内容区中心、页头下空 173vp。
+      //    仅给 Scroll 加 .align(Alignment.TopStart) 无效（那是 Stack 的属性）。
+      .alignItems(VerticalAlign.Top)
     }
     .width('100%')
     .height('100%')
@@ -590,6 +704,25 @@ export struct SettingsPage {
       .letterSpacing(0.8)
       .width('100%')
       .padding({ left: 4, top: 4, bottom: 6 })
+  }
+
+  /**
+   * 左列分组标题 —— 行高 24vp、字号 11、弱化色、左内边距 12（与分类项文字对齐）。
+   */
+  @Builder
+  GroupHeader(title: string) {
+    Row() {
+      Text(title)
+        .fontSize(11)
+        .fontColor($r('app.color.muted_text'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .width('100%')
+    .height(24)
+    .padding({ left: 12, right: 12 })
+    .alignItems(VerticalAlign.Center)
+    .margin({ top: 6 })
   }
 
   @Builder
@@ -655,36 +788,57 @@ export struct SettingsPage {
     })
   }
 
+  /**
+   * 插件行 —— 三段式：加粗标题 + 11px 灰色说明 + 右侧开关（对齐 Obsidian 设置项）。
+   * 说明文字直接取 CallaitePlugin.description（项目内置插件均有真实说明），不额外编造。
+   */
   @Builder
-  PluginRow(p: PluginInfo) {
-    Row({ space: 10 }) {
-      Column({ space: 2 }) {
-        Text(p.name)
-          .fontSize(14)
-          .fontColor($r('app.color.text'))
-        Text(p.description)
-          .fontSize(11)
-          .fontColor($r('app.color.muted_text'))
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      Toggle({ type: ToggleType.Switch, isOn: p.enabled })
-        .selectedColor($r('app.color.primary'))
-        .onChange((on: boolean) => {
-          const pm = PluginManager.getInstance();
-          if (on) {
-            pm.enable(p.id);
-          } else {
-            pm.disable(p.id);
+  PluginRow(p: PluginInfo, isLast: boolean) {
+    Column({ space: 0 }) {
+      Row({ space: 12 }) {
+        Column({ space: 3 }) {
+          Text(p.name)
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          if (p.description.length > 0) {
+            Text(p.description)
+              .fontSize(11)
+              .fontColor($r('app.color.muted_text'))
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
-          this.refreshPlugins();
-        })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        Toggle({ type: ToggleType.Switch, isOn: p.enabled })
+          .selectedColor($r('app.color.primary'))
+          .onChange((on: boolean) => {
+            const pm = PluginManager.getInstance();
+            if (on) {
+              pm.enable(p.id);
+            } else {
+              pm.disable(p.id);
+            }
+            this.refreshPlugins();
+          })
+      }
+      .width('100%')
+      .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+      .alignItems(VerticalAlign.Center)
+
+      // 行间细分隔线（最后一行不画，避免与区块留白叠加）
+      if (!isLast) {
+        Divider()
+          .color($r('app.color.border'))
+          .strokeWidth(1)
+          .margin({ left: 12, right: 12 })
+      }
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
   }
 
   // ─── 外观 / 语言（保留原有） ───

@@ -96,6 +96,10 @@ export class FileRepository {
 
   /**
    * 读取文本文件（同步）。
+   *
+   * ⚠️ 注意：读取异常会被吞掉并返回空串，因此「返回空串」有两种可能 ——
+   * ① 文件确实是空的；② 读取失败。调用方若需区分，请配合 `hasContent()` 使用
+   * （见 `DataStore.loadPageFromFile`）。
    */
   readTextSync(path: string): string {
     try {
@@ -103,6 +107,18 @@ export class FileRepository {
     } catch (e) {
       console.error('[FileRepository] Failed to read file: ' + path, e);
       return '';
+    }
+  }
+
+  /**
+   * 文件是否存在且大小 > 0 —— 用于区分「空文件」与「读取失败」。
+   */
+  hasContent(path: string): boolean {
+    try {
+      const st = fs.statSync(path);
+      return st.size > 0;
+    } catch (e) {
+      return false;
     }
   }
 

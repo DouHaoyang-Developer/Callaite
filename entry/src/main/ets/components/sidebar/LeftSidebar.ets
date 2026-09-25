@@ -45,6 +45,10 @@ export struct LeftSidebar {
   @State hoveredViewIcon: string = '';
   @State hoveredStrip: string = '';
   @State hoveredTool: string = '';
+  /** 方案三（W1）：侧栏视图 —— 'files' | 'search' | 'bookmarks' | 'tags' */
+  @State sidebarView: string = 'files';
+  /** 标签视图数据源（切入标签视图时刷新） */
+  @State allTags: string[] = [];
   /** 文件树排序方向：false=名称升序，true=名称降序（对齐 Obsidian 左栏排序按钮） */
   @StorageLink('callaite_sidebarSortDesc') sortDesc: boolean = false;
   // 分组折叠态（持久化，Logseq sidebar-content-group）
@@ -117,38 +121,16 @@ export struct LeftSidebar {
 
   build() {
     Row({ space: 0 }) {
-      // ─── 窄图标活动栏（44vp）───
-      Column({ space: 2 }) {
-        this.StripIcon('file-plus', 'strip_new', false, (): void => {
-          AppStorage.setOrCreate('callaite_newFileDialogOpen', true);
-        })
-        ForEach(this.getNavItems(), (item: NavItem) => {
-          this.StripIcon(item.iconName, 'nav_' + item.key, this.currentPage === item.key, (): void => {
-            AppState.setCurrentPage(item.key);
-          })
-        }, (item: NavItem) => 'nav_' + item.key)
-        Blank()
-        this.StripIcon('star', 'strip_fav', !this.collapsedFavorites, (): void => {
-          this.toggleSection('favorites');
-        })
-        this.StripIcon('database', 'strip_vault', false, (): void => {
-          AppStorage.setOrCreate('callaite_vaultSwitcherOpen', true);
-        })
-        this.StripIcon('settings', 'strip_settings', false, (): void => {
-          if (this.isCompact()) {
-            AppState.setLeftSidebarOpen(false);
-          }
-          AppState.setCurrentPage('Settings');
-        })
-      }
-      .width(44)
-      .height('100%')
-      .padding({ top: 8, bottom: 8 })
-      .border({ width: { right: 1 }, color: $r('app.color.border') })
-      .backgroundColor($r('app.color.surface1'))
-
-      // ─── 右：资源管理器面板（搜索框 + 收藏/最近 + 文件树占满剩余空间）───
+      // ─── 方案三（W1）：44vp 活动栏图标列已下线，面板独占侧栏宽度 ───
+      //   原图标列入口去向：新建 → 顶部操作行；仓库 → 顶部操作行；
+      //   收藏折叠 → 区段标题自带折叠；设置 → Ribbon 底部；
+      //   Journal/AllPages/Pdf/图谱/白板/闪卡 → Ribbon（见 Ribbon.ets）。
+      //   侧栏总宽仍为 SIDEBAR_DEFAULT(260vp)，去掉图标列后面板 216vp → 260vp
+      //   （计划 §2.2 目标 240–260vp，落在区间上沿）。
       Column({ space: 0 }) {
+        this.ViewSwitcher()
+
+        if (this.sidebarView !== 'tags') {
         Row({ space: 8 }) {
           TablerIcon('search', 14, $r('app.color.muted_text'))
           Text('搜索或开始搜索...')
@@ -166,23 +148,37 @@ export struct LeftSidebar {
         .onClick(() => {
           AppState.setSearchPanelOpen(true);
         })
-
-        this.SectionHeader(t('favorites'), 'favorites', this.collapsedFavorites)
-        if (!this.collapsedFavorites) {
-          ForEach(this.favorites, (name: string) => { this.PageLink(name); }, (name: string) => name)
-          if (this.favorites.length === 0) this.EmptyHint(t('empty_favorites_hint'))
         }
-        this.SectionSpacer()
 
-        this.SectionHeader(t('recent'), 'recent', this.collapsedRecent)
-        if (!this.collapsedRecent) {
-          ForEach(this.recent.slice(0, 8), (name: string) => { this.PageLink(name); }, (name: string) => name)
-          if (this.recent.length === 0) this.EmptyHint(t('empty_recent_hint'))
+        if (this.sidebarView === 'files' || this.sidebarView === 'bookmarks') {
+          this.SectionHeader(t('favorites'), 'favorites', this.collapsedFavorites)
+          if (!this.collapsedFavorites) {
+            ForEach(this.favorites, (name: string) => { this.PageLink(name); }, (name: string) => name)
+            if (this.favorites.length === 0) this.EmptyHint(t('empty_favorites_hint'))
+          }
+          this.SectionSpacer()
         }
-        this.SectionSpacer()
 
-        PageTree()
-          .layoutWeight(1)
+        if (this.sidebarView === 'files') {
+          this.SectionHeader(t('recent'), 'recent', this.collapsedRecent)
+          if (!this.collapsedRecent) {
+            ForEach(this.recent.slice(0, 8), (name: string) => { this.PageLink(name); }, (name: string) => name)
+            if (this.recent.length === 0) this.EmptyHint(t('empty_recent_hint'))
+          }
+          this.SectionSpacer()
+
+          PageTree()
+            .layoutWeight(1)
+        }
+
+        if (this.sidebarView === 'tags') {
+          this.TagListView()
+        }
+
+        if (this.sidebarView === 'search') {
+          this.EmptyHint('在上方搜索框中检索页面与内容')
+          Blank()
+        }
       }
       .layoutWeight(1)
       .height('100%')
@@ -191,6 +187,110 @@ export struct LeftSidebar {
     .height('100%')
   }
 
+  /**
+   * 侧栏视图切换器（方案三 · W1）—— Obsidian 式：侧栏顶部一行视图标签，
+   * 取代原先占据 44vp 的第二条图标列。
+   */
+  @Builder
+  ViewSwitcher() {
+    Row({ space: 2 }) {
+      this.ViewChip('files', 'file-text', '文件')
+      this.ViewChip('search', 'search', '搜索')
+      this.ViewChip('star', 'bookmark', '书签')
+      this.ViewChip('tag', 'tags', '标签')
+      Blank()
+      this.IconAction('file-plus', (): void => {
+        AppStorage.setOrCreate('callaite_newFileDialogOpen', true);
+      })
+      this.IconAction('database', (): void => {
+        AppStorage.setOrCreate('callaite_vaultSwitcherOpen', true);
+      })
+    }
+    .width('100%')
+    .height(36)
+    .padding({ left: 6, right: 6 })
+    .border({ width: { bottom: 1 }, color: $r('app.color.border') })
+  }
+
+  @Builder
+  ViewChip(icon: string, key: string, label: string) {
+    Row({ space: 3 }) {
+      TablerIcon(icon, 12, this.sidebarView === key ? $r('app.color.primary') : $r('app.color.muted_text'))
+      Text(label)
+        .fontSize(11.5)
+        .fontColor(this.sidebarView === key ? $r('app.color.primary') : $r('app.color.muted_text'))
+        .maxLines(1)
+    }
+    .height(26)
+    // 内边距 6→4：4 chip + 2 操作图标在 260vp 面板内原本越界 14vp（实测右缘 639px vs 面板 612px）
+    .padding({ left: 4, right: 4 })
+    .borderRadius(6)
+    // ⚠️ 选中态配色：surface2（#F4F5F7 级近白灰）与面板底色几乎无差，实测 20×20 区域众数色
+    //    为 #FEFFFF/#F4F5F7/#F6F7F9 —— 用户在文件视图看不出当前视图。改用与 Ribbon 选中底
+    //    一致的紫色低透明（#14705DCF = 主色 8%），保证选中可辨且不喧宾夺主。
+    .backgroundColor(this.sidebarView === key ? '#14705DCF' : Color.Transparent)
+    .animation({ duration: 140, curve: Curve.EaseOut })
+    .onClick(() => {
+      this.sidebarView = key;
+      if (key === 'tags') {
+        this.allTags = WorkspaceService.getInstance().getAllTags();
+      }
+    })
+  }
+
+  @Builder
+  IconAction(icon: string, onTap: () => void) {
+    Row() {
+      TablerIcon(icon, 15, $r('app.color.icon_color'))
+    }
+    .width(28)
+    .height(28)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(6)
+    .onClick(() => {
+      onTap();
+    })
+  }
+
+  /** 标签视图：列出全库标签（点击进入搜索面板） */
+  @Builder
+  TagListView() {
+    Column({ space: 0 }) {
+      Row() {
+        Text('标签')
+          .fontSize(12)
+          .fontColor($r('app.color.muted_text'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .padding({ left: 12, right: 12, top: 8, bottom: 4 })
+
+      if (this.allTags.length === 0) {
+        this.EmptyHint('本库暂无标签（在块中输入 #标签 即可创建）')
+      } else {
+        ForEach(this.allTags, (tag: string) => {
+          Row({ space: 6 }) {
+            TablerIcon('tag', 13, $r('app.color.muted_text'))
+            Text('#' + tag)
+              .fontSize(13)
+              .fontColor($r('app.color.text'))
+              .maxLines(1)
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .height(30)
+          .padding({ left: 12, right: 10 })
+          .onClick(() => {
+            AppState.setSearchPanelOpen(true);
+          })
+        }, (tag: string) => tag)
+      }
+      Blank()
+    }
+    .layoutWeight(1)
+    .width('100%')
+  }
   /**
    * 活动栏图标按钮（40vp 热区 + 选中高亮 + 悬停/按压三态）。
    */

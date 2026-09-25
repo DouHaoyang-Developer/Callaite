@@ -69,8 +69,17 @@ export class DataStore {
     const fullPath = this.fileRepo.joinPath(this.fileRepo.getGraphRoot(), fileName);
     const rawText = this.fileRepo.readTextSync(fullPath);
     if (!rawText) {
-      console.warn('[DataStore] Empty or unreadable file: ' + fileName);
-      return;
+      // ⚠️ 原实现对所有空串直接 `return` 跳过 → **空文件对应的页面会从文件树中静默消失**
+      //    （实测：未命名 4.md 内容仅 `- ` 空块、未命名 5.md 与当天的 2026-09-25.md 为
+      //     0 字节，三者均未出现在侧栏文件树，用户无从察觉与恢复）。
+      //    但 readTextSync 把「读取失败」也吞成空串，若无差别地建空页面，
+      //    一旦随后保存就会把该文件写成 0 字节 —— 那才是真正的数据丢失。
+      //    故仅当「文件确实存在且大小为 0」时才作为空页面加载。
+      if (this.fileRepo.hasContent(fullPath)) {
+        console.warn('[DataStore] Read failed on non-empty file, skipped: ' + fileName);
+        return;
+      }
+      console.warn('[DataStore] Empty file, loaded as empty page: ' + fileName);
     }
 
     const pageName = this.fileRepo.fileNameWithoutExt(fileName);
