@@ -46,8 +46,9 @@ export class ContentRenderer {
     if (text.startsWith('```') && text.endsWith('```') && text.length > 6) {
       let inner = text.substring(3, text.length - 3);
       const nlIdx = inner.indexOf('\n');
+      let lang = '';
       if (nlIdx > 0) {
-        const lang = inner.substring(0, nlIdx).trim();
+        lang = inner.substring(0, nlIdx).trim();
         if (lang === 'mermaid') {
           const seg: ContentSegment = { text: inner.substring(nlIdx + 1), type: SegmentType.MERMAID };
           const result: ContentSegment[] = [];
@@ -55,8 +56,15 @@ export class ContentRenderer {
           return result;
         }
         inner = inner.substring(nlIdx + 1);
+      } else if (nlIdx === 0) {
+        // 无语言围栏（``` 后直接换行）：去掉紧跟围栏的换行，避免高亮渲染出空首行
+        inner = inner.substring(1);
       }
-      const seg: ContentSegment = { text: inner, type: SegmentType.CODE };
+      // U3.5：围栏语言**必须随段携带**，否则 CodeBlock 无法做语法高亮。
+      // 之前 lang 被直接丢弃（只用于判定 mermaid）。extra 原仅 LINK 段使用，此处复用无冲突。
+      // 约定：extra !== undefined ⇔ 本段是**整块围栏代码块**；
+      //       行内 `code`（tryMatchAt 的 ` 分支）不带 extra，两者据此区分。
+      const seg: ContentSegment = { text: inner, type: SegmentType.CODE, extra: lang };
       const result: ContentSegment[] = [];
       result.push(seg);
       return result;
@@ -80,8 +88,25 @@ export class ContentRenderer {
         }
         if (nextMatch > pos) {
           segments.push({ text: text.substring(pos, nextMatch), type: SegmentType.TEXT });
+          pos = nextMatch;
+        } else {
+          // ────────── P0 死循环兜底（既有缺陷，非本次引入）──────────
+          // 归因：git blame → e5fc508「基础功能实现及应用框架构建」(2026-08-03) 首次引入，
+          //       之后 3 次改版（3a03508 / 84aeb67）均未触碰这 4 行，故与 U3.5 无关。
+          //
+          // 触发条件（精确表述）：
+          //   块内容中出现「模式起始字符」(` [ ( * = ~ # ! > $) 之一，且该字符处
+          //   tryMatchAt 因**闭合定界符缺失**而无法成段（如孤立的 `!` `=` `*` `(` `~` `$` `[`），
+          //   同时 findPatternStarts 把 pos 自身报为候选 → nextMatch === pos → pos 不前进。
+          //   等价说法：**任何含未配对定界符字符的块**都会让 parse() 同步死循环、挂死 UI 线程。
+          //   （实测：`![[嵌入页]]` 使 com.example.callaite 单核 123% CPU、首帧永不渲染）
+          //
+          // 兜底语义：把该字符当普通文本消费掉，逐字前进。
+          // 零回归论证：能进入本分支 ⇔ 原实现 pos 不前进 ⇒ 原实现**永不返回**。
+          //   因此对任何「原本能返回」的输入，执行路径与输出**逐字节不变**。
+          segments.push({ text: text.substring(pos, pos + 1), type: SegmentType.TEXT });
+          pos = pos + 1;
         }
-        pos = nextMatch;
       }
     }
 
@@ -93,16 +118,19 @@ export class ContentRenderer {
 
     const ch = text.charAt(pos);
 
-    // [[page]] or ![[page]]
+    // [[page]]（PAGE_REF）
     if (pos + 1 < text.length && text.charAt(pos) === '[' && text.charAt(pos + 1) === '[') {
       const end = text.indexOf(']]', pos + 2);
       if (end > pos + 2) {
-        const isEmbed = pos > 0 && text.charAt(pos - 1) === '!';
+        // ⚠️ P0 兜底修复的**配套保险**：`![[页]]` 的 PAGE_EMBED 分支原本因死循环而不可达，
+        //    修好死循环后它会**第一次变成可达代码**（`!` 被兜底消费后，pos 落在 `[[` 且前一字符是 `!`）。
+        //    嵌入渲染链（BlockView.hasEmbedSegments/EmbedBlocks）从未被任何输入执行过、未经真机验证，
+        //    按「不放出未验证渲染路径」处置：此处**显式拦截**，一律降级为已验证的 PAGE_REF。
+        //    视觉结果：`![[页]]` 原样显示为 `!` + `[[页]]`（可点击跳转），不崩、不白屏。
+        //    如需启用嵌入，请单独开任务验证 EmbedBlocks 后再改回 isEmbed 判定。
         const inner = text.substring(pos + 2, end);
-        const segType = isEmbed ? SegmentType.PAGE_EMBED : SegmentType.PAGE_REF;
-        const consumed = end + 2 - pos;
-        const seg: ContentSegment = { text: inner, type: segType };
-        const result: MatchResult = { segment: seg, consumed: consumed };
+        const seg: ContentSegment = { text: inner, type: SegmentType.PAGE_REF };
+        const result: MatchResult = { segment: seg, consumed: end + 2 - pos };
         return result;
       }
     }
@@ -122,16 +150,14 @@ export class ContentRenderer {
       }
     }
 
-    // ((uuid)) or !((uuid))
+    // ((uuid))（BLOCK_REF）
     if (pos + 1 < text.length && text.charAt(pos) === '(' && text.charAt(pos + 1) === '(') {
       const end = text.indexOf('))', pos + 2);
       if (end > pos + 2) {
-        const isEmbed = pos > 0 && text.charAt(pos - 1) === '!';
+        // ⚠️ 同上：`!((uuid))` 的 BLOCK_EMBED 分支同样保持不可达，显式降级为已验证的 BLOCK_REF。
         const inner = text.substring(pos + 2, end);
-        const segType = isEmbed ? SegmentType.BLOCK_EMBED : SegmentType.BLOCK_REF;
-        const consumed = end + 2 - pos;
-        const seg: ContentSegment = { text: inner, type: segType };
-        const result: MatchResult = { segment: seg, consumed: consumed };
+        const seg: ContentSegment = { text: inner, type: SegmentType.BLOCK_REF };
+        const result: MatchResult = { segment: seg, consumed: end + 2 - pos };
         return result;
       }
     }
