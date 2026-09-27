@@ -1,86 +1,97 @@
 import { webview } from '@kit.ArkWeb';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ThemeManager } from '../common/ThemeManager';
+import { TablerIcon } from '../common/Icons';
+import { RawfileWebBridge } from '../../utils/RawfileWebBridge';
+
+/** 注入给 libs/highlight/page.html 的载荷（显式 interface —— ArkTS 不允许无类型对象字面量） */
+interface HighlightPayload {
+  code: string;
+  language: string;
+  dark: boolean;
+}
+
+/** 承载页加载失败时的可见诊断（不允许静默白屏） */
+interface HighlightLoadError {
+  message: string;
+  code: number;
+  mainFrame: boolean;
+}
+
+const CODE_BLOCK_TAG: string = 'Callaite/CodeBlock';
 
 /**
  * CodeBlock — 代码块语法高亮渲染组件。
- * 使用 WebView + highlight.js (CDN) 实现代码高亮。
- *  - 亮色主题: github.min.css
- *  - 暗色主题: github-dark.min.css
- * 自动跟随应用主题；顶部栏显示语言名与复制按钮。
- * WebView 高度通过 JS 桥接回传实际内容高度实现自适应。
+ *
+ * U3.5 改造：highlight.js 由 CDN 改为**随包分发的 rawfile**，离线可用。
+ *  - 承载页：`rawfile/libs/highlight/page.html`（同目录相对引用 highlight.min.js 与两个主题 CSS）
+ *  - 亮色主题: github.min.css / 暗色主题: github-dark.min.css，由承载页 JS 切换 `<link disabled>`
+ *  - 内容：不再拼 HTML 字符串，改为 `runJavaScript` 注入单个 JSON 文档（见 RawfileWebBridge）
+ *  - WebView 高度通过 JS 桥接回传实际内容高度实现自适应（桥接协议未变）
  */
 @Component
 export struct CodeBlock {
   @Prop @Watch('onInputChanged') code: string = '';
   @Prop @Watch('onInputChanged') language: string = '';
-  @State private htmlContent: string = '';
   @State private webHeight: number = 200;
   @State private copied: boolean = false;
+  @State private loadError: string = '';
   @StorageLink('callaite_themeMode') @Watch('onThemeChanged') private themeMode: string = 'system';
   @StorageLink('callaite_systemColorMode') @Watch('onThemeChanged') private systemColorMode: number = 0;
   private controller: webview.WebviewController = new webview.WebviewController();
   private bridgeObj: CodeBlockBridge = new CodeBlockBridge(this);
-
-  aboutToAppear(): void {
-    this.htmlContent = this.buildHtml();
-  }
+  /** 承载页是否已 onPageEnd：未就绪前 runJavaScript 会打到上一个文档，必须守住 */
+  private pageReady: boolean = false;
 
   onInputChanged(): void {
-    this.htmlContent = this.buildHtml();
+    this.pushContent();
   }
 
   onThemeChanged(): void {
-    this.htmlContent = this.buildHtml();
+    this.pushContent();
   }
 
   /**
-   * 转义 HTML 特殊字符，防止代码内容破坏 HTML 结构。
+   * 把「代码 + 语言 + 明暗」作为一个 JSON 文档推给承载页。
+   * 转义完全交给 JSON.stringify + JS 字符串字面量包装，不手拼字符串；
+   * 载荷超过 60KB 由 RawfileWebBridge 自动分块串行投递。
    */
-  escapeHtml(str: string): string {
-    return str
-      .replace(new RegExp('&', 'g'), '&amp;')
-      .replace(new RegExp('<', 'g'), '&lt;')
-      .replace(new RegExp('>', 'g'), '&gt;')
-      .replace(new RegExp('"', 'g'), '&quot;')
-      .replace(new RegExp("'", 'g'), '&#39;');
-  }
-
-  /**
-   * 构建完整 HTML 文档：加载 highlight.js 与主题 CSS，包裹代码并触发高亮。
-   */
-  buildHtml(): string {
-    const dark: boolean = ThemeManager.isDarkMode();
-    const themeName: string = dark ? 'github-dark' : 'github';
-    const bg: string = dark ? '#0d1117' : '#f6f8fa';
-    const fg: string = dark ? '#c9d1d9' : '#24292f';
+  pushContent(): void {
+    if (!this.pageReady) {
+      return;
+    }
     const lang: string = CodeBlock.sanitizeLanguage(this.language);
-    const langClass: string = 'language-' + lang;
-    const escaped: string = this.escapeHtml(this.code);
-
-    return `<!DOCTYPE html><html><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/${themeName}.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{background:${bg};color:${fg};padding:12px 14px;-webkit-overflow-scrolling:touch;}
-pre{margin:0;padding:0;background:transparent;white-space:pre-wrap;word-break:break-word;}
-code{font-family:'SF Mono','JetBrains Mono',Monaco,Consolas,monospace;font-size:13px;line-height:1.5;background:transparent;padding:0;}
-</style></head><body>
-<pre><code class="${langClass}">${escaped}</code></pre>
-<script>
-try{hljs.highlightAll();}catch(e){}
-function notifyHeight(){
-  var h=document.body.scrollHeight;
-  if(window.nativeProxy&&h>0){window.nativeProxy.onHeightReady(h);}
-}
-window.addEventListener('load',function(){setTimeout(notifyHeight,50);});
-setTimeout(notifyHeight,200);
-</script>
-</body></html>`;
+    const payload: HighlightPayload = {
+      code: this.code,
+      language: lang,
+      dark: ThemeManager.isDarkMode()
+    };
+    RawfileWebBridge.push(this.controller, JSON.stringify(payload), CODE_BLOCK_TAG);
   }
+
+  /**
+   * 供 JS 桥接对象回填实测内容高度（原实现由 CodeBlockBridge 直接写 private 状态，
+   * 因 CodeBlock 此前从未被任何模块 import、未参与编译而未被发现）。
+   */
+  setWebHeight(height: number): void {
+    if (height > 0) {
+      this.webHeight = height > CodeBlock.MAX_WEB_HEIGHT ? CodeBlock.MAX_WEB_HEIGHT : height;
+    }
+  }
+
+  /**
+   * ⚠️ Web 组件高度上限（承载页自身 max-height:2000px + 内边距，这里留余量）。
+   *
+   * 必须有上限：ArkWeb 把一个「几万像素高」的 Web 组件整块交给渲染器时会超出
+   * surface 尺寸上限而**整片不绘制** —— 实测承载页 29300px / 56600px 高时 Web 全白，
+   * 而页内 DOM、innerHTML 长度、document.body.scrollHeight 全部正常（即内容在、画不出）。
+   * 承载页已用 `#u35-scroll{max-height:2000px;overflow-y:auto}` 封顶并在代码块内部滚动，
+   * 这里再兜一层，保证永远不把超大高度交给 Web。
+   * 影响面：仅 > 约 95 行的超长代码块，改为块内滚动；普通代码块高度行为完全不变。
+   */
+  private static readonly MAX_WEB_HEIGHT: number = 2200;
 
   /**
    * 清洗语言名，仅保留字母/数字/连字符/下划线，防止属性注入。
@@ -139,29 +150,73 @@ setTimeout(notifyHeight,200);
       .backgroundColor($r('app.color.surface1'))
       .border({ width: { bottom: 1 }, color: { bottom: $r('app.color.border') } })
 
-      // 代码高亮渲染区
-      Web({ src: this.htmlContent, controller: this.controller })
+      // 代码高亮渲染区：加载随包 rawfile 承载页（离线，无 CDN）
+      if (this.loadError.length > 0) {
+        // 降级路径：承载页主文档加载失败 → 直接渲染等宽纯文本，不留白块、不静默
+        Column() {
+          Text('语法高亮不可用，已降级为等宽纯文本')
+            .fontSize(11)
+            .fontColor($r('app.color.danger'))
+          Text('rawfile/libs/highlight/page.html 加载失败：' + this.loadError)
+            .fontSize(11)
+            .fontColor($r('app.color.muted_text'))
+            .margin({ top: 2 })
+          Text(this.code)
+            .fontSize(13)
+            .fontFamily('monospace')
+            .lineHeight(20)
+            .fontColor($r('app.color.text'))
+            .width('100%')
+            .textAlign(TextAlign.Start)
+            .margin({ top: 8 })
+        }
         .width('100%')
-        .height(this.webHeight)
-        .backgroundColor($r('app.color.surface1'))
-        .javaScriptAccess(true)
-        .domStorageAccess(true)
-        .javaScriptProxy({
-          object: this.bridgeObj,
-          name: 'nativeProxy',
-          methodList: ['onHeightReady'],
-          controller: this.controller
-        })
-        .onPageEnd(() => {
-          // 页面加载完成后主动测量一次高度
-          try {
-            this.controller.runJavaScript(
-              'setTimeout(function(){if(window.nativeProxy){window.nativeProxy.onHeightReady(document.body.scrollHeight);}},50);'
-            );
-          } catch (_e) {
-            // ignore
-          }
-        })
+        .alignItems(HorizontalAlign.Start)
+        .padding(12)
+        .backgroundColor($r('app.color.surface2'))
+      } else {
+        Web({ src: $rawfile('libs/highlight/page.html'), controller: this.controller })
+          .width('100%')
+          .height(this.webHeight)
+          .backgroundColor($r('app.color.surface1'))
+          .javaScriptAccess(true)
+          .domStorageAccess(true)
+          .javaScriptProxy({
+            object: this.bridgeObj,
+            name: 'nativeProxy',
+            methodList: ['onHeightReady'],
+            controller: this.controller
+          })
+          .onPageEnd(() => {
+            this.pageReady = true;
+            this.loadError = '';
+            // 页面库就绪后再注入内容
+            this.pushContent();
+            // 再主动测量一次高度（内容注入是异步的，第二次兜底）
+            setTimeout(() => {
+              try {
+                this.controller.runJavaScript(
+                  'setTimeout(function(){if(window.nativeProxy){window.nativeProxy.onHeightReady(document.body.scrollHeight);}},50);'
+                );
+              } catch (_e) {
+                // ignore
+              }
+            }, 120);
+          })
+          .onErrorReceive((e) => {
+            const detail: HighlightLoadError = {
+              message: e.error.getErrorInfo(),
+              code: e.error.getErrorCode(),
+              mainFrame: e.request.isMainFrame()
+            };
+            hilog.error(0x0000, CODE_BLOCK_TAG, '承载页资源加载失败 mainFrame=' + detail.mainFrame.toString()
+              + ' code=' + detail.code.toString() + ' info=' + detail.message);
+            if (detail.mainFrame) {
+              this.pageReady = false;
+              this.loadError = 'code ' + detail.code.toString() + ' ' + detail.message;
+            }
+          })
+      }
     }
     .width('100%')
     .borderRadius(6)
@@ -180,8 +235,6 @@ class CodeBlockBridge {
   constructor(parent: CodeBlock) { this.parent = parent; }
 
   onHeightReady(height: number): void {
-    if (height > 0) {
-      this.parent.webHeight = height;
-    }
+    this.parent.setWebHeight(height);
   }
 }

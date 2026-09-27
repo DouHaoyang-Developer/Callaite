@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- U3.5 承载页：highlight.js 语法高亮（离线 rawfile，无 CDN）
+     同目录相对引用 highlight.min.js 与两个主题 CSS（已验证 $rawfile 页面可解析同目录/子目录资源）。 -->
+<link id="u35-light" rel="stylesheet" href="github.min.css">
+<link id="u35-dark" rel="stylesheet" href="github-dark.min.css" disabled>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#f6f8fa;color:#24292f;}
+body.u35-dark{background:#0d1117;color:#c9d1d9;}
+/* ⚠️ 必须给承载页一个高度上限：ArkWeb 把一个「几万像素高」的 Web 组件整块交给渲染器时
+   会超出 surface 尺寸上限而**整片不绘制**（实测 29300px / 56600px 高 = 全白，但页内
+   document.body.scrollHeight 与 innerHTML 长度都正常）。
+   上限 + 内部滚动后：页面高度 ≤ 2024px，超长代码在代码块内部滚动，不再依赖整页滚动。 */
+#u35-scroll{max-height:2000px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:12px 14px;}
+pre{margin:0;padding:0;background:transparent;white-space:pre-wrap;word-break:break-word;}
+code{font-family:'SF Mono','JetBrains Mono',Monaco,Consolas,monospace;font-size:13px;line-height:1.5;background:transparent;padding:0;}
+</style>
+<script src="highlight.min.js"></script>
+<script>
+(function () {
+  var BUF = '';
+  function notifyHeight() {
+    var h = document.body.scrollHeight;
+    if (window.nativeProxy && h > 0) {
+      try { window.nativeProxy.onHeightReady(h); } catch (e) { }
+    }
+  }
+  function applyTheme(dark) {
+    var lt = document.getElementById('u35-light');
+    var dk = document.getElementById('u35-dark');
+    if (lt) { lt.disabled = dark; }
+    if (dk) { dk.disabled = !dark; }
+    if (dark) { document.body.classList.add('u35-dark'); }
+    else { document.body.classList.remove('u35-dark'); }
+  }
+  function render(p) {
+    applyTheme(!!p.dark);
+    var pre = document.getElementById('u35-pre');
+    while (pre.firstChild) { pre.removeChild(pre.firstChild); }
+    var codeEl = document.createElement('code');
+    var lang = typeof p.language === 'string' ? p.language : '';
+    var text = typeof p.code === 'string' ? p.code : '';
+    var hl = window.hljs;
+    var done = false;
+    if (hl && typeof hl.highlight === 'function') {
+      try {
+        if (lang && hl.getLanguage(lang)) {
+          codeEl.innerHTML = hl.highlight(text, { language: lang, ignoreIllegals: true }).value;
+          codeEl.className = 'hljs language-' + lang;
+        } else if (lang && text.length > 0 && text.length < 20000 && typeof hl.highlightAuto === 'function') {
+          // 语言不在本地构建内：退回自动识别（限制体积，避免长代码卡顿）
+          codeEl.innerHTML = hl.highlightAuto(text).value;
+          codeEl.className = 'hljs';
+        } else {
+          codeEl.innerHTML = hl.highlight(text, { language: 'plaintext', ignoreIllegals: true }).value;
+          codeEl.className = 'hljs';
+        }
+        done = true;
+      } catch (e) {
+        if (window.console) { console.error('[U35/highlight] highlight throw: ' + e.message); }
+      }
+    } else if (window.console) {
+      console.error('[U35/highlight] hljs 未加载，降级为纯文本显示');
+    }
+    if (!done) {
+      // 失败也不留白屏：原样显示代码文本
+      codeEl.textContent = text;
+      codeEl.className = '';
+    }
+    pre.appendChild(codeEl);
+    if (window.console) {
+      console.log('[U35/highlight] chars=' + text.length
+        + ' mode=' + (done ? 'hljs' : 'plain')
+        + ' htmlLen=' + codeEl.innerHTML.length
+        + ' bodyH=' + document.body.scrollHeight
+        + ' preH=' + pre.getBoundingClientRect().height);
+    }
+    notifyHeight();
+    setTimeout(notifyHeight, 60);
+  }
+  window.u35Push = function (jsonText) {
+    try { render(JSON.parse(jsonText)); }
+    catch (e) { if (window.console) { console.error('[U35/highlight] push failed: ' + e.message); } }
+  };
+  window.u35Chunk = function (index, total, part) {
+    BUF += part;
+    if (index === total - 1) {
+      var s = BUF; BUF = '';
+      window.u35Push(s);
+    }
+  };
+  window.addEventListener('load', function () { setTimeout(notifyHeight, 50); });
+  setTimeout(notifyHeight, 200);
+})();
+</script>
+</head><body><div id="u35-scroll"><pre id="u35-pre"></pre></div></body></html>

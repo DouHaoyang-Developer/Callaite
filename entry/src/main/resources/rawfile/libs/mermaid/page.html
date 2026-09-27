@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<!-- U3.5 承载页：Mermaid 图表（离线 rawfile，无 CDN）
+     同目录相对引用 mermaid.min.js。
+     注入内容不再走 HTML 实体转义：图表源码经 JSON 传入后直接喂 mermaid.render(text)，
+     失败时以 textContent 原样回退显示，全程不拼 HTML 字符串。 -->
+<script src="mermaid.min.js"></script>
+<style>
+body{margin:8px;padding:0;background:#FCFCFC;}
+body.u35-dark{background:#1C1C1D;}
+svg{max-width:100%;}
+#u35-fallback{color:#1A1A1A;font-family:monospace;font-size:13px;white-space:pre-wrap;padding:8px;margin:0;display:none;}
+body.u35-dark #u35-fallback{color:#E0E0E0;}
+</style>
+<script>
+(function () {
+  var BUF = '';
+  var seq = 0;
+  function applyTheme(dark) {
+    if (dark) { document.body.classList.add('u35-dark'); }
+    else { document.body.classList.remove('u35-dark'); }
+  }
+  function showFallback(text) {
+    var dg = document.getElementById('u35-diagram');
+    var fb = document.getElementById('u35-fallback');
+    dg.style.display = 'none';
+    fb.textContent = text;
+    fb.style.display = 'block';
+  }
+  function initMermaid(dark) {
+    if (!window.mermaid || typeof window.mermaid.render !== 'function') {
+      if (window.console) { console.error('[U35/mermaid] mermaid 未加载（libs/mermaid/mermaid.min.js）'); }
+      return false;
+    }
+    try {
+      window.mermaid.initialize({
+        startOnLoad: false,
+        theme: dark ? 'dark' : 'default',
+        securityLevel: 'strict'
+      });
+      return true;
+    } catch (e) {
+      if (window.console) { console.error('[U35/mermaid] initialize throw: ' + e.message); }
+      return false;
+    }
+  }
+  function render(p) {
+    var dark = !!p.dark;
+    applyTheme(dark);
+    var dg = document.getElementById('u35-diagram');
+    var fb = document.getElementById('u35-fallback');
+    var text = typeof p.diagram === 'string' ? p.diagram : '';
+    while (dg.firstChild) { dg.removeChild(dg.firstChild); }
+    dg.style.display = 'block';
+    fb.style.display = 'none';
+    if (!initMermaid(dark)) {
+      showFallback('[图表渲染失败: mermaid 未加载]\n' + text);
+      return;
+    }
+    var id = 'u35graph' + (seq++);
+    var out = null;
+    try {
+      out = window.mermaid.render(id, text);
+    } catch (e) {
+      if (window.console) { console.error('[U35/mermaid] render throw: ' + e.message); }
+      showFallback(text);
+      return;
+    }
+    if (out && typeof out.then === 'function') {
+      out.then(function (r) {
+        dg.innerHTML = r.svg;
+        if (typeof r.bindFunctions === 'function') { r.bindFunctions(dg); }
+      }).catch(function (e) {
+        if (window.console) { console.error('[U35/mermaid] render rejected: ' + (e && e.message ? e.message : String(e))); }
+        showFallback(text);
+      });
+    } else if (out && out.svg) {
+      dg.innerHTML = out.svg;
+    } else {
+      showFallback(text);
+    }
+  }
+  window.u35Push = function (jsonText) {
+    try { render(JSON.parse(jsonText)); }
+    catch (e) { if (window.console) { console.error('[U35/mermaid] push failed: ' + e.message); } }
+  };
+  window.u35Chunk = function (index, total, part) {
+    BUF += part;
+    if (index === total - 1) {
+      var s = BUF; BUF = '';
+      window.u35Push(s);
+    }
+  };
+})();
+</script>
+</head><body>
+<pre id="u35-fallback"></pre>
+<div id="u35-diagram"></div>
+</body></html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<!-- U3.5 承载页：KaTeX 数学公式（离线 rawfile，无 CDN）
+     同目录相对引用 katex.min.css / katex.min.js；
+     katex.min.css 内部以相对路径 fonts/KaTeX_*.woff2 引用字体，因 CSS 与本页同目录，
+     故解析为 libs/katex/fonts/*（已实测加载成功，字体真实生效）。 -->
+<link rel="stylesheet" href="katex.min.css">
+<script src="katex.min.js"></script>
+<style>
+body{margin:0;background:transparent;}
+#u35-math{padding:2px;font-size:15px;}
+.katex-display{margin:0;}
+</style>
+<script>
+(function () {
+  var BUF = '';
+  function render(p) {
+    var box = document.getElementById('u35-math');
+    var display = !!p.displayMode;
+    box.style.padding = display ? '12px' : '2px';
+    box.style.fontSize = display ? '18px' : '15px';
+    while (box.firstChild) { box.removeChild(box.firstChild); }
+    var tex = typeof p.formula === 'string' ? p.formula : '';
+    if (!window.katex || typeof window.katex.render !== 'function') {
+      box.textContent = '[公式渲染失败: katex 未加载]';
+      if (window.console) { console.error('[U35/katex] katex 未加载（libs/katex/katex.min.js）'); }
+      return;
+    }
+    try {
+      window.katex.render(tex, box, { displayMode: display, throwOnError: false });
+    } catch (e) {
+      box.textContent = '[公式渲染失败]';
+      if (window.console) { console.error('[U35/katex] render throw: ' + e.message); }
+    }
+  }
+  window.u35Push = function (jsonText) {
+    try { render(JSON.parse(jsonText)); }
+    catch (e) { if (window.console) { console.error('[U35/katex] push failed: ' + e.message); } }
+  };
+  window.u35Chunk = function (index, total, part) {
+    BUF += part;
+    if (index === total - 1) {
+      var s = BUF; BUF = '';
+      window.u35Push(s);
+    }
+  };
+})();
+</script>
+</head><body><div id="u35-math"></div></body></html>
