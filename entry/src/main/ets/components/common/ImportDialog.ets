@@ -1,10 +1,11 @@
 import { ImportService } from '../../services/ImportService';
+import { PickerService } from '../../services/PickerService';
 
 /**
  * ImportDialog — 导入对话框。
  *
  * UI：
- *  - 选择导入文件路径（TextInput）
+ *  - 选择待导入文件（系统文件选择器）
  *  - 选项：导入到当前页 / 作为新页面
  *  - 调用 ImportService 对应方法
  *  - 导入成功后显示 Block 数量
@@ -17,16 +18,52 @@ export struct ImportDialog {
   @State message: string = '';
   @State messageType: string = '';
   @State isImporting: boolean = false;
+  /** 系统选择器进行中：防重复拉起并在按钮上给出可见反馈 */
+  @State isPicking: boolean = false;
 
   // 关闭回调
   onClose: () => void = () => {};
+
+  /**
+   * 拉起系统文件选择器选择待导入文件。
+   *
+   * 选中后先把 URI 暂存到应用缓存目录，再把沙箱路径写回 this.filePath，
+   * 后续完全复用原有 doImport() → ImportService 流程（不改导入实现）。
+   */
+  private async pickFile(): Promise<void> {
+    if (this.isPicking) {
+      return;
+    }
+    this.isPicking = true;
+    try {
+      const filters: string[] = ['Markdown 文档|.md,.markdown'];
+      const pick = await PickerService.pickDocuments(filters, 1);
+      if (!pick.success) {
+        if (pick.error.length > 0) {
+          this.showMsg(pick.error, 'error');
+        }
+        return;
+      }
+
+      const staged = PickerService.stageUri(pick.uris[0]);
+      if (staged.length === 0) {
+        this.showMsg('读取所选文件失败，请重试或改用其他文件', 'error');
+        return;
+      }
+      this.filePath = staged;
+      const name = PickerService.fileNameOf(pick.uris[0]);
+      this.showMsg('已选择：' + name, 'info');
+    } finally {
+      this.isPicking = false;
+    }
+  }
 
   /**
    * 执行导入。
    */
   private doImport(): void {
     if (this.filePath.length === 0) {
-      this.showMsg('请输入文件路径', 'error');
+      this.showMsg('请先选择待导入的文件', 'error');
       return;
     }
     if (this.mode === 'current' && this.pageName.length === 0) {
@@ -88,12 +125,26 @@ export struct ImportDialog {
       }
       .width('100%')
 
-      // 文件路径
+      // 文件选择：系统选择器为主入口；下方 TextInput 保留，可继续手工填写沙箱路径
       Column({ space: 6 }) {
-        Text('Markdown 文件路径')
+        Text('待导入文件')
           .fontSize(12)
           .fontColor($r('app.color.muted_text'))
-        TextInput({ text: this.filePath, placeholder: '例如 /data/notes/example.md' })
+        Row({ space: 8 }) {
+          Button(this.isPicking ? '选择中…' : '选择文件').type(ButtonType.Capsule)
+            .fontSize(13)
+            .fontColor($r('app.color.on_primary'))
+            .backgroundColor($r('app.color.primary'))
+            .layoutWeight(1)
+            .enabled(!this.isPicking)
+            .onClick(() => { this.pickFile(); })
+          Text('支持 .md / .markdown')
+            .fontSize(11)
+            .fontColor($r('app.color.muted_text'))
+        }
+        .width('100%')
+
+        TextInput({ text: this.filePath, placeholder: '点击「选择文件」，或直接粘贴沙箱路径' })
           .fontSize(13)
           .fontColor($r('app.color.text'))
           .backgroundColor($r('app.color.surface1'))
@@ -168,7 +219,7 @@ export struct ImportDialog {
   ModeBtn(label: string, value: string) {
     Text(label)
       .fontSize(13)
-      .fontColor(this.mode === value ? Color.White : $r('app.color.text'))
+      .fontColor(this.mode === value ? $r('app.color.on_primary') : $r('app.color.text'))
       .backgroundColor(this.mode === value
         ? $r('app.color.primary') : $r('app.color.surface1'))
       .padding({ left: 12, right: 12, top: 8, bottom: 8 })
