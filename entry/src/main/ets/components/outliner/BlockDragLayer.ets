@@ -4,18 +4,22 @@ import { EditorService } from '../../services/EditorService';
 import { AppState } from '../../state/AppState';
 import { TablerIcon } from '../common/Icons';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { vibrator } from '@kit.SensorServiceKit';
+import { abilityAccessCtrl, bundleManager, Permissions } from '@kit.AbilityKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // S1-H：块拖拽重排 —— 接线层
 //
-// 背景（为什么新建本文件而不是挂上 BlockDragHandler.ets）：
+// 背景（为什么新建本文件而不是挂上旧的 BlockDragHandler.ets）：
 //   1. BlockDragHandler 自带 UI（极简单行文本），没有内容插槽 → 直接替换 BlockView
 //      会丢掉富内容渲染（编辑态/折叠/表格/内联查询/embed/日期/marker/优先级等）；
 //   2. 它的 computeDropTarget 三个前提全部不成立：offsetY 是手势相对位移而非屏幕坐标、
 //      硬编码行高 36、getPageBlocks 只返回顶层块（嵌套子块永不可能是落点）；
 //   3. 它在每行内挂 GestureGroup(Sequence, LongPress 500ms, Pan distance:1)，
 //      与 S1-B 引入的 List 纵向滚动正面竞争。
-//   该文件因此保持为「未接线死代码」不动，其命中算法与落库逻辑（executeMove）一律不复用。
+//   它因此一直是「未接线死代码」，命中算法与落库逻辑（executeMove）一律不复用；
+//   S1-J 已把该文件整体删除，本节保留其作为历史决策记录（勿据此反推代码仍存在）。
 //
 // 本文件的职责边界：
 //   · 只做「手势 → (目标 uuid, 三态)」的判定；
@@ -39,6 +43,57 @@ const EDGE_SCROLL_INTERVAL_MS = 16;
 const EDGE_SCROLL_LIMIT_VP = 200000;
 /** 长按激活拖拽的时长（与 Logseq 手感对齐） */
 const DRAG_LONG_PRESS_MS = 500;
+/**
+ * 触感时长（ms）。
+ * 拖拽起止是「一次按键级」的短促反馈，50ms 为 S1-E 已验证取值，保持不变。
+ * SDK 文档（@ohos.vibrator.d.ts:131-134）亦明确把「拖动 / 长按 / 滑动」列为
+ * VibrateTime 的适用场景，故效果类型无需改动。
+ */
+const VIBRATE_DURATION_MS = 50;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 触感反馈：权限前置判定（模块级）
+//
+// 为什么需要前置判定：startVibration 是 @permission ohos.permission.VIBRATE 的接口，
+// 未授权时它会以 201 Permission denied 失败。提前判定把「没权限」与「设备/驱动失败」
+// 两类原因在日志里彻底分开，避免出现「拖拽没手感且无任何日志」的不可诊断状态。
+// module.json5 已声明该权限（normal 级 system_grant，安装即授予，无需运行时弹窗）。
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * 触感权限判定结果（模块级 memo，避免每次拖拽都查一次权限）。
+ * undefined = 尚未查询；true/false = 已查询结果。
+ */
+let vibratePermission: boolean | undefined = undefined;
+
+/**
+ * 查询「本应用是否已被授予 VIBRATE 权限」。
+ *
+ * 任何查询异常都按「无权限」处理并记日志，绝不向上抛（触感是非关键路径，
+ * 不能让权限查询失败影响拖拽重排本身）。
+ *
+ * @returns true 表示已授权
+ */
+function hasVibratePermission(): boolean {
+  if (vibratePermission !== undefined) {
+    return vibratePermission;
+  }
+  vibratePermission = false;
+  try {
+    const tokenId: number = bundleManager.getBundleInfoForSelfSync(
+      bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION).appInfo.accessTokenId;
+    const permission: Permissions = 'ohos.permission.VIBRATE';
+    const status: abilityAccessCtrl.GrantStatus =
+      abilityAccessCtrl.createAtManager().checkAccessTokenSync(tokenId, permission);
+    vibratePermission = (status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED);
+  } catch (e) {
+    const err = e as BusinessError;
+    hilog.error(DRAG_LOG_DOMAIN, DRAG_LOG_TAG,
+      'haptic: check VIBRATE permission failed: code=%{public}d message=%{public}s', err.code, err.message);
+    vibratePermission = false;
+  }
+  return vibratePermission;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 行矩形注册表（模块级单例，普通对象，不参与 ArkTS 状态观察）
@@ -237,9 +292,9 @@ export function forwardRowGrab(layerId: string, uuid: string, globalX: number, g
 }
 
 /**
- * 触感反馈（拖拽起止各一次）。
- * 与 BlockDragHandler 不同，这里不引入振动：本机模拟器无马达，且 VIBRATE 权限链
- * 属于装饰性路径，S1-H 阶段不扩大改动面。缺失项已在交付说明中标注。
+ * 触感反馈：S1-H 曾以「本机模拟器无马达 + 不扩大改动面」为由不引入振动；
+ * S1-J 推翻该决定 —— 真实拖拽路径就是本层，无马达设备只会走可诊断的失败路径。
+ * 具体触发时机与理由见下方「触感反馈」小节（triggerVibration）。
  */
 
 /**
@@ -399,7 +454,7 @@ export struct BlockDragLayer {
   // ─── 覆盖层视觉 ───
 
   /**
-   * 落点指示线。与 BlockDragHandler.DropIndicator 的差异：
+   * 落点指示线。与已删除的 BlockDragHandler.DropIndicator 的差异：
    *   · above/below 是**真实行矩形**的上下边（不是手势位移）；
    *   · child 额外画一个带缩进的嵌套框，明确「将成为该块的子块」。
    */
@@ -568,6 +623,10 @@ export struct BlockDragLayer {
     this.edgeScrolled = 0;
     this.applyFinger();
     this.syncEdgeScroll();
+    // ── 触感 #1：拖拽已真正建立（长按成功、已绑定到具体行、状态已置位）──
+    // 两个入口 onRowGrab / onLayerLongPress 都在开头以 this.dragging 互斥，
+    // 且本方法内部不再被调用 → 每次手势至多执行一次，触感也至多一次。
+    this.triggerVibration();
   }
 
   /** 依据当前手指位置刷新命中、指示线与预览位置。 */
@@ -797,6 +856,68 @@ export struct BlockDragLayer {
     this.logInfo('commitMove via EditorService.moveBlockToTarget position=' + position);
     EditorService.getInstance().moveBlockToTarget(draggedUuid, targetUuid, position);
     AppState.bumpBlocksVersion();
+    // ── 触感 #2：结构变更已提交（本层唯一数据出口，每次手势至多一次）──
+    // 刻意放在三重守卫与 finishDrag 的 noop 过滤**之后**：被拦下/无操作的拖拽
+    // 没有发生任何结构变更，因此不发「完成」反馈 —— 触感的语义是
+    // 「确实完成了一次重排」，而不是「松手了」。
+    this.triggerVibration();
+  }
+
+  // ─── 触感反馈 ───
+
+  /**
+   * 触发一次短触感（VIBRATE_DURATION_MS），用于拖拽的**离散语义点**。
+   *
+   * 调用时机（共 2 次，均由本类内部调用，绝不在 Move 高频路径上）：
+   *   #1 enterDrag() 末尾 —— 长按 500ms 成功、已绑定到具体行之后；
+   *   #2 commitMove() 末尾 —— moveBlockToTarget 已提交、bumpBlocksVersion 之后。
+   *
+   * 为什么不是「落点判定为有效目标时」：applyFinger() → applyDropPosition() 处于
+   * 手指 Move 与边缘自动滚动（16ms/帧）的路径上，每次都会重算命中。若在那里触发，
+   * 手指停在两行交界处时指示线会在相邻行间反复翻转，触感将退化为连续抖动；
+   * 要做成「仅边沿触发」还需额外维护上一帧的 (targetUuid, position) 状态，
+   * 收益（该信息已由指示线这一视觉通道表达）远小于风险。故落点只用视觉反馈，
+   * 触感只保留两个每手势至多一次的离散点。
+   *
+   * 为什么是「降级而非抛出」：触感属于纯装饰性反馈，失败不能影响拖拽重排本身，
+   * 因此这里只记日志、不改变调用方的控制流。
+   *
+   * 失败可归因的三条路径（本 API 三种失败方式互相独立，缺一即等于静默失效）：
+   *   1. 未声明/未授予权限（201 Permission denied）→ 前置 hasVibratePermission()
+   *      判定，未授权时 hilog.error 后直接降级返回，不发起注定失败的调用；
+   *   2. 同步抛错（401 参数错误 / 801 能力不支持 / 设备无马达等）→ catch 内 hilog.error；
+   *   3. Promise 异步拒绝（本重载返回 Promise，同步 try/catch **抓不到**）→ .catch() 内 hilog.error。
+   *
+   * usage 取 'unknown'（Usage 联合成员，语义「未知场景，优先级最低」）：
+   * SDK（@ohos.vibrator.d.ts:502）中语义更贴近拖拽的是 'touch'（触摸反馈）与
+   * 'physicalFeedback'（物理反馈），此处仍保留 'unknown' 的原因是 —— 它是 S1-E
+   * 已验证可用的取值，而 usage 会影响系统为该场景下发的振动属性（强度/频率档位），
+   * 本机无马达、无法验证体感差异，故不做无法验证的行为变更；如需在真机上试更贴切的
+   * 档位，只需把下一行的 'unknown' 改为 'touch' 重新编译即可（无需其它改动）。
+   */
+  private triggerVibration(): void {
+    if (!hasVibratePermission()) {
+      hilog.error(DRAG_LOG_DOMAIN, DRAG_LOG_TAG,
+        'haptic: skip vibration - ohos.permission.VIBRATE not granted (declared in module.json5 requestPermissions?)');
+      return;
+    }
+    try {
+      // startVibration 的第二个参数 VibrateAttribute 必填，其中 usage 亦为必填字段。
+      // Usage（@ohos.vibrator.d.ts:502）是字符串字面量联合类型，不是 enum，
+      // 故此处必须写字面量而非枚举成员。
+      const attribute: vibrator.VibrateAttribute = { usage: 'unknown' };
+      const effect: vibrator.VibrateTime = { type: 'time', duration: VIBRATE_DURATION_MS };
+      // 成功路径保持安静：拖拽是高频操作，成功日志会淹没日志缓冲区。
+      vibrator.startVibration(effect, attribute)
+        .catch((e: BusinessError) => {
+          hilog.error(DRAG_LOG_DOMAIN, DRAG_LOG_TAG,
+            'haptic: startVibration rejected: code=%{public}d message=%{public}s', e.code, e.message);
+        });
+    } catch (e) {
+      const err = e as BusinessError;
+      hilog.error(DRAG_LOG_DOMAIN, DRAG_LOG_TAG,
+        'haptic: startVibration threw: code=%{public}d message=%{public}s', err.code, err.message);
+    }
   }
 
   // ─── 命中测试 ───
