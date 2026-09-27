@@ -1,10 +1,22 @@
 import { webview } from '@kit.ArkWeb';
 import { fileIo as fs } from '@kit.CoreFileKit';
+import { preferences } from '@kit.ArkData';
 import { buffer } from '@kit.ArkTS';
 import { promptAction } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { WorkspaceService } from '../../services/WorkspaceService';
+import { FileService } from '../../services/FileService';
 import { AppState } from '../../state/AppState';
 import { JournalService } from '../../services/JournalService';
+import { PreferencesStore } from '../../utils/PreferencesStore';
+
+const DOMAIN = 0x0001;
+const TAG = 'PdfViewer';
+
+/** PDF 高亮专用 preferences 实例名（含模块名，稳定性要求：改名即丢数据） */
+const PDF_HL_STORE_NAME = 'callaite_pdf_highlights';
+/** 旧版自研持久化文件后缀：<pdf 绝对路径>.highlights.json（仅用于一次性迁移） */
+const LEGACY_HL_SUFFIX = '.highlights.json';
 
 /**
  * JS → ArkTS 桥接对象，用于接收 pdf.js 文本层中的选中文本。
@@ -81,9 +93,14 @@ export struct PdfViewer {
     // 持久化页内高亮
     const highlight: PdfHighlight = { page: pageNumber, text: trimmed };
     this.highlights.push(highlight);
-    PdfViewer.saveHighlights(this.filePath, this.highlights);
+    const persisted: boolean = PdfViewer.saveHighlights(this.filePath, this.highlights);
     this.highlightCount = this.highlights.length;
-    promptAction.openToast({ message: '已添加 PDF 标注' }).catch(() => {});
+    if (persisted) {
+      promptAction.openToast({ message: '已添加 PDF 标注' }).catch(() => {});
+    } else {
+      // 不静默：高亮未落盘时明确告知（日志中已有 hilog.error 详情）
+      promptAction.openToast({ message: '已添加 PDF 标注，但高亮保存失败' }).catch(() => {});
+    }
   }
 
   private prevPage(): void {
@@ -117,29 +134,91 @@ export struct PdfViewer {
   }
 
   private static loadHighlights(filePath: string): PdfHighlight[] {
+    const ctx = FileService.getContext();
+    if (!ctx) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'loadHighlights: context 未就绪，页面高亮无法读取');
+      return [];
+    }
+    let store: preferences.Preferences;
     try {
-      const path = filePath + '.highlights.json';
-      if (!fs.accessSync(path)) {
+      store = PreferencesStore.open(ctx, PDF_HL_STORE_NAME);
+    } catch (e) {
+      PreferencesStore.logError(PDF_HL_STORE_NAME, 'getPreferencesSync', e as Object);
+      return [];
+    }
+    try {
+      // ─── 一次性迁移 ───
+      // 触发条件：preferences 中没有该 PDF 的键，且旧的 <filePath>.highlights.json 存在。
+      // 只要键已存在（哪怕值是空数组的 JSON "[]"），就说明已迁移/已由新路径写过，不再读旧文件。
+      if (!store.hasSync(filePath)) {
+        PdfViewer.migrateLegacyHighlights(store, filePath);
+      }
+      if (!store.hasSync(filePath)) {
         return [];
       }
-      const raw = fs.readTextSync(path).trim();
+      // 值统一以 JSON 文本存储（PdfHighlight[] 不是 preferences 支持的 Array<object> 类型）
+      const raw: string = store.getSync(filePath, '') as string;
       if (raw === '') {
         return [];
       }
       return JSON.parse(raw) as PdfHighlight[];
-    } catch (_e) {
+    } catch (e) {
+      PreferencesStore.logError(PDF_HL_STORE_NAME, 'loadHighlights ' + filePath, e as Object);
       return [];
     }
   }
 
-  private static saveHighlights(filePath: string, highlights: PdfHighlight[]): void {
+  /**
+   * 把旧的 <filePath>.highlights.json 迁入 preferences，随后删除旧文件。
+   *
+   * 旧文件内容本身就是 PdfHighlight[] 的 JSON 文本，**原样搬入** preferences 的字符串值，
+   * 因此迁移后 JSON.parse 得到的数组与迁移前逐字段一致。
+   */
+  private static migrateLegacyHighlights(store: preferences.Preferences, filePath: string): void {
+    const legacyPath = filePath + LEGACY_HL_SUFFIX;
+    let exists = false;
     try {
-      const path = filePath + '.highlights.json';
-      const file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
-      fs.writeSync(file.fd, JSON.stringify(highlights));
-      fs.closeSync(file);
-    } catch (_e) {
-      // 高亮持久化失败不阻塞标注
+      exists = fs.accessSync(legacyPath);
+    } catch (e) {
+      PreferencesStore.logError(PDF_HL_STORE_NAME, 'accessSync(legacy)', e as Object);
+      return;
+    }
+    if (!exists) {
+      return;
+    }
+    try {
+      const raw = fs.readTextSync(legacyPath).trim();
+      if (raw !== '') {
+        store.putSync(filePath, raw);
+        store.flushSync();
+      }
+      // 迁移完成：旧文件不再是真相来源，删除它
+      fs.unlinkSync(legacyPath);
+      PreferencesStore.logInfo(PDF_HL_STORE_NAME, 'migrated highlights, removed ' + legacyPath);
+    } catch (e) {
+      PreferencesStore.logError(PDF_HL_STORE_NAME, 'migrate legacy highlights ' + legacyPath, e as Object);
+    }
+  }
+
+  /**
+   * 写入高亮。
+   * @returns true 表示已 flush 落盘；false 表示失败（已 hilog.error，调用方据此提示用户）。
+   */
+  private static saveHighlights(filePath: string, highlights: PdfHighlight[]): boolean {
+    const ctx = FileService.getContext();
+    if (!ctx) {
+      hilog.error(DOMAIN, TAG, '%{public}s', 'saveHighlights: context 未就绪，高亮未持久化');
+      return false;
+    }
+    try {
+      const store: preferences.Preferences = PreferencesStore.open(ctx, PDF_HL_STORE_NAME);
+      store.putSync(filePath, JSON.stringify(highlights));
+      // XML 存储（默认）必须 flush 才真正落盘
+      store.flushSync();
+      return true;
+    } catch (e) {
+      PreferencesStore.logError(PDF_HL_STORE_NAME, 'saveHighlights ' + filePath, e as Object);
+      return false;
     }
   }
 
