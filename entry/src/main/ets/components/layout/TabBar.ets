@@ -1,6 +1,7 @@
 import { TablerIcon } from '../common/Icons';
 import { t } from '../../utils/i18n';
 import { TabState, TabInfo } from '../../state/TabState';
+import { AppState } from '../../state/AppState';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { pageTitle } from '../../utils/PageTitle';
 import { PageData } from '../../core/models/Page';
@@ -27,6 +28,11 @@ export struct TabBar {
   // ─── 分屏（对齐 Obsidian 桌面 split）───
   @StorageLink('callaite_splitEnabled') splitEnabled: boolean = false;
   @StorageLink('callaite_splitPage') splitPage: string = 'Journal';
+  /**
+   * 右栏开合态 —— 与 MainContainer（MainContainer.ets:51）读同一个 AppStorage 键，
+   * 因此本开关与右栏的实际渲染严格同源，不存在第二份「本地开合状态」漂移的可能。
+   */
+  @StorageLink('callaite_rightSidebarOpen') rightSidebarOpen: boolean = false;
   /** 副窗格可选页面（缓存，避免 build 期间访问服务） */
   @State pageOptions: SelectOption[] = [];
   /** 与 pageOptions 一一对应的内部路由（SelectOption.value 为 ResourceStr，单独存字符串便于比较） */
@@ -72,6 +78,17 @@ export struct TabBar {
 
   onTabsChanged(): void {
     this.tabsList = TabState.getTabs();
+  }
+
+  /**
+   * 切换右侧栏开合。
+   *
+   * 走 `AppState.toggleRightSidebar()`（AppState.ets:445）而非直接写 `this.rightSidebarOpen`：
+   * 桌面内嵌栏（MainContainer.ets:288）与紧凑态悬浮面板（MainContainer.ets:350）都读这
+   * 一个键，统一入口可保证两种形态行为一致；同时也是 AppState 既有的既有语义。
+   */
+  private toggleRightSidebar(): void {
+    AppState.toggleRightSidebar();
   }
 
   private iconFor(tab: TabInfo): string {
@@ -186,6 +203,9 @@ export struct TabBar {
         .height(16)
         .color($r('app.color.border'))
 
+      // 「新建」—— 原最右缘的加号，本次改造把最右缘让给右栏开关，本按钮功能不变、位置左移一位。
+      // 该动作并非本按钮独有：标签列表下拉菜单的「新建标签」走同一入口
+      // （本文件 TabsMenu() 内 `TabState.newTab('Journal')`），故不存在功能丢失。
       Row() {
         TablerIcon('plus', 18, $r('app.color.icon_color'))
       }
@@ -208,6 +228,37 @@ export struct TabBar {
       })
       .onClick(() => {
         TabState.newTab('Journal');
+      })
+
+      // ─── 右侧栏开关（本栏最右缘）───
+      // 图标复用项目自有 Tabler 集里的 'layout-sidebar-right'（TablerIconPaths.ets:67）。
+      // 语义恰好吻合本栏的物理事实：该图标 = 矩形 + 右侧一条竖分隔线，正是「右侧分栏」。
+      // 开合态 = 选中色 primary + accent_soft 底，与上方分屏开关视觉语法一致。
+      Row() {
+        TablerIcon('layout-sidebar-right', 18, this.rightSidebarOpen
+          ? $r('app.color.primary')
+          : $r('app.color.icon_color'))
+      }
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .width(40)
+      .height(40)
+      .borderRadius(6)
+      .margin({ left: 4 })
+      .stateStyles({
+        normal: {
+          .backgroundColor(this.rightSidebarOpen
+            ? $r('app.color.accent_soft')
+            : (this.hoveredAction === 'rightSidebar' ? $r('app.color.surface2') : Color.Transparent))
+        },
+        pressed: { .backgroundColor($r('app.color.surface3')) }
+      })
+      .animation({ duration: 140, curve: Curve.EaseOut })
+      .onHover((isHover: boolean) => {
+        this.hoveredAction = isHover ? 'rightSidebar' : '';
+      })
+      .onClick(() => {
+        this.toggleRightSidebar();
       })
 
     }
