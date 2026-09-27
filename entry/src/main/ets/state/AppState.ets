@@ -591,4 +591,38 @@ export class AppState {
   static getBlocksVersion(): number {
     return AppStorage.get<number>('callaite_blocksVersion') ?? 0;
   }
+
+  // ─── Block 定位高亮（U2.1a） ───
+
+  /**
+   * 当前被「定位跳转」高亮的块 uuid（空串表示无）。
+   * 由 BlockAnchorService.flash() 写入，BlockView 通过 @StorageLink 接收后闪烁高亮。
+   */
+  static getHighlightedBlock(): string {
+    return AppStorage.get<string>('callaite_highlightedBlock') ?? '';
+  }
+
+  /**
+   * 高亮触发序号。
+   * 仅靠 uuid 无法让「连续点同一个块」再次闪烁（值未变 → @Watch 不触发），
+   * 故 BlockView 以本序号为 watch 源。
+   */
+  static getHighlightSeq(): number {
+    return AppStorage.get<number>('callaite_highlightSeq') ?? 0;
+  }
+
+  /** 设置/清除高亮块（清除时传空串；清除不递增序号，避免误触发闪烁）。 */
+  static setHighlightedBlock(blockUuid: string): void {
+    AppStorage.setOrCreate('callaite_highlightedBlock', blockUuid);
+  }
+
+  /**
+   * 触发一次高亮闪烁：设置目标块并递增序号。
+   * BlockAnchorService.flash() 内部即调用本方法（保持单一写入口）。
+   */
+  static triggerHighlight(blockUuid: string): void {
+    const seq = AppStorage.get<number>('callaite_highlightSeq') ?? 0;
+    AppStorage.setOrCreate('callaite_highlightedBlock', blockUuid);
+    AppStorage.setOrCreate('callaite_highlightSeq', seq + 1);
+  }
 }

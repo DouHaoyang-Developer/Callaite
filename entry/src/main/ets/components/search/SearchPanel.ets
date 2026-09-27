@@ -4,6 +4,7 @@ import { AppState } from '../../state/AppState';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData } from '../../core/models/Page';
 import { BlockData } from '../../core/models/Block';
+import { BlockAnchorService, BlockRevealResult } from '../../services/BlockAnchorService';
 
 /**
  * 搜索结果项。
@@ -166,10 +167,36 @@ export struct SearchPanel {
 
   /**
    * 点击搜索结果跳转。
+   *
+   * U2.1a：块结果（type='block' 且带 blockUuid）此前只切页、不定位，用户落到页面顶部后
+   * 仍需自己找那一行。现在切页后追加一次块定位（滚到该块并闪烁高亮）。
+   *
+   * 时序：setCurrentPage 只改 AppStorage，PageView/BlockList 的 List 与 LazyForEach 数据源
+   * 在下一帧才重建完成，而 SDK 明确要求 scrollToIndex 必须在数据刷新完成后调用
+   * （scroll.d.ts:489-490），故用 revealBlockDeferred 等一帧。
+   * 若目标页恰好已经是当前页，则直接同步定位，不等帧。
    */
   navigateToResult(result: SearchResultItem): void {
+    const isBlockResult = result.type === 'block' && result.blockUuid !== '';
+    if (!isBlockResult) {
+      AppState.setCurrentPage(result.pageName);
+      this.isOpen = false;
+      return;
+    }
+
+    const anchor = BlockAnchorService.getInstance();
+    const alreadyOnPage = anchor.getActivePageName() === result.pageName;
     AppState.setCurrentPage(result.pageName);
     this.isOpen = false;
+
+    if (alreadyOnPage) {
+      // 同页内跳转：数据源未变，可以立即定位
+      const samePageResult: BlockRevealResult = anchor.revealBlockByUuid(result.blockUuid);
+      anchor.notifyIfFailed(samePageResult);
+      return;
+    }
+    // 跨页跳转：等 List 重建完成后再定位（失败会自行 toast，不静默）
+    anchor.revealBlockDeferredByUuid(result.blockUuid);
   }
 
   closePanel(): void {

@@ -53,10 +53,85 @@ export struct BlockView {
   @StorageLink('callaite_fontSize') contentFontSize: number = 15;
   // 全局焦点块：其他块获焦时本块自动退出编辑态（内容已由编辑器防抖保存）
   @StorageLink('callaite_focusedBlock') @Watch('onGlobalFocusChanged') focusedBlockUuid: string = '';
+  // ─── U2.1a 块定位高亮 ───
+  // highlightedBlockUuid 是「谁被定位」，highlightSeq 是「第几次定位」。
+  // 之所以 watch 序号而不是 uuid：连续点击同一个块时 uuid 值不变，@Watch 不触发，
+  // 用户会看不到第二次反馈。序号单调递增，每次都触发。
+  @StorageLink('callaite_highlightedBlock') highlightedBlockUuid: string = '';
+  @StorageLink('callaite_highlightSeq') @Watch('onHighlightRequested') highlightSeq: number = 0;
+  /** 本块当前是否处于高亮闪烁中（驱动底色 + 左侧色条） */
+  @State isAnchorHighlighted: boolean = false;
+  /** 闪烁计时器 id，重置/离场时清理，避免旧回调把新一轮高亮误关 */
+  private highlightTimer: number = -1;
   private blockData: BlockData | undefined;
 
   aboutToAppear(): void {
     this.refreshBlock();
+    // U2.1a：本块可能是「滚到目标行时才被 LazyForEach 创建」的。@Watch 只在值**变化**时
+    // 触发，创建晚于高亮写入的实例不会收到回调，故此处按当前值补一次自检。
+    this.applyAnchorHighlightIfTarget();
+  }
+
+  aboutToDisappear(): void {
+    // 组件被 LazyForEach 回收时清掉计时器，避免回调打到已销毁的实例上
+    if (this.highlightTimer !== -1) {
+      clearTimeout(this.highlightTimer);
+      this.highlightTimer = -1;
+    }
+  }
+
+  /**
+   * U2.1a：收到「定位到此块」的请求 → 闪烁高亮。
+   *
+   * 为什么用 animateTo 而不是 .animation()：
+   * .animation() 是「属性变化的隐式动画」，需要在同一次属性赋值里带 duration；
+   * 而这里要做的是「亮 → 保持 → 灭」的标准闪烁，animateTo 能把两次赋值各自包进
+   * 独立动画，并且 onFinish 回调可以精确在熄灭动画结束后清理状态。
+   *
+   * 时序：亮起 260ms（立即，无淡入延迟感）→ 保持 520ms → 熄灭 420ms。
+   */
+  onHighlightRequested(): void {
+    if (this.highlightedBlockUuid !== this.blockUuid) {
+      // 被定位的不是本块：确保本块不残留高亮
+      if (this.isAnchorHighlighted) {
+        this.isAnchorHighlighted = false;
+      }
+      return;
+    }
+    this.startAnchorFlash();
+  }
+
+  /**
+   * 仅当当前高亮目标就是本块时启动闪烁（供 aboutToAppear 补触发使用）。
+   */
+  private applyAnchorHighlightIfTarget(): void {
+    if (this.highlightedBlockUuid === this.blockUuid && this.highlightedBlockUuid !== '') {
+      this.startAnchorFlash();
+    }
+  }
+
+  /**
+   * 闪烁执行体：亮 → 保持 → 灭。重复触发时先取消上一轮计时器。
+   *
+   * 用 `this.getUIContext().animateTo()`（UIContext.d.ts:4703）而不是全局 `animateTo()`：
+   * 全局版本已被标记 deprecated（编译告警 "'animateTo' has been deprecated"），
+   * 而本组件是 CustomComponent，`getUIContext()`（common.d.ts:24715）可直接取到实例。
+   */
+  private startAnchorFlash(): void {
+    if (this.highlightTimer !== -1) {
+      clearTimeout(this.highlightTimer);
+      this.highlightTimer = -1;
+    }
+    this.isAnchorHighlighted = true;
+    this.highlightTimer = setTimeout(() => {
+      this.highlightTimer = -1;
+      const ui = this.getUIContext();
+      ui.animateTo({ duration: 420, curve: Curve.EaseOut, onFinish: () => {
+        this.isAnchorHighlighted = false;
+      } }, () => {
+        this.isAnchorHighlighted = false;
+      });
+    }, 520);
   }
 
   refreshBlock(): void {
@@ -179,8 +254,12 @@ export struct BlockView {
               EditorService.getInstance().setFocusedBlock(this.blockUuid);
             }
           })
-          .backgroundColor(this.isHovered ? $r('app.color.surface2') : Color.Transparent)
+          .backgroundColor(this.anchorRowBg())
           .borderRadius(4)
+          .border({
+            width: { left: this.isAnchorHighlighted ? 3 : 0 },
+            color: $r('app.color.primary')
+          })
 
           // 展开的操作栏
           if (this.showActions) {
@@ -200,6 +279,21 @@ export struct BlockView {
   }
 
   // ─── Bullet + 折叠控制 ───
+
+  /**
+   * U2.1a 高亮行底色。
+   * ArkTS 结构性限制：不能内联嵌套三元（风格表里「嵌套三元 > 2 层」被禁），
+   * 且 @Builder 不能返回值，故底色计算独立成显式类型的命名方法。
+   */
+  private anchorRowBg(): ResourceColor {
+    if (this.isAnchorHighlighted) {
+      return $r('app.color.surface2');
+    }
+    if (this.isHovered) {
+      return $r('app.color.surface2');
+    }
+    return Color.Transparent;
+  }
 
   @Builder
   BulletControl() {

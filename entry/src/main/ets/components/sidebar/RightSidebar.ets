@@ -5,6 +5,7 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { BlockData } from '../../core/models/Block';
 import { BacklinkInfo } from '../../core/db/DataStore';
 import { JournalService } from '../../services/JournalService';
+import { BlockAnchorService, BlockRevealResult, BlockRevealStatus } from '../../services/BlockAnchorService';
 
 /**
  * RightSidebar — 按 logseq right_sidebar.cljs 多块堆叠结构复刻
@@ -302,8 +303,41 @@ export struct RightSidebar {
         }
         .width('100%')
         .padding({ top: 2, bottom: 2 })
+        // U2.1a：点击大纲条目 → 滚到该块并高亮（此前该行为纯展示，点了没反应）
+        .onClick(() => {
+          this.jumpToBlock(b);
+        })
       }, (b: BlockData) => b.uuid)
     }
+  }
+
+  /**
+   * U2.1a：大纲条目跳转。
+   *
+   * `headingsCache` 来自 `collectHeadings()`，而后者用 `ws.getPageBlocks(page.uuid)`
+   * ——注意该方法名其实返回的是 DataStore 的**顶层块**（WorkspaceService.ets:88-90
+   * → getTopLevelBlocks），所以标题若在子块上，它本来就不会出现在大纲里。
+   * 这里仍按通用规则走 BlockAnchorService（子块会自动归到其根块那一行）。
+   */
+  private jumpToBlock(b: BlockData): void {
+    const anchor = BlockAnchorService.getInstance();
+    const ws = WorkspaceService.getInstance();
+    const result: BlockRevealResult = anchor.revealBlockByUuid(b.uuid);
+    if (result.scrolled || result.status === BlockRevealStatus.DEFERRED) {
+      // DEFERRED = 已排入下一帧滚动（展开了折叠祖先），属正常成功路径
+      return;
+    }
+    if (result.status === BlockRevealStatus.DIFFERENT_PAGE) {
+      // 大纲可能缓存着上一页的标题（refreshCaches 依赖 currentPage 变更时机）——
+      // 只切页不定位，避免给出「跳到了但不是这一行」的假成功。
+      const page = ws.getDataStore().getIndexStore().getPage(b.pageId);
+      if (page) {
+        AppState.setCurrentPage(page.originalName);
+      }
+      return;
+    }
+    // 其余失败一律给出可读提示（不静默失败）
+    anchor.notify(result);
   }
 
   @Builder
