@@ -4,6 +4,7 @@ import { EditorService } from '../../services/EditorService';
 import { ContentRenderer, ContentSegment, SegmentType } from '../../utils/ContentRenderer';
 import { MathRenderer } from '../extensions/MathRenderer';
 import { MermaidRenderer } from '../extensions/MermaidRenderer';
+import { CodeBlock } from '../extensions/CodeBlock';
 import { WebEditor } from './WebEditor';
 import { TablerIcon } from '../common/Icons';
 import { AppState } from '../../state/AppState';
@@ -175,14 +176,22 @@ export struct BlockView {
       Column() {
         // 选中态边框包裹
         Column() {
-          Row() {
+          // ⚠️ 必须是 Flex + ItemAlign.Stretch，不能是 Row：
+          //   引导线要「撑满本行高度」，而 Row 的高度又由子节点算出 —— 若引导线用
+          //   height('100%')，百分比只能对着**父级约束上限**（List 视口）解析，形成
+          //   「子节点撑高父节点、父节点再抬高子节点」的循环，结果整行被拉到视口高度
+          //   （实测 depth=1 的行 h=691，depth=0 的行 h=36）。
+          //   Flex 的 Stretch 语义下，未设交叉轴尺寸的子节点不参与容器高度计算、
+          //   只在容器高度定下来后被拉伸，循环因此被打断。
+          Flex({ direction: FlexDirection.Row, alignItems: ItemAlign.Stretch }) {
             // 缩进引导线
             if (this.depth > 0) {
               ForEach(this.buildGuideArray(), (idx: number) => {
-                Row() {
-                  Column().width(1).height('100%').backgroundColor($r('app.color.border')).margin({ left: 8 })
+                // 引导线格：内层也用 Flex(Stretch) 而不是 height('100%')，全程无百分比高度
+                Flex({ direction: FlexDirection.Row, alignItems: ItemAlign.Stretch }) {
+                  Column().width(1).backgroundColor($r('app.color.border')).margin({ left: 8 })
                   Blank().width(15)
-                }.width(24).height('100%')
+                }.width(24)
               }, (idx: number) => idx.toString())
             }
 
@@ -431,8 +440,12 @@ export struct BlockView {
     } else if (seg.type === SegmentType.MERMAID) {
       MermaidRenderer({ diagram: seg.text })
     } else if (seg.type === SegmentType.BLOCKQUOTE) {
-      Row() {
-        Column().width(3).height('100%').backgroundColor($r('app.color.border')).margin({ right: 8 })
+      // ⚠️ 与缩进引导线同一个坑：左侧引用条不能写 height('100%')。
+      //    它的父级 Row 高度由内容决定，百分比只能对着父级**约束上限**（List 视口）解析，
+      //    形成「子节点撑高父节点 → 父节点再抬高子节点」的循环 —— 实测该行被拉到 ~400vp，
+      //    页面表现为「引用块下方一大片空白」。改用 Flex(Stretch)，全程无百分比高度。
+      Flex({ direction: FlexDirection.Row, alignItems: ItemAlign.Stretch }) {
+        Column().width(3).backgroundColor($r('app.color.border')).margin({ right: 8 })
         Text(seg.text).fontSize(14).fontColor($r('app.color.muted_text')).fontStyle(FontStyle.Italic).layoutWeight(1)
       }.width('100%').padding({ left: 4, top: 2, bottom: 2 })
     } else if (seg.type === SegmentType.PAGE_REF || seg.type === SegmentType.PAGE_EMBED) {
@@ -462,6 +475,11 @@ export struct BlockView {
             }
           }
         })
+    } else if (seg.type === SegmentType.CODE && seg.extra !== undefined) {
+      // U3.5 接线：**整块围栏代码块**（ContentRenderer 只在 ```...``` 整段场景下写 extra）
+      // → 交给 CodeBlock 做 highlight.js 高亮（离线 rawfile 承载页）。
+      // 红线：行内 `code` 段不带 extra，仍走下方 Text 分支，普通块零改动。
+      CodeBlock({ code: seg.text, language: seg.extra })
     } else if (seg.type === SegmentType.TAG_REF) {
       Text('#' + seg.text)
         .fontSize(this.contentFontSize)

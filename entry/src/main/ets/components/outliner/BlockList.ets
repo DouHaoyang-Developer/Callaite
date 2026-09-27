@@ -1,6 +1,5 @@
 import { BlockData } from '../../core/models/Block';
 import { BlockView } from './BlockView';
-import { BlockChildren } from './BlockChildren';
 import { BlockSelection } from './BlockSelection';
 import { FindInPage } from './FindInPage';
 import { BlockDragLayer, forwardRowGrab } from './BlockDragLayer';
@@ -12,7 +11,7 @@ import { t } from '../../utils/i18n';
 
 /**
  * BlockDataSource — LazyForEach 数据源。
- * 仅管理顶层 Block，子 Block 由 BlockChildren 组件递归管理。
+ * 管理**可见行**序列（顶层块 + 已展开子块，屏幕从上到下的顺序）。
  */
 class BlockDataSource implements IDataSource {
   private blocks: BlockData[] = [];
@@ -55,8 +54,9 @@ class BlockDataSource implements IDataSource {
  * BlockList — Block 列表组件。
  *
  * 管理页面的 Block 列表显示、焦点、键盘快捷键、Slash 菜单、页内搜索。
- * 顶层 Block 使用 LazyForEach 虚拟列表优化性能。
- * 子 Block 由 BlockChildren 组件递归渲染。
+ * **所有可见行**（顶层块 + 已展开子块）使用 LazyForEach 虚拟列表优化性能。
+ * 展平在 `WorkspaceService.getVisibleBlocks`（BlockTree 单一实现）完成；
+ * `BlockChildren` 组件仍保留（供其它调用方/后续复用），但本组件的渲染路径已不再经过它。
  *
  * 对应 Logseq components/block.cljs 的列表层。
  *
@@ -65,11 +65,29 @@ class BlockDataSource implements IDataSource {
  * （即虚拟化）以「位于滚动容器内」为前提。此前宿主是不滚动的 Column，
  * 外层滚动由 ContentArea 的 Scroll 承担，导致虚拟化完全未生效。
  * 现在 List 自身即滚动容器，虚拟化条件成立，同时不再有 List 套 Scroll 的双层滚动。
+ *
+ * S1-B 后续（本次修复）：List 宿主要求 **每个 ListItem 的高度由内容确定**，而原先
+ * 「一行 = 顶层块，子块树由 BlockChildren 塞进同一个 item」的结构满足不了这一点：
+ * List 测量该 item 时拿不到确定高度，会把整个视口高度分给它，该高度沿 Column 链传播到
+ * 每个子行 → 子行被拉到数百 vp、文字被推到容器底部，表现为**嵌套子块不渲染**。
+ * 实测最小复现：两行页面 `- 父块` / `  - 子块`；把子行换成纯 Text 即恢复正常
+ * （⇒ 由自定义组件链的高度契约触发，属结构性问题，局部属性改法无效）。
+ * 现改为**预先展平可见行**：每个可见行各占 1 个 ListItem、只含 1 个 BlockView，
+ * item 高度恒定。展平走 `WorkspaceService.getVisibleBlocks`（BlockTree 单一实现），
+ * 与 U2.1a 的 scrollToIndex 下标空间同源。
  */
 @Component
 export struct BlockList {
   @Prop pageId: string = '';
-  @Prop pageName: string = '';
+  /**
+   * 页面名。**必须 watch**：`AppState.setCurrentPage`（AppState.ets）只写 currentPage
+   * 与历史栈，**不会** bump `callaite_blocksVersion`；而本组件的刷新入口只有
+   * `aboutToAppear` 与 blocksVersion 的 @Watch 两个。两个**页面路由**之间切换时
+   * （同一个 PageView 复用同一个 BlockList 实例）二者都不触发 → 列表会继续显示
+   * 上一页的行（实测：__S1_long → 未命名笔记 后仍显示 300 行「测试块 N」）。
+   * 补齐 pageName 的 watch 后，切页即重算。
+   */
+  @Prop @Watch('onPageNameChanged') pageName: string = '';
   // embedded=true 时用于日志流 feed 内嵌：高度自适应内容、不渲染多选浮动栏
   @Prop embedded: boolean = false;
   /**
@@ -82,7 +100,14 @@ export struct BlockList {
    * 普通成员变量在父组件构造时同步赋值，build() 首次执行前已就绪。
    */
   scroller?: Scroller;
+  /**
+   * 顶层块（`getPageBlocks`）。**不是** List 的数据源，只用于两件事：
+   *   · 空态判定（顶层为空 ⇔ 无可见行）；
+   *   · 尾部新增块时取 leftId —— 必须取顶层块的最后一个，取错层级会把新块挂到别人孩子下面。
+   */
   @State blocks: BlockData[] = [];
+  /** 可见行序列（List 的数据源；顶层块 + 已展开子块，屏幕顺序）。 */
+  @State rows: BlockData[] = [];
   @State slashMenuVisible: boolean = false;
   @State slashMenuBlockUuid: string = '';
   @State findInPageVisible: boolean = false;
@@ -166,17 +191,34 @@ export struct BlockList {
     this.refreshBlocks();
   }
 
+  /**
+   * 页面名变化（切页）时刷新。
+   * 必要性见 pageName 字段注释：切页不会 bump blocksVersion。
+   */
+  onPageNameChanged(): void {
+    this.refreshBlocks();
+  }
+
+  /**
+   * 刷新渲染序列。
+   *
+   * `blocks`（顶层）与 `rows`（可见行）职责分离，理由见各字段注释。
+   * 折叠态**不落盘**（磁盘 .md 无 collapsed 字段），因此 rows 每次都从 BlockTree 现算，
+   * 绝不缓存；折叠/展开经 `AppState.bumpBlocksVersion` → `onBlocksVersionChanged` 回到这里。
+   */
   refreshBlocks(): void {
     const ws = WorkspaceService.getInstance();
     const page = ws.getPageByName(this.pageName);
     if (page) {
       this.blocks = ws.getPageBlocks(page.uuid);
+      this.rows = ws.getVisibleBlocks(page.uuid);
       this.pageUuidForDrag = page.uuid;
     } else {
       this.blocks = [];
+      this.rows = [];
       this.pageUuidForDrag = '';
     }
-    this.dataSource.setBlocks(this.blocks);
+    this.dataSource.setBlocks(this.rows);
   }
 
   build() {
@@ -195,18 +237,15 @@ export struct BlockList {
           if (this.blocks.length === 0) {
             this.EmptyState()
           } else {
-            // 顶层 Block 使用 LazyForEach 虚拟列表（宿主即上层 List）
-            LazyForEach(this.dataSource, (block: BlockData) => {
+            // 可见行序列使用 LazyForEach（宿主是 Column，不做虚拟化）。
+            // 与整页分支同样展平：每个可见行只含一个 BlockView ⇒ 行高由内容确定，
+            // 不会出现「父行把整棵子树包在一个容器里」导致的高度传播。
+            LazyForEach(this.dataSource, (row: BlockData) => {
               Column() {
-                BlockView({ blockUuid: block.uuid, depth: block.level })
-
-                // 子 Block 由 BlockChildren 组件递归渲染
-                if (!block.collapsed) {
-                  BlockChildren({ parentUuid: block.uuid, depth: block.level })
-                }
+                BlockView({ blockUuid: row.uuid, depth: row.level })
               }
               .width('100%')
-            }, (block: BlockData) => block.uuid)
+            }, (row: BlockData) => row.uuid)
           }
 
           // 底部添加按钮（feed 内嵌模式不渲染 — Logseq 无显式添加按钮，回车即新建）
@@ -237,37 +276,35 @@ export struct BlockList {
                 this.EmptyState()
               }
             } else {
-              // 顶层 Block 使用 LazyForEach 虚拟列表。
+              // 可见行序列使用 LazyForEach 虚拟列表。
               // List 宿主下 itemGenerator 必须直接产出 ListItem，虚拟化在此条件下生效
               // （SDK lazy_for_each.d.ts:881-883：组件回收以「位于滚动容器内」为前提）。
-              LazyForEach(this.dataSource, (block: BlockData) => {
+              //
+              // 每个可见行 = 1 个 ListItem + 1 个 BlockView（**不再把子块树塞进同一个 item**）：
+              // item 高度只由该行 BlockView 的内容决定，List 因此能正确测量并回收，
+              // 同时消除了 S1-B 之后「List 把视口高度让给报不出确定高度的 item」的拉伸传播。
+              LazyForEach(this.dataSource, (row: BlockData) => {
                 ListItem() {
+                  // ⚠️ 这个 Column 包装**不可省略**（实测）：
+                  //   直接把自定义组件 BlockView 作为 ListItem 的唯一子节点时，BlockView 相当于
+                  //   matchParent 子组件，List 仍会把剩余视口高度分给该 item（父行 400vp+，子行被推下去）；
+                  //   套一层 `Column().width('100%')` 后，容器先被有确定尺寸的内容撑开、item 高度
+                  //   回到内容高度 —— 与扁平页（`__S1_long` 每行 48vp）的结构完全一致。
                   Column() {
                     // S1-H：onRowGrab 指向**同一个**拖拽层实例（见 handleRowGrab），
                     // 行内不挂任何拖拽/Pan 手势，位移跟踪全部由该单实例承担。
+                    // 展平后每行 uuid 唯一且明确，长按上报 / 命中表 / 落库三者的 uuid 一一对应。
                     BlockView({
-                      blockUuid: block.uuid,
-                      depth: block.level,
+                      blockUuid: row.uuid,
+                      depth: row.level,
                       onRowGrab: (uuid: string, gx: number, gy: number) => {
                         this.handleRowGrab(uuid, gx, gy);
                       }
                     })
-
-                    // 子 Block 由 BlockChildren 组件递归渲染
-                    // （S1-H：透传行级长按上报，使子块同样可被拖拽）
-                    if (!block.collapsed) {
-                      BlockChildren({
-                        parentUuid: block.uuid,
-                        depth: block.level,
-                        onRowGrab: (uuid: string, gx: number, gy: number) => {
-                          this.handleRowGrab(uuid, gx, gy);
-                        }
-                      })
-                    }
                   }
                   .width('100%')
                 }
-              }, (block: BlockData) => block.uuid)
+              }, (row: BlockData) => row.uuid)
             }
 
             // 底部添加按钮：作为列表尾项，位置/外观与迁移前一致

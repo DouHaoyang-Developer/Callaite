@@ -10,25 +10,24 @@ import { t } from '../utils/i18n';
  * BlockAnchorService — U2.1a 块定位跳转（渲染层可寻址化）。
  *
  * ─── 渲染序列的真实构成（读代码核验，非假设）───
- * 整页大纲分支：`BlockList.ets:190-222`
+ * 整页大纲分支：`BlockList.ets` 的 List 分支
  *   List({ space: 0, scroller })            ← 唯一的滚动容器，Scroller 由 ContentArea 注入
- *     └ LazyForEach(this.dataSource, ...)   ← BlockList.ets:200
- *         └ ListItem()                      ← BlockList.ets:201
- *             └ Column { BlockView; if (!collapsed) BlockChildren }  ← BlockList.ets:202-210
- * 数据源：`BlockList.ets:16-51` BlockDataSource，内容由 `refreshBlocks()`（BlockList.ets:128-137）
- *   写入 `WorkspaceService.getPageBlocks(page.uuid)` = `DataStore.getTopLevelBlocks`
- *   = `BlockTree.getChildren(pageId)` —— **只有顶层块（parentId === pageId）**。
+ *     └ LazyForEach(this.dataSource, ...)
+ *         └ ListItem() { BlockView }        ← **每个可见行一个 item，item 内只有 1 个 BlockView**
+ * 数据源：`WorkspaceService.getVisibleBlocks(page.uuid)` = `DataStore.getVisibleBlocks`
+ *   = `BlockTree.getVisibleBlocks` —— **可见行序列**：顶层块 + 所有已展开（collapsed===false）
+ *   子块，按屏幕从上到下的顺序。
  *
  * 关键结论（U2.1a 下标正确性的依据）：
- *   1. 子块**不是** List 的行。`BlockChildren`（BlockChildren.ets:54-69）在同一个 ListItem 的
- *      Column 内部用 `ForEach` 递归渲染，属于该行的**行内内容**，不占用 List 下标。
- *   2. 因此 List 下标空间 = [0, N-1] 对应 dataSource 的 N 个顶层块，
- *      下标 N 是尾部 `AddBlockButton` 的 ListItem（BlockList.ets:217-221）。
- *      （blocks 为空时 [0] 是空态 ListItem，与定位无关。）
- *   3. 折叠态**不会**让顶层块下标漂移：`if (!block.collapsed)`（BlockList.ets:206）只决定该行
- *      内部是否渲染 BlockChildren，行本身永远存在。折叠只让**祖先折叠的块完全不被渲染**。
- *   4. 所以「uuid → 下标」的规则是：沿 parentId 上溯到根块，取根块在
- *      `getPageBlocks(pageId)` 返回数组中的位置。
+ *   1. List 下标空间 = [0, R-1]，R = 可见行数；下标 R 是尾部 `AddBlockButton` 的 ListItem。
+ *      （页面为空时 [0] 是空态 ListItem，与定位无关。）
+ *   2. 每一行的 uuid **就是**该行所渲染块的 uuid —— 不再存在「子块与根块共用一个 item」。
+ *      因此「uuid → 下标」= 该块在 `getVisibleBlocks(pageId)` 中的位置；子块不再归到根块行。
+ *   3. 折叠会让**整棵子树**从可见行序列中消失（`getVisibleBlocks` 只在未折叠时下钻），
+ *      所以被折叠祖先藏住的块下标为 -1。**必须先展开祖先、再算下标** —— 这正是
+ *      `revealBlock` 把 `expandAncestors` 放在 `indexOf` 之前的原因（顺序反了会误报"不在大纲中"）。
+ *   4. 折叠态只在内存（磁盘 .md 无 collapsed 字段），故下标每次从 BlockTree 现算；
+ *      本服务与 BlockList 走**同一个** getVisibleBlocks —— 单一实现，下标空间不会漂移。
  *
  * 本服务不做任何渲染，只做下标计算 + 调用 Scroller.scrollToIndex + 触发高亮 + 失败降级提示。
  * 折叠展开通过既有 `collapse` op（OutlinerEngine.ets:136 → BlockTree.setCollapsed）复用现有写通路。
@@ -80,9 +79,9 @@ const SCROLL_DEFER_MS = 80;
 export interface BlockAnchorInfo {
   /** 目标块本身 */
   blockUuid: string;
-  /** 目标块的顶层祖先（= 承载它的那个 ListItem 对应的块）*/
+  /** 目标块的顶层祖先（仅作 chain 的起点；展平后每行即块自身，不再靠它定位）*/
   rootUuid: string;
-  /** 顶层祖先在 List 下标空间中的位置；未知为 -1 */
+  /** 目标块**自身**在可见行序列中的下标；被折叠祖先藏住时为 -1 */
   index: number;
   /** 根块 → 目标块 的祖先链（含根与目标自身），用于折叠展开 */
   chain: string[];
@@ -141,35 +140,36 @@ export class BlockAnchorService {
   // ─── 下标计算 ───
 
   /**
-   * 计算某块在「当前渲染序列」中的下标。
+   * 计算某块在「当前渲染序列」（可见行序列）中的下标。
    *
-   * 规则（依据见文件头注释）：
-   *   1. 沿 parentId 上溯到 parentId === pageId 的根块；
-   *   2. 该根块在 `getPageBlocks(pageId)`（顶层块数组）中的位置即 List 下标；
-   *   3. 目标块自身是子块时，下标等于其根块的下标（子块与根块同处一个 ListItem，
-   *      scrollToIndex 会把整行滚到视口顶部，目标子块随行可见）。
+   * 规则：直接取该块在 `getVisibleBlocks(pageId)` 中的位置 —— 展平后每一行就是该块自身，
+   * 不再需要（也不允许）上溯到根块取下标。
    *
-   * @returns 下标信息；块不存在返回 undefined
+   * 返回 -1 有两种含义，调用方需区别对待：
+   *   · 块不存在 → 报 BLOCK_NOT_FOUND；
+   *   · 块存在但被某个**折叠祖先**藏住 → 先 `expandAncestors` 再重新调用本方法。
+   *
+   * @returns 可见行下标；不存在或当前不可见返回 -1
    */
   indexOf(pageId: string, blockUuid: string): number {
     if (blockUuid === '') {
       return -1;
     }
-    const ws = WorkspaceService.getInstance();
-    const top: BlockData[] = ws.getPageBlocks(pageId);
-    for (let i = 0; i < top.length; i++) {
-      if (top[i].uuid === blockUuid) {
+    const rows: BlockData[] = WorkspaceService.getInstance().getVisibleBlocks(pageId);
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].uuid === blockUuid) {
         return i;
       }
     }
-    // 不是顶层块：上溯到根块再取下标
-    const info = this.resolveAnchor(pageId, blockUuid);
-    return info ? info.index : -1;
+    return -1;
   }
 
   /**
-   * 解析目标块的可定位信息（根块 + 下标 + 祖先链）。
-   * 关键：下标**只**由根块决定；祖先链用于跳转前展开折叠的祖先。
+   * 解析目标块的可定位信息（可见行下标 + 祖先链）。
+   *
+   * `index` 是**调用时刻**的可见行下标：若目标被折叠祖先藏住则为 -1
+   * （调用方必须先 `expandAncestors` 再重新 `indexOf`，见 revealBlock）。
+   * `chain`（根→目标，含两端）用于展开折叠祖先；展开只遍历到 length-1（目标自身不展开）。
    */
   resolveAnchor(pageId: string, blockUuid: string): BlockAnchorInfo | undefined {
     const ws = WorkspaceService.getInstance();
@@ -201,14 +201,8 @@ export class BlockAnchorService {
     }
     const rootUuid = chain[0];
 
-    const top: BlockData[] = ws.getPageBlocks(pageId);
-    let index = -1;
-    for (let i = 0; i < top.length; i++) {
-      if (top[i].uuid === rootUuid) {
-        index = i;
-        break;
-      }
-    }
+    // 下标 = 目标块自身在可见行序列中的位置（可能为 -1：被折叠祖先藏住）
+    const index = this.indexOf(pageId, blockUuid);
 
     const info: BlockAnchorInfo = {
       blockUuid: blockUuid,
@@ -237,7 +231,7 @@ export class BlockAnchorService {
       }
     }
     if (expanded > 0) {
-      // 通知 BlockList / BlockChildren 重算（它们监听 callaite_blocksVersion）
+      // 通知 BlockList 重算可见行序列（它监听 callaite_blocksVersion）
       AppState.bumpBlocksVersion();
     }
     return expanded;
@@ -276,34 +270,37 @@ export class BlockAnchorService {
         this.msg('anchor_no_scroller', '当前视图不支持块定位（请切回大纲视图）'));
     }
 
-    // 4. 解析下标（子块归到其根块那一行）
+    // 4. 解析祖先链（此刻下标可能为 -1：目标被折叠祖先藏住时不在可见行序列里）
     const info = this.resolveAnchor(pageId, blockUuid);
     if (info === undefined) {
       return this.failure(BlockRevealStatus.BLOCK_NOT_FOUND,
         this.msg('anchor_block_missing', '目标块已不存在（可能已被删除）'));
     }
 
-    // 5. 折叠的祖先先展开（否则目标块在界面上根本不存在，滚到根块也看不到它）
+    // 5. 折叠的祖先先展开 —— **必须早于下标计算**：
+    //    展开会把目标块放回可见行序列，其下标在展开前后不同（顺序反了会误报「不在大纲中」）。
     const expanded = this.expandAncestors(info.chain);
 
-    if (info.index < 0) {
+    // 6. 展开后重算下标（此刻才是「屏幕上真实的第几行」）
+    const index = this.indexOf(pageId, blockUuid);
+    if (index < 0) {
       return this.failure(BlockRevealStatus.EMPTY_PAGE,
         this.msg('anchor_empty_page', '目标块当前不在大纲中（页面可能为空）'));
     }
 
-    // 下标边界：List 下标空间是 [0, top.length-1]（下标 top.length 是尾部 AddBlockButton）。
+    // 下标边界：List 下标空间是 [0, 可见行数-1]（下标 = 可见行数是尾部 AddBlockButton）。
     // SDK scroll.d.ts:509-510 对越界值的处理是「不做任何滚动」——静默失败，
     // 所以这里必须自己拦住并给出可读提示。
-    const count = ws.getPageBlocks(pageId).length;
-    if (info.index >= count) {
+    const count = ws.getVisibleBlocks(pageId).length;
+    if (index >= count) {
       return this.failure(BlockRevealStatus.INDEX_OUT_OF_RANGE,
         this.msg('anchor_out_of_range', '列表尚未就绪，无法定位'));
     }
 
-    // 6. 滚动 + 高亮
+    // 7. 滚动 + 高亮
     const runScroll = (): void => {
       // SDK scroll.d.ts:533；NOTE 明确 scrollToIndex 仅对 ArcList/Grid/List/WaterFlow 生效
-      scroller.scrollToIndex(info.index, false, ScrollAlign.START);
+      scroller.scrollToIndex(index, false, ScrollAlign.START);
       this.flash(blockUuid);
     };
 
@@ -314,7 +311,7 @@ export class BlockAnchorService {
       }, SCROLL_DEFER_MS);
       const pending: BlockRevealResult = {
         status: BlockRevealStatus.DEFERRED,
-        index: info.index,
+        index: index,
         message: '',
         scrolled: false
       };
@@ -324,7 +321,7 @@ export class BlockAnchorService {
     runScroll();
     const ok: BlockRevealResult = {
       status: BlockRevealStatus.SCROLLED,
-      index: info.index,
+      index: index,
       message: '',
       scrolled: true
     };

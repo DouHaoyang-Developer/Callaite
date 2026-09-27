@@ -110,6 +110,16 @@ export class WorkspaceService {
     return this.dataStore.getChildrenOfBlock(blockUuid);
   }
 
+  /**
+   * 页面的**可见行序列**（顶层块 + 已展开子块，屏幕从上到下的顺序）。
+   *
+   * 整页大纲的 List 数据源与 U2.1a 的 `scrollToIndex` 下标空间**必须同源**，
+   * 否则下标会指向另一行；故两侧统一走这里（单一实现，不会漂移）。
+   */
+  getVisibleBlocks(pageId: string): BlockData[] {
+    return this.dataStore.getVisibleBlocks(pageId);
+  }
+
   getBlock(uuid: string): BlockData | undefined {
     return this.dataStore.getBlock(uuid);
   }

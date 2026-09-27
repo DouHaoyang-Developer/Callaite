@@ -109,6 +109,44 @@ export class BlockTree {
   }
 
   /**
+   * 获取页面的**可见行序列**（顶层块 + 所有已展开子块，屏幕从上到下的顺序）。
+   *
+   * 为什么需要它（S1-B 之后的渲染契约）：
+   *   整页大纲的宿主是 `List`，而 `ListItem` 的高度必须由内容确定。此前把「父行 + 整棵子块树」
+   *   放进**同一个** ListItem（子块由 BlockChildren 行内递归渲染），List 测量该 item 时拿不到
+   *   确定的内容高度，会把**整个视口高度**分给这个 item；该高度再沿 Column 链传到每个子行，
+   *   子行被拉伸到数百 vp、文字被推到各自容器底部 —— 表现为「子块不渲染」。
+   *   实测最小复现：两行页面 `- 父块` / `  - 子块`（子行容器 703vp、子块文字落到 y≈664）；
+   *   把子行换成纯 `Text` 即恢复正常 ⇒ 拉伸由自定义组件链的高度契约触发，属结构性问题。
+   *   修法：展平后每个可见行各占一个 ListItem、只含一个 BlockView ⇒ item 高度恒定。
+   *
+   * 折叠语义：`collapsed === true` 的块其**整棵子树**都不出现（与 BlockChildren 的
+   *   `if (!child.collapsed)` 一致；折叠只影响下钻，不影响该块自身作为一行出现）。
+   *   折叠态只在内存中（磁盘 .md 无该字段），故本方法**每次从当前 BlockTree 现算**，
+   *   不做任何缓存 —— 缓存会让折叠/展开的结果过期。
+   *
+   * 顺序：先父后子、同层按 leftId 链排序（即屏幕上从上到下），
+   *   因此返回值的下标可直接用作 `Scroller.scrollToIndex` 的下标（见 BlockAnchorService）。
+   */
+  getVisibleBlocks(pageId: string): BlockData[] {
+    const result: BlockData[] = [];
+    this.collectVisible(pageId, result);
+    return result;
+  }
+
+  /** getVisibleBlocks 的递归体：前序 DFS，只在未折叠时下钻。 */
+  private collectVisible(parentUuid: string, out: BlockData[]): void {
+    const children = this.getChildren(parentUuid);
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      out.push(child);
+      if (!child.collapsed) {
+        this.collectVisible(child.uuid, out);
+      }
+    }
+  }
+
+  /**
    * 获取某个 Block/Parent 的直接子节点列表（已排序）。
    */
   getChildren(parentUuid: string): BlockData[] {

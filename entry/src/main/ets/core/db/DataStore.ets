@@ -273,6 +273,11 @@ export class DataStore {
     return this.blockTree.getTopLevelBlocks(pageId);
   }
 
+  /** 页面的可见行序列（顶层块 + 已展开子块，屏幕顺序）；见 BlockTree.getVisibleBlocks。 */
+  getVisibleBlocks(pageId: string): BlockData[] {
+    return this.blockTree.getVisibleBlocks(pageId);
+  }
+
   getChildrenOfBlock(uuid: string): BlockData[] {
     return this.blockTree.getChildren(uuid);
   }
