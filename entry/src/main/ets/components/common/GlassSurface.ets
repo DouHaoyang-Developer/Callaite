@@ -40,7 +40,10 @@ export struct GlassSurface {
   @Prop materialRole: number = -1;
   @State pressed: boolean = false;
   @BuilderParam content: () => void = this.emptyContent;
-  @StorageLink('themeMode') themeMode: string = 'system';
+  // 键名必须是 ThemeManager 的规范键（callaite_themeMode）。
+  // 历史上这里写的是无前缀 'themeMode'：该键只有 AppState 在启动/设置时写过，
+  // ThemeManager.setThemeMode / toggleTheme 从不写它，导致主题切换后本组件收不到通知。
+  @StorageLink('callaite_themeMode') themeMode: string = 'system';
   @StorageLink('callaite_systemColorMode') systemColorMode: number =
     ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET;
 
