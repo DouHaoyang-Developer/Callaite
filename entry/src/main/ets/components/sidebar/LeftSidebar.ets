@@ -227,8 +227,10 @@ export struct LeftSidebar {
     .borderRadius(6)
     // ⚠️ 选中态配色：surface2（#F4F5F7 级近白灰）与面板底色几乎无差，实测 20×20 区域众数色
     //    为 #FEFFFF/#F4F5F7/#F6F7F9 —— 用户在文件视图看不出当前视图。改用与 Ribbon 选中底
-    //    一致的紫色低透明（#14705DCF = 主色 8%），保证选中可辨且不喧宾夺主。
-    .backgroundColor(this.sidebarView === key ? '#14705DCF' : Color.Transparent)
+    //    一致的紫色低透明（主色 8%），保证选中可辨且不喧宾夺主。
+    //    ⚠️ 这里原来内联了浅色值 '#14705DCF'，暗色下主色是 #A88BFA、该值几乎不可见
+    //    （选中态在暗色下等于没有）。改用 Ribbon.ets:38 / TabBar.ets:157 同一 token。
+    .backgroundColor(this.sidebarView === key ? $r('app.color.accent_soft') : Color.Transparent)
     .animation({ duration: 140, curve: Curve.EaseOut })
     .onClick(() => {
       this.sidebarView = key;

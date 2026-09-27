@@ -3,48 +3,91 @@
 
 import { parseMarkdownSegments, MarkdownSegment } from './MarkdownSegmenter';
 
-// ─── 样式常量 ─────────────────────────────────
+// ─── 样式工厂 ─────────────────────────────────
+//
+// ⚠️ 这里全部由「模块级字面量常量」改为「按主题 token 取色的函数」，原因：
+//   原实现把正文写死 `#1A1A1A`、Callout 写死 `#333333`、代码块写死 `#6A5ACD`，
+//   而 IntegralEditor 的编辑区底色是 `$r('app.color.surface0')`
+//   （浅色 #FFFFFF / 暗色 #202020）→ 暗色下 `#1A1A1A` on `#202020` ≈ **1.06:1**，
+//   整页正文完全不可见；`#333333` ≈ 1.29:1，同样不可读。
+//
+// 改用 `$r('app.color.*')` 后由资源限定符自动切换明暗两套值，
+// 无需 import ThemeManager 判断主题（与 ContentRenderer.ets:281 的既有做法一致）。
 
-const SYNTAX_HIDDEN_STYLE: RichEditorTextStyle = {
-  fontColor: Color.Transparent,
-  fontSize: 1
-};
+function syntaxHiddenStyle(): RichEditorTextStyle {
+  return {
+    fontColor: Color.Transparent,
+    fontSize: 1
+  };
+}
 
-const SYNTAX_VISIBLE_STYLE: RichEditorTextStyle = {
-  fontColor: '#B0B0B0',
-  fontSize: 14,
-  fontFamily: 'monospace'
-};
+function syntaxVisibleStyle(): RichEditorTextStyle {
+  return {
+    fontColor: $r('app.color.muted_text'),
+    fontSize: 14,
+    fontFamily: 'monospace'
+  };
+}
 
-const CONTENT_STYLE: RichEditorTextStyle = {
-  fontColor: '#1A1A1A',
-  fontSize: 16,
-  fontFamily: 'monospace'
-};
+function contentStyle(): RichEditorTextStyle {
+  return {
+    fontColor: $r('app.color.text'),
+    fontSize: 16,
+    fontFamily: 'monospace'
+  };
+}
 
-const HEADING_1_STYLE: RichEditorTextStyle = {
-  fontColor: '#6C3BD4',
-  fontSize: 28,
-  fontWeight: FontWeight.Bold,
-  fontFamily: 'monospace'
-};
+/**
+ * 标题样式：层级靠字号/字重区分，颜色走主题。
+ * H1/H3 → 主色；H2 → lp_h2（保留原来「二级标题偏品红」的辨识度）。
+ */
+function headingStyle(level: number): RichEditorTextStyle {
+  if (level === 1) {
+    return {
+      fontColor: $r('app.color.primary'),
+      fontSize: 28, fontWeight: FontWeight.Bold, fontFamily: 'monospace'
+    };
+  }
+  if (level === 2) {
+    return {
+      fontColor: $r('app.color.lp_h2'),
+      fontSize: 24, fontWeight: FontWeight.Bold, fontFamily: 'monospace'
+    };
+  }
+  return {
+    fontColor: $r('app.color.primary'),
+    fontSize: 20, fontWeight: FontWeight.Bold, fontFamily: 'monospace'
+  };
+}
 
-const HEADING_2_STYLE: RichEditorTextStyle = {
-  fontColor: '#7B2D8B',
-  fontSize: 24,
-  fontWeight: FontWeight.Bold,
-  fontFamily: 'monospace'
-};
+function quoteStyle(): RichEditorTextStyle {
+  return {
+    fontColor: $r('app.color.primary'), fontSize: 16,
+    fontStyle: FontStyle.Italic, fontFamily: 'monospace'
+  };
+}
 
-const HEADING_3_STYLE: RichEditorTextStyle = {
-  fontColor: '#8B5CF6',
-  fontSize: 20,
-  fontWeight: FontWeight.Bold,
-  fontFamily: 'monospace'
-};
+function codeLineStyle(): RichEditorTextStyle {
+  return { fontColor: $r('app.color.lp_code'), fontSize: 15, fontFamily: 'monospace' };
+}
+
+/**
+ * 分隔线（`---` 渲染成的文本）：走 muted 灰。
+ * 明暗两套底色上都可辨（暗色 #202020 上 ≈3.5:1），且比原来的 #C7C7CC 在浅色下更清楚。
+ */
+function hrStyle(): RichEditorTextStyle {
+  return { fontColor: $r('app.color.bullet'), fontSize: 14, fontFamily: 'monospace' };
+}
+
+function embedSyntaxStyle(): RichEditorTextStyle {
+  return {
+    fontColor: $r('app.color.link'), fontSize: 16, fontFamily: 'monospace',
+    fontWeight: FontWeight.Medium
+  };
+}
 
 export interface RichEditorTextStyle {
-  fontColor?: string | Color;
+  fontColor?: ResourceColor;
   fontSize?: number;
   fontWeight?: FontWeight;
   fontFamily?: string;
@@ -63,44 +106,6 @@ enum LineContext {
   HR = 'hr',
   LIST = 'list'
 }
-
-// ─── Callout 配色 ─────────────────────────────
-
-interface CalloutColor {
-  bg: string;
-  border: string;
-}
-
-const noteColor: CalloutColor = { bg: '#E8F4FD', border: '#4A90D9' };
-const warningColor: CalloutColor = { bg: '#FFF8E1', border: '#F5A623' };
-const tipColor: CalloutColor = { bg: '#E8F5E9', border: '#4CAF50' };
-const dangerColor: CalloutColor = { bg: '#FFEBEE', border: '#E53935' };
-const infoColor: CalloutColor = { bg: '#E3F2FD', border: '#2196F3' };
-const abstractColor: CalloutColor = { bg: '#F3E5F5', border: '#9C27B0' };
-const successColor: CalloutColor = { bg: '#E8F5E9', border: '#4CAF50' };
-const questionColor: CalloutColor = { bg: '#FFF3E0', border: '#FF9800' };
-
-interface CalloutColorMap {
-  note: CalloutColor;
-  warning: CalloutColor;
-  tip: CalloutColor;
-  danger: CalloutColor;
-  info: CalloutColor;
-  abstract: CalloutColor;
-  success: CalloutColor;
-  question: CalloutColor;
-}
-
-const CALLOUT_COLORS: CalloutColorMap = {
-  note: noteColor,
-  warning: warningColor,
-  tip: tipColor,
-  danger: dangerColor,
-  info: infoColor,
-  abstract: abstractColor,
-  success: successColor,
-  question: questionColor
-};
 
 export class LivePreviewHelper {
   private isRebuilding: boolean = false;
@@ -160,16 +165,15 @@ export class LivePreviewHelper {
 
         // 选择样式：语法段用灰/隐藏，内容段用行级着色
         if (seg.type === 'syntax') {
-          controller.addTextSpan(seg.text, { style: SYNTAX_VISIBLE_STYLE });
+          controller.addTextSpan(seg.text, { style: syntaxVisibleStyle() });
         } else {
-          let style: RichEditorTextStyle = CONTENT_STYLE;
+          let style: RichEditorTextStyle = contentStyle();
           if (currentLineContext === LineContext.HEADING && headingLevel > 0 && headingLevel <= 3) {
-            const headingStyles: RichEditorTextStyle[] = [HEADING_1_STYLE, HEADING_2_STYLE, HEADING_3_STYLE];
-            style = headingStyles[headingLevel - 1];
+            style = headingStyle(headingLevel);
           } else if (currentLineContext === LineContext.QUOTE) {
-            style = { fontColor: '#8B5CF6', fontSize: 16, fontStyle: FontStyle.Italic, fontFamily: 'monospace' };
+            style = quoteStyle();
           } else if (currentLineContext === LineContext.HR) {
-            style = { fontColor: '#C7C7CC', fontSize: 14, fontFamily: 'monospace' };
+            style = hrStyle();
           }
           controller.addTextSpan(seg.text, { style: style });
         }
@@ -289,40 +293,36 @@ export class LivePreviewHelper {
     // ─── 内容段：始终显示 ───────────────────────
     if (!isSyntax) {
       if (lineCtx === LineContext.CALLOUT) {
-        return { fontColor: '#333333', fontSize: 16, fontFamily: 'monospace' };
+        return contentStyle();
       }
       if (lineCtx === LineContext.QUOTE) {
-        return { fontColor: '#8B5CF6', fontSize: 16, fontStyle: FontStyle.Italic, fontFamily: 'monospace' };
+        return quoteStyle();
       }
       if (lineCtx === LineContext.CODE) {
-        return { fontColor: '#6A5ACD', fontSize: 15, fontFamily: 'monospace' };
+        return codeLineStyle();
       }
       if (lineCtx === LineContext.HR) {
-        return { fontColor: '#C7C7CC', fontSize: 14, fontFamily: 'monospace' };
+        return hrStyle();
       }
       if (lineCtx === LineContext.HEADING && headingLvl > 0 && headingLvl <= 3) {
         // 标题内容用对应样式
-        const headingStyles: RichEditorTextStyle[] = [HEADING_1_STYLE, HEADING_2_STYLE, HEADING_3_STYLE];
-        return headingStyles[headingLvl - 1];
+        return headingStyle(headingLvl);
       }
-      return CONTENT_STYLE;
+      return contentStyle();
     }
 
     // ─── 语法段 ─────────────────────────────────
-    // Wiki 链接语法 [[ ]] 用紫色标识
+    // Wiki 链接语法 [[ ]] 用主题链接色标识
     if (seg.text === '[[' || seg.text === ']]' ||
         seg.text.startsWith('![[') || seg.text.startsWith('[[')) {
-      const embedStyle: RichEditorTextStyle = {
-        fontColor: '#9370DB', fontSize: 16, fontFamily: 'monospace',
-        fontWeight: FontWeight.Medium
-      };
+      const embedStyle: RichEditorTextStyle = embedSyntaxStyle();
       if (cursorInside) return embedStyle;
-      return SYNTAX_HIDDEN_STYLE;
+      return syntaxHiddenStyle();
     }
     // 核心逻辑：光标不在语法段内 → 隐藏；光标在语法段内 → 显示为灰色
     if (cursorInside) {
-      return SYNTAX_VISIBLE_STYLE;
+      return syntaxVisibleStyle();
     }
-    return SYNTAX_HIDDEN_STYLE;
+    return syntaxHiddenStyle();
   }
 }

@@ -165,7 +165,7 @@ export struct QueryBuilder {
   FilterChip(label: string, value: string, isActive: boolean) {
     Text(label)
       .fontSize(12)
-      .fontColor(isActive ? '#FFFFFF' : $r('app.color.text'))
+      .fontColor(isActive ? $r('app.color.on_primary') : $r('app.color.text'))
       .padding({ left: 8, right: 8, top: 3, bottom: 3 })
       .borderRadius(12)
       .backgroundColor(isActive ? $r('app.color.primary') : $r('app.color.surface2'))

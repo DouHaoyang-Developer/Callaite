@@ -11,6 +11,7 @@ import { CanvasMath } from '../../utils/CanvasMath';
 import { WhiteboardToolbar } from './WhiteboardToolbar';
 import { WhiteboardBrushPanel } from './WhiteboardBrushPanel';
 import { WhiteboardStatusBar } from './WhiteboardStatusBar';
+import { getCanvasColors, CanvasColors } from '../common/ThemeManager';
 
 /**
  * 白板视口数据（缩放 + 平移），随画布一起持久化。
@@ -53,6 +54,14 @@ export struct Whiteboard {
   @State private offsetX: number = 0;
   @State private offsetY: number = 0;
   @State private zoomPercent: number = 100;
+
+  /**
+   * 主题联动重绘。
+   * Canvas 的 `.onReady` 只在首次布局触发一次，切主题后必须主动重绘网格，
+   * 否则暗色下仍是上一主题画出的网格像素。写法沿用 CodeBlock.ets:21-22。
+   */
+  @StorageLink('callaite_themeMode') @Watch('onThemeChanged') private themeMode: string = 'system';
+  @StorageLink('callaite_systemColorMode') @Watch('onThemeChanged') private systemColorMode: number = 0;
 
   // ─── 形状数据 ───
   @State private shapes: WbShapeData[] = [];
@@ -191,6 +200,12 @@ export struct Whiteboard {
   /**
    * 初始化演示数据 — 2 个形状 + 1 条连线 + 1 个页面引用。
    * 坐标已适配手机屏宽（<359vp），避免元素被屏幕右缘截断。
+   *
+   * ⚠️ fillColor 刻意保留「浅色字面量」而不换成 $r()：
+   *    它是**持久化进 .canvas 文件**的文档数据，不是 UI 主题色。
+   *    明暗适配在渲染层完成 —— 见 WbShape.resolveFillColor()：
+   *    这两个历史默认值 `#F3F3F4 / #EAEAEB` 会被改判到 `app.color.wb_shape_fill`
+   *    （浅色同值 / 暗色 #2A2A2A），因此不要"顺手清理"成其它值，否则映射失效。
    */
   private initDemoData(): void {
     const s1: WbShapeData = {
@@ -231,6 +246,9 @@ export struct Whiteboard {
 
   /**
    * 添加新形状到画布。
+   *
+   * ⚠️ fillColor 用历史默认字面量 `#F3F3F4`（而非 $r()）：它是写入
+   *    .canvas 的文档数据；主题适配由 WbShape.resolveFillColor() 在渲染层完成。
    */
   addShape(type: string, x: number, y: number, w: number, h: number): void {
     this.pushHistory();
@@ -661,6 +679,13 @@ export struct Whiteboard {
   // ═══════════════════════════════════════════
 
   /**
+   * 主题切换 → 按新主题重绘网格。
+   */
+  onThemeChanged(): void {
+    this.drawGrid();
+  }
+
+  /**
    * 绘制网格背景（随缩放变化间距）+ 笔触。
    */
   drawGrid(): void {
@@ -679,7 +704,9 @@ export struct Whiteboard {
     if (gridSize >= 8) {
       const startX = CanvasMath.safe(((this.offsetX % gridSize) + gridSize) % gridSize);
       const startY = CanvasMath.safe(((this.offsetY % gridSize) + gridSize) % gridSize);
-      ctx.strokeStyle = '#E8E9EA';
+      // Canvas 不接受 Resource，故经 ThemeManager 取当前主题的原始色值
+      const palette: CanvasColors = getCanvasColors();
+      ctx.strokeStyle = palette.canvasGrid;
       ctx.lineWidth = 0.5;
       ctx.beginPath();
       for (let x = startX; x < w; x += gridSize) {

@@ -109,6 +109,58 @@ export interface ThemeColors {
   success: ResourceColor;
 }
 
+/**
+ * CanvasColors —— 供 CanvasRenderingContext2D 使用的**原始色值**调色板。
+ *
+ * 为什么必须单独存在：
+ *   `ctx.fillStyle` / `ctx.strokeStyle` 的类型是
+ *   `string | number | CanvasGradient | CanvasPattern`，**不接受 Resource**。
+ *   因此 Canvas 绘制代码无法直接写 `$r('app.color.graph_edge')`。
+ *
+ * 取值依据（沿用项目既有模式，非自创）：
+ *   项目内三处「需要按主题选色、但拿不到 Resource」的代码都采用
+ *   「ThemeManager.isDarkMode() 判主题 + 明暗两个字面量」：
+ *     · components/extensions/CodeBlock.ets:54-57
+ *     · components/extensions/MermaidRenderer.ets:23-26
+ *     · utils/SystemBarHelper.ets:34
+ *   这里沿用同一模式，只是把字面量**集中到一处**，避免散落在各 Canvas 文件里。
+ *
+ * ⚠️ 已知维护风险（见 U3.3 交付说明⑥）：
+ *   下列 hex 与 `resources/base/element/color.json` + `resources/dark/element/color.json`
+ *   中的同名 token 是**镜像关系**，必须同步修改。每个字段的注释标出了对应 token 名。
+ */
+export interface CanvasColors {
+  /** app.color.graph_edge —— 图谱连线 */
+  graphEdge: string;
+  /** app.color.graph_node —— 图谱普通节点填充 */
+  graphNode: string;
+  /** app.color.primary —— 图谱当前页节点填充（与主色保持一致） */
+  graphNodeCurrent: string;
+  /** app.color.graph_node_ring —— 图谱节点描边环（暗色取画布底色，形成"间隙"效果） */
+  graphNodeRing: string;
+  /** app.color.graph_label —— 图谱节点标签文字 */
+  graphLabel: string;
+  /** app.color.canvas_grid —— Canvas 画布网格线（白板 / 手绘） */
+  canvasGrid: string;
+}
+
+/**
+ * 取当前主题下 Canvas 可用的原始色值。
+ * 每次绘制时调用即可拿到最新值（isDarkMode 读 AppStorage，切换主题后即变）。
+ */
+export function getCanvasColors(): CanvasColors {
+  const dark: boolean = ThemeManager.isDarkMode();
+  const colors: CanvasColors = {
+    graphEdge: dark ? '#333333' : '#D1D5DB',
+    graphNode: dark ? '#8B949E' : '#4B5563',
+    graphNodeCurrent: dark ? '#A88BFA' : '#705DCF',
+    graphNodeRing: dark ? '#161616' : '#FFFFFF',
+    graphLabel: dark ? '#DADADA' : '#1A1A1A',
+    canvasGrid: dark ? '#2E2E2E' : '#E8E9EA'
+  };
+  return colors;
+}
+
 export function getThemeColors(): ThemeColors {
   const colors: ThemeColors = {
     primary: $r('app.color.primary'),

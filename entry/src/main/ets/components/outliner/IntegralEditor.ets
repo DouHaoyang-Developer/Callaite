@@ -72,8 +72,10 @@ export struct IntegralEditor {
         continue;
       }
       if (inCode) {
+        // 与 LivePreviewHelper.codeLineStyle() 共用同一 token（原为内联 '#6A5ACD'，
+        // 暗色下在 #202020 底上仅 ≈2.7:1，偏暗）
         out.push({ text: raw, size: 13, weight: FontWeight.Normal,
-          color: '#6A5ACD', indent: 12, bullet: false });
+          color: $r('app.color.lp_code'), indent: 12, bullet: false });
         continue;
       }
       if (raw.startsWith('### ')) {

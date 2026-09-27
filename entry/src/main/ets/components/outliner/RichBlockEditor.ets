@@ -101,7 +101,9 @@ export struct RichBlockEditor {
     } else if (type === SegmentType.ITALIC) {
       base.fontStyle = FontStyle.Italic;
     } else if (type === SegmentType.CODE) {
-      base.fontColor = '#EF4444';
+      // 与 ContentRenderer.ets:281（非编辑态的行内代码着色）使用同一 token，
+      // 否则编辑态行内代码是红色、退出编辑态变深红，且暗色下对比度也偏低。
+      base.fontColor = $r('app.color.inline_code');
       base.fontFamily = 'monospace';
     } else if (type === SegmentType.HIGHLIGHT) {
       base.decoration = { type: TextDecorationType.Underline, color: '#B8860B' };

@@ -41,10 +41,37 @@ export struct WbShape {
   @Prop @Watch('onEditingChange') isEditing: boolean = false;
   @State editText: string = '';
 
+  /** 历史默认填充（rect/text/line 等）——对应 app.color.wb_shape_fill 的浅色值 */
+  private static readonly LEGACY_DEFAULT_FILL: string = '#F3F3F4';
+  /** 历史默认填充（ellipse 演示形状）——同上，二者视觉几乎无差，合并到一个 token */
+  private static readonly LEGACY_DEFAULT_FILL_ALT: string = '#EAEAEB';
+
   onTextChange: (id: string, text: string) => void = (id: string, text: string) => {};
 
   aboutToAppear(): void {
     this.editText = this.shape.text;
+  }
+
+  /**
+   * 形状填充色 → 实际渲染色。
+   *
+   * ⚠️ 为什么必须做这层转换：
+   *   形状文本用的是主题色 `$r('app.color.text')`（暗色 = #DADADA），
+   *   而形状填充是**持久化在 .canvas 文件里的字面量** `#F3F3F4 / #EAEAEB`（近白）。
+   *   暗色下二者组合为「#DADADA 文字 on #F3F3F4 底」≈ 1.26:1 —— 文字完全不可读。
+   *
+   * 处理方式：只把**默认填充**这两个历史字面量改判到主题 token
+   *   `app.color.wb_shape_fill`（浅色 #F3F3F4 与旧值一致 → 浅色模式零视觉变化；
+   *   暗色 #2A2A2A → 与 #DADADA 文字对比 ≈ 10.3:1）。
+   * 其余值（`transparent`、用户/文件自定义色）原样透传，不改动文档数据，
+   * 因此不需要迁移已存在的 .canvas 文件。
+   */
+  private resolveFillColor(): ResourceColor {
+    const raw: string = this.shape.fillColor;
+    if (raw === WbShape.LEGACY_DEFAULT_FILL || raw === WbShape.LEGACY_DEFAULT_FILL_ALT) {
+      return $r('app.color.wb_shape_fill');
+    }
+    return raw;
   }
 
   /**
@@ -71,7 +98,7 @@ export struct WbShape {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.shape.fillColor)
+      .backgroundColor(this.resolveFillColor())
       .border({ width: 1.5, color: this.shape.borderColor })
       .borderRadius(4)
       .justifyContent(FlexAlign.Center)
@@ -88,7 +115,7 @@ export struct WbShape {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.shape.fillColor)
+      .backgroundColor(this.resolveFillColor())
       .border({ width: 1.5, color: this.shape.borderColor })
       .borderRadius('50%')
       .justifyContent(FlexAlign.Center)
@@ -105,7 +132,7 @@ export struct WbShape {
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.shape.fillColor)
+      .backgroundColor(this.resolveFillColor())
       .border({ width: 1.5, color: this.shape.borderColor })
       .borderRadius(4)
       .rotate({ angle: 45 })
@@ -146,7 +173,7 @@ export struct WbShape {
       Row()
         .width('100%')
         .height('100%')
-        .backgroundColor(this.shape.fillColor)
+        .backgroundColor(this.resolveFillColor())
         .border({ width: 1.5, color: this.shape.borderColor })
         .borderRadius(4)
     }

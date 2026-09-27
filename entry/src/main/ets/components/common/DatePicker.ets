@@ -410,7 +410,9 @@ export struct DatePicker {
    */
   private cellTextColor(cell: GridCell): ResourceColor {
     if (cell.dateStr === this.selectedDate) {
-      return Color.White;
+      // 选中格底色是 $r('app.color.primary')，文字必须用配对的 on_primary：
+      // 暗色下 primary 是亮紫 #A88BFA，写死 Color.White 只有 ≈2.7:1
+      return $r('app.color.on_primary');
     }
     if (!cell.isCurrentMonth) {
       return $r('app.color.muted_text');

@@ -40,6 +40,15 @@
     { "name": "marker_cancelled_bg", "value": "#188A94A6" },
     { "name": "inline_code", "value": "#C7254E" },
     { "name": "math", "value": "#705DCF" },
-    { "name": "mermaid", "value": "#0891B2" }
+    { "name": "mermaid", "value": "#0891B2" },
+
+    { "name": "graph_edge", "value": "#D1D5DB" },
+    { "name": "graph_node", "value": "#4B5563" },
+    { "name": "graph_node_ring", "value": "#FFFFFF" },
+    { "name": "graph_label", "value": "#1A1A1A" },
+    { "name": "canvas_grid", "value": "#E8E9EA" },
+    { "name": "wb_shape_fill", "value": "#F3F3F4" },
+    { "name": "lp_code", "value": "#6A5ACD" },
+    { "name": "lp_h2", "value": "#7B2D8B" }
   ]
 }

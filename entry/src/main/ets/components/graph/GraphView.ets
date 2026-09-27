@@ -6,6 +6,7 @@ import { AppState } from '../../state/AppState';
 import { TablerIcon } from '../common/Icons';
 import { GraphActions } from './GraphActions';
 import { CanvasMath } from '../../utils/CanvasMath';
+import { getCanvasColors, CanvasColors } from '../common/ThemeManager';
 
 /**
  * Point — 屏幕坐标点（具名类型，替代内联对象类型以符合 ArkTS 约束）。
@@ -60,6 +61,19 @@ export struct GraphView {
   /** 当前页面名（用于局部图谱模式） */
   @Prop currentPageName: string = '';
 
+  /**
+   * 主题联动重绘。
+   *
+   * ⚠️ 为什么必须有：Canvas 的 `.onReady` 只在首次布局时触发一次，画完的像素
+   * 不会因为系统配色变化而自动重绘。没有这两个 @StorageLink 时，切到暗色主题后
+   * 画布上仍是上一主题绘制出的旧像素（即使绘制代码已经按主题取色）。
+   *
+   * 写法沿用 components/extensions/CodeBlock.ets:21-22 的既有模式：
+   * 同时订阅「用户选择的主题」与「系统配色」，任一变化都重绘。
+   */
+  @StorageLink('callaite_themeMode') @Watch('onThemeChanged') private themeMode: string = 'system';
+  @StorageLink('callaite_systemColorMode') @Watch('onThemeChanged') private systemColorMode: number = 0;
+
   private layout: GraphLayout = new GraphLayout();
   private settings: RenderingContextSettings = new RenderingContextSettings(true);
   /**
@@ -105,6 +119,13 @@ export struct GraphView {
     const tags = WorkspaceService.getInstance().getAllTags();
     this.allTags = tags;
     this.allNamespaces = this.collectNamespaces();
+  }
+
+  /**
+   * 主题切换 → 立即按新主题重绘画布。
+   */
+  onThemeChanged(): void {
+    this.drawGraph();
   }
 
   /**
@@ -455,9 +476,13 @@ export struct GraphView {
 
     ctx.clearRect(0, 0, w, h);
 
+    // Canvas 无法使用 $r()（Resource 不是合法 fillStyle/strokeStyle），
+    // 故统一从 ThemeManager.getCanvasColors() 取当前主题的原始色值。
+    const palette: CanvasColors = getCanvasColors();
+
     // 绘制连线
     const edges = this.layout.getEdges();
-    ctx.strokeStyle = '#D1D5DB';
+    ctx.strokeStyle = palette.graphEdge;
     ctx.lineWidth = 1;
     for (let i = 0; i < edges.length; i++) {
       const src = this.findNode(edges[i].source);
@@ -491,9 +516,9 @@ export struct GraphView {
       // 颜色按类型
       ctx.beginPath();
       ctx.arc(nx, ny, r, 0, Math.PI * 2);
-      ctx.fillStyle = this.nodeColor(nodes[i]);
+      ctx.fillStyle = this.nodeColor(nodes[i], palette);
       ctx.fill();
-      ctx.strokeStyle = '#FFFFFF';
+      ctx.strokeStyle = palette.graphNodeRing;
       ctx.lineWidth = 2;
       ctx.stroke();
 
@@ -503,7 +528,7 @@ export struct GraphView {
   //    原写法固定 '11px' 使标签只有设计意图的一半大小（实测标签 ink 9–10px vs 圆点 36px，
   //    比值 0.28，而 Obsidian 约为 1.0）。
   ctx.font = (11 * this.density).toString() + 'px sans-serif';
-        ctx.fillStyle = '#1A1A1A';
+        ctx.fillStyle = palette.graphLabel;
         ctx.textAlign = 'center';
         const label = nodes[i].pageName.length > 12
           ? nodes[i].pageName.substring(0, 12)
@@ -514,14 +539,15 @@ export struct GraphView {
   }
 
   /**
-   * 节点颜色：日志页绿 / 命名空间页蓝 / 普通页紫。
+   * 节点颜色：当前打开页 = 主色（暗色下为亮紫），其余 = 次级灰（暗色下为亮灰）。
+   * 色值随主题变化，来源见 ThemeManager.getCanvasColors()。
    */
-  private nodeColor(node: GraphNode): string {
+  private nodeColor(node: GraphNode, palette: CanvasColors): string {
     // 对齐 Obsidian（图7/8/14）：当前打开页 = 主题紫，其余 = 深灰
     if (node.pageName === AppState.getCurrentPage()) {
-      return '#705DCF';
+      return palette.graphNodeCurrent;
     }
-    return '#4B5563';
+    return palette.graphNode;
   }
 
   /**

@@ -326,7 +326,7 @@ export struct PropertyEditor {
   TypeButton(opt: TypeOption) {
     Text(opt.label)
       .fontSize(12)
-      .fontColor(this.newPropType === opt.type ? Color.White : $r('app.color.text'))
+      .fontColor(this.newPropType === opt.type ? $r('app.color.on_primary') : $r('app.color.text'))
       .padding({ left: 12, right: 12, top: 6, bottom: 6 })
       .borderRadius(4)
       .backgroundColor(this.newPropType === opt.type ? $r('app.color.primary') : $r('app.color.surface2'))

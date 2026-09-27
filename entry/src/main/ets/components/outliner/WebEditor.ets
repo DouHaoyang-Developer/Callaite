@@ -4,6 +4,7 @@ import { EditorService } from '../../services/EditorService';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { JournalService } from '../../services/JournalService';
 import { FileService } from '../../services/FileService';
+import { ThemeManager } from '../common/ThemeManager';
 
 /**
  * WebEditor — 基于 WebView 的 contenteditable 编辑器。
@@ -49,10 +50,18 @@ export struct WebEditor {
     const htmlEscaped = WebEditor.escapeHtml(this.initialContent);
     const escaped = htmlEscaped
       .replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
+    // 暗色适配：WebView 内的文字/CSS 是硬编码字面量，必须按当前主题注入。
+    // 沿用 CodeBlock.buildHtml / MermaidRenderer.buildHtml 的既有做法。
+    const dark: boolean = ThemeManager.isDarkMode();
     this.htmlContent = WebEditorHTML
       .replace('__CONTENT__', escaped)
       .replace('__BLOCK_ID__', this.blockUuid)
-      .replace('__FS__', this.fontSize.toString());
+      .replace('__FS__', this.fontSize.toString())
+      .replace(/__FG__/g, dark ? '#DADADA' : '#1a1a1a')
+      .replace(/__CODE_BG__/g, dark ? '#2A2A2A' : '#eef1f4')
+      .replace(/__HL_BG__/g, dark ? '#5C5218' : '#FEF08A')
+      .replace(/__LINK__/g, dark ? '#A88BFA' : '#705DCF')
+      .replace(/__TAG__/g, dark ? '#34D399' : '#059669');
     // 将 HTML 写入应用缓存目录，通过 file:// 加载。
     // 已实测：src 直接传 HTML 源码串、loadData 传源码串均渲染空白。
     try {
@@ -218,14 +227,14 @@ const WebEditorHTML: string = `<!DOCTYPE html><html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:__FS__px;line-height:28px;color:#1a1a1a;background:transparent;padding:0 4px;}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:__FS__px;line-height:28px;color:__FG__;background:transparent;padding:0 4px;}
 #editor{outline:none;min-height:28px;word-break:break-word;white-space:pre-wrap;}
 #editor:empty:before{content:attr(data-placeholder);color:#9ca3af;}
 /* Live Preview 实时预览行内格式元素 */
-#editor code.md-code{font-family:Consolas,Menlo,monospace;font-size:0.92em;background:#eef1f4;border-radius:3px;padding:1px 4px;}
-#editor mark.md-hl{background:#fff59d;border-radius:3px;padding:1px 2px;}
-#editor .md-wikilink{color:#106BA3;text-decoration:underline;}
-#editor .md-tag{color:#059669;font-weight:500;}
+#editor code.md-code{font-family:Consolas,Menlo,monospace;font-size:0.92em;background:__CODE_BG__;border-radius:3px;padding:1px 4px;}
+#editor mark.md-hl{background:__HL_BG__;border-radius:3px;padding:1px 2px;}
+#editor .md-wikilink{color:__LINK__;text-decoration:underline;}
+#editor .md-tag{color:__TAG__;font-weight:500;}
 </style></head><body>
 <div id="editor" contenteditable="true" data-placeholder="输入内容...">__CONTENT__</div>
 <script>
