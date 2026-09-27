@@ -60,6 +60,11 @@ function buildZhCN(): I18nDict {
   d.add('properties', '属性');
   d.add('empty_page', '当前页面为空');
   d.add('placeholder_search', '搜索或创建页面...');
+  d.add('placeholder_search_no_match', '没有匹配的页面');
+  d.add('create_page_prefix', '创建页面: ');
+  d.add('hint_select', '选择');
+  d.add('hint_open', '打开');
+  d.add('hint_close', '关闭');
   d.add('placeholder_block', '输入内容，按 / 查看命令');
   d.add('from_page', '来自');
   d.add('about', '关于');
@@ -199,6 +204,11 @@ function buildEnUS(): I18nDict {
   d.add('properties', 'Properties');
   d.add('empty_page', 'This page is empty');
   d.add('placeholder_search', 'Search or create page...');
+  d.add('placeholder_search_no_match', 'No matching pages');
+  d.add('create_page_prefix', 'Create page: ');
+  d.add('hint_select', 'Select');
+  d.add('hint_open', 'Open');
+  d.add('hint_close', 'Close');
   d.add('placeholder_block', 'Type something, press / for commands');
   d.add('from_page', 'From');
   d.add('about', 'About');

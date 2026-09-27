@@ -3,6 +3,56 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { AppState } from '../../state/AppState';
 import { TablerIcon } from '../common/Icons';
 import { vibrator } from '@kit.SensorServiceKit';
+import { abilityAccessCtrl, bundleManager, Permissions } from '@kit.AbilityKit';
+import { BusinessError } from '@kit.BasicServicesKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+
+/** hilog 域（与 PreferencesStore/PickerService 等一致使用 0x0001）。 */
+const VIBRATE_DOMAIN = 0x0001;
+/** hilog 标签。 */
+const VIBRATE_TAG = 'BlockDragHandler';
+/**
+ * 拖拽起止触感时长（ms）。
+ * 拖拽开始/结束是「一次按键级」的短促反馈，50ms 属于既有取值，保持不变。
+ */
+const VIBRATE_DURATION_MS = 50;
+
+/**
+ * 触感权限判定结果（模块级 memo，避免每次拖拽都查一次权限）。
+ * undefined = 尚未查询；true/false = 已查询结果。
+ */
+let vibratePermission: boolean | undefined = undefined;
+
+/**
+ * 查询「本应用是否已被授予 VIBRATE 权限」。
+ *
+ * normal 级权限在 module.json5 的 requestPermissions 中声明后即为 system_grant，
+ * 安装时自动授予，无需运行时弹窗；此处仅做「能不能震」的前置判断，
+ * 目的是让失败可归因（打日志时能区分「无权限」与「设备/驱动失败」）。
+ *
+ * 任何查询异常都按「无权限」处理并记日志，绝不向上抛（触感是非关键路径）。
+ *
+ * @returns true 表示已授权
+ */
+function hasVibratePermission(): boolean {
+  if (vibratePermission !== undefined) {
+    return vibratePermission;
+  }
+  vibratePermission = false;
+  try {
+    const tokenId: number = bundleManager.getBundleInfoForSelfSync(
+      bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION).appInfo.accessTokenId;
+    const permission: Permissions = 'ohos.permission.VIBRATE';
+    const status = abilityAccessCtrl.createAtManager().checkAccessTokenSync(tokenId, permission);
+    vibratePermission = (status === abilityAccessCtrl.GrantStatus.PERMISSION_GRANTED);
+  } catch (e) {
+    const err = e as BusinessError;
+    hilog.error(VIBRATE_DOMAIN, VIBRATE_TAG,
+      'check VIBRATE permission failed: code=%{public}d message=%{public}s', err.code, err.message);
+    vibratePermission = false;
+  }
+  return vibratePermission;
+}
 
 /**
  * DropPosition — 释放位置类型。
@@ -495,12 +545,38 @@ export struct BlockDragHandler {
 
   /**
    * 触发短振动（50ms），用于拖拽开始和结束的触觉反馈。
+   *
+   * 为什么是「降级而非抛出」：触感属于纯装饰性反馈，失败不能影响拖拽重排本身，
+   * 因此这里只记录日志、不改变调用方的控制流。
+   *
+   * 失败可归因的三条路径（旧实现三条全部静默，故表现为「永不生效且无日志」）：
+   *   1. 同步抛错（401 参数错误 / 801 能力不支持 / 设备无马达等）→ catch 内 hilog.error；
+   *   2. Promise 异步拒绝（本 API 返回 Promise；同步 try/catch 抓不到）→ .catch() 内 hilog.error；
+   *   3. 未声明权限（201 Permission denied）→ 前置 hasVibratePermission() 判定，
+   *      未授权时直接 hilog.error 并降级返回，不发起无效调用。
    */
   triggerVibration(): void {
+    if (!hasVibratePermission()) {
+      hilog.error(VIBRATE_DOMAIN, VIBRATE_TAG,
+        'skip vibration: ohos.permission.VIBRATE not granted (declared in module.json5 requestPermissions?)');
+      return;
+    }
     try {
-      vibrator.startVibration({ type: 'time', duration: 50 });
+      // startVibration 的第二个参数 VibrateAttribute 必填，其中 usage 亦为必填字段。
+      // Usage 在本机 SDK（@ohos.vibrator.d.ts:502）是字符串字面量联合类型，不是 enum，
+      // 因此此处取 'unknown'（联合成员之一，语义为「未知场景，优先级最低」）。
+      const attribute: vibrator.VibrateAttribute = { usage: 'unknown' };
+      const effect: vibrator.VibrateTime = { type: 'time', duration: VIBRATE_DURATION_MS };
+      // 成功路径保持安静：拖拽是高频操作，成功日志会淹没日志缓冲区。
+      vibrator.startVibration(effect, attribute)
+        .catch((e: BusinessError) => {
+          hilog.error(VIBRATE_DOMAIN, VIBRATE_TAG,
+            'startVibration rejected: code=%{public}d message=%{public}s', e.code, e.message);
+        });
     } catch (e) {
-      // 忽略振动失败（模拟器或无权限时）
+      const err = e as BusinessError;
+      hilog.error(VIBRATE_DOMAIN, VIBRATE_TAG,
+        'startVibration threw: code=%{public}d message=%{public}s', err.code, err.message);
     }
   }
 
