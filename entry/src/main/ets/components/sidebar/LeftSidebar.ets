@@ -6,6 +6,7 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData } from '../../core/models/Page';
 import { SubscriptionService } from '../../services/SubscriptionService';
 import { Breakpoints } from '../../state/Breakpoints';
+import { countBacklinks } from '../../utils/BacklinkWarning';
 
 interface NavItem {
   key: string;          // 唯一标识，对应 AppState.currentPage 值
@@ -613,13 +614,57 @@ export struct LeftSidebar {
     this.allPages = WorkspaceService.getInstance().getAllPages();
   }
 
+  /**
+   * 侧栏页面行的删除入口（原为「无确认、直接删」）。
+   *
+   * 改造原则 —— 平衡「删除=进回收站、无确认」的既定裁定与本项的反链预警诉求：
+   *   本案的确认**只作为反链预警的载体**，不是阻断式二次确认，故按反链数分流：
+   *     · N = 0（绝大多数页面）：与改造前**逐字节等价** —— 不弹任何框，一次点击直接删。
+   *       既定裁定在常规路径上被完整保留。
+   *     · N > 0：才弹一次知情提示。按钮文案用「取消 / 仍要删除」而非
+   *       「取消 / 删除」，语义是「告知风险后放行」，落点仍在「删」上；
+   *       且不置 memorized，用户可以一路确认下去，永不被永久拦截。
+   *   即：确认的门槛由「是否有牵连」决定，而不是由「是否是删除」决定 —— 反链预警
+   *   把破坏性操作的风险面显性化，代价只落在真正会牵连别处的少数页面上。
+   *
+   * 反链只在用户点击这一刻算一次（见 countBacklinks 的惰性约束），
+   * 不会进入 hover / 列表渲染路径。
+   */
   deletePage(pageName: string): void {
     const ws = WorkspaceService.getInstance();
     const page = ws.getPageByName(pageName);
-    if (page) {
-      ws.getDataStore().deletePage(page.uuid);
-      this.allPages = ws.getAllPages();
+    if (!page) {
+      return;
     }
+    const n: number = countBacklinks(ws.getDataStore(), pageName);
+    if (n <= 0) {
+      // 无被引用：保持既定「无确认」体验
+      this.performDeletePage(page.uuid);
+      return;
+    }
+    this.getUIContext().showAlertDialog({
+      title: '删除页面',
+      message: '「' + pageName + '」被 ' + n.toString() + ' 处引用，删除后这些链接将失效。\n\n'
+        + '此操作不可撤销，确定继续吗？',
+      primaryButton: {
+        value: t('cancel'),
+        action: () => {}
+      },
+      secondaryButton: {
+        value: '仍要删除',
+        fontColor: $r('app.color.danger'),
+        action: (): void => {
+          this.performDeletePage(page.uuid);
+        }
+      }
+    });
+  }
+
+  /** 真正执行删除并刷新侧栏页面列表。 */
+  private performDeletePage(pageUuid: string): void {
+    const ws = WorkspaceService.getInstance();
+    ws.getDataStore().deletePage(pageUuid);
+    this.allPages = ws.getAllPages();
   }
 
   getNamespaceGroups(): string[] {

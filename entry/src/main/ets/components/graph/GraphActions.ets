@@ -2,6 +2,7 @@ import { AppState, RightSidebarBlock } from '../../state/AppState';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { TablerIcon } from '../common/Icons';
 import { pasteboard } from '@kit.BasicServicesKit';
+import { countBacklinks } from '../../utils/BacklinkWarning';
 
 /**
  * GraphActions — 图谱节点操作菜单。
@@ -11,7 +12,7 @@ import { pasteboard } from '@kit.BasicServicesKit';
  *  - 收藏 / 取消收藏
  *  - 复制页面名（pasteboard）
  *  - 查看反链（切换到右侧栏反链视图）
- *  - 删除页面（带二次确认）
+ *  - 删除页面（带二次确认 + 删除前反链计数预警）
  *
  * 使用 Stack 浮动定位在 (positionX, positionY)。
  * 点击遮罩层（菜单外部）通过 onClose 回调关闭。
@@ -28,6 +29,13 @@ export struct GraphActions {
 
   /** 是否显示删除确认对话框 */
   @State private showDeleteConfirm: boolean = false;
+  /**
+   * 删除确认弹窗里的反链条数（惰性计算）。
+   * ⚠️ 只在用户点「删除页面」那一刻算一次 —— 反链是遍历全库索引，
+   * 绝不能放进 build()/菜单渲染，否则每次长按弹菜单都要扫全库。
+   * -1 表示「尚未计算」，用于断言展示路径不会漏算。
+   */
+  @State private backlinkCount: number = -1;
   /** 当前页面是否已收藏 */
   @State private isFavorite: boolean = false;
 
@@ -116,7 +124,7 @@ export struct GraphActions {
 
         // 删除页面
         this.menuRow('trash', '删除页面', $r('app.color.danger'), () => {
-          this.showDeleteConfirm = true;
+          this.prepareDeleteConfirm();
         })
       }
       .width(180)
@@ -147,13 +155,22 @@ export struct GraphActions {
   }
 
   /**
+   * 打开删除确认框：**此处**才算反链（遍历全库索引），一次删除只算一次。
+   * 反链数为 0 时弹窗文案与改造前逐字相同（不产生噪音行）。
+   */
+  private prepareDeleteConfirm(): void {
+    this.backlinkCount = countBacklinks(WorkspaceService.getInstance().getDataStore(), this.pageName);
+    this.showDeleteConfirm = true;
+  }
+
+  /**
    * 删除确认对话框。
    */
   @Builder buildDeleteConfirm() {
     Column({ space: 12 }) {
       Text('确认删除')
         .fontSize(15).fontWeight(FontWeight.Bold).fontColor($r('app.color.text'))
-      Text('确定要删除页面「' + this.pageName + '」吗？此操作不可撤销。')
+      Text(this.deleteConfirmMessage())
         .fontSize(12).fontColor($r('app.color.muted_text'))
       Row({ space: 8 }) {
         Text('取消')
@@ -212,6 +229,23 @@ export struct GraphActions {
     };
     AppState.addRightSidebarBlock(block);
     AppState.setRightSidebarOpen(true);
+  }
+
+  /**
+   * 删除确认文案。
+   *
+   * ⚠️ 文案核实（勿凭印象改）：`DataStore.deletePage` → `FileRepository.deleteFile`
+   * → `fs.unlinkSync`，是**物理删除**；`RecycleEngine` 全库无任何 import/调用，
+   * `RecycleBinPage` 恒为空列表。因此「此操作不可撤销」是**准确**的，
+   * 绝不能改写成「将移入回收站」——那会是谎报可恢复。
+   * 若将来 RecycleEngine 真正接线，需同步把这里改成回收站措辞。
+   */
+  private deleteConfirmMessage(): string {
+    let msg: string = '确定要删除页面「' + this.pageName + '」吗？此操作不可撤销。';
+    if (this.backlinkCount > 0) {
+      msg += '\n\n此页面被 ' + this.backlinkCount.toString() + ' 处引用，删除后这些链接将失效。';
+    }
+    return msg;
   }
 
   /**

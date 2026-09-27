@@ -3,6 +3,7 @@ import { t } from '../../utils/i18n';
 import { AppState } from '../../state/AppState';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData, isJournalPage } from '../../core/models/Page';
+import { countBacklinks } from '../../utils/BacklinkWarning';
 
 /**
  * AllPagesPage — 所有页面列表页。
@@ -127,9 +128,30 @@ export struct AllPagesPage {
 
   batchDelete(): void {
     const count = this.selectedUuids.length;
+    // 反链预警：只在此刻（用户点了批量删除）遍历一次索引，累加选中的各页反链数。
+    // 未选中的页面不参与计算；选中页在本次循环里计算完毕后再统一执行删除，
+    // 避免边删边算导致后算的页面反链已被前面的删除动作改掉。
+    const ws = WorkspaceService.getInstance();
+    const dataStore = ws.getDataStore();
+    let backlinkTotal = 0;
+    let referencedPages = 0;
+    for (let i = 0; i < this.selectedUuids.length; i++) {
+      const p = dataStore.getPage(this.selectedUuids[i]);
+      if (p) {
+        const n = countBacklinks(dataStore, p.name);
+        if (n > 0) {
+          backlinkTotal += n;
+          referencedPages += 1;
+        }
+      }
+    }
+    let message = `确认删除选中的 ${count} 个页面？此操作不可撤销。`;
+    if (backlinkTotal > 0) {
+      message += `\n\n其中 ${referencedPages} 个页面共被 ${backlinkTotal} 处引用，删除后这些链接将失效。`;
+    }
     AlertDialog.show({
       title: t('delete'),
-      message: `确认删除选中的 ${count} 个页面？`,
+      message: message,
       primaryButton: {
         value: t('cancel'),
         action: () => {}
@@ -138,9 +160,8 @@ export struct AllPagesPage {
         value: t('delete'),
         fontColor: $r('app.color.danger'),
         action: (): void => {
-          const ws = WorkspaceService.getInstance();
           for (let i = 0; i < this.selectedUuids.length; i++) {
-            ws.getDataStore().deletePage(this.selectedUuids[i]);
+            dataStore.deletePage(this.selectedUuids[i]);
           }
           this.selectedUuids = [];
           this.isMultiSelectMode = false;
@@ -151,9 +172,15 @@ export struct AllPagesPage {
   }
 
   deleteSinglePage(page: PageData): void {
+    // 反链预警：只在此刻算一次；N=0 时文案与改造前逐字相同。
+    const n = countBacklinks(WorkspaceService.getInstance().getDataStore(), page.name);
+    let message = `确认删除页面 "${page.originalName}"？此操作不可撤销。`;
+    if (n > 0) {
+      message += `\n\n此页面被 ${n} 处引用，删除后这些链接将失效。`;
+    }
     AlertDialog.show({
       title: t('delete'),
-      message: `确认删除页面 "${page.originalName}"？`,
+      message: message,
       primaryButton: {
         value: t('cancel'),
         action: () => {}

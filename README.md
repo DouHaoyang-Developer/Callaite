@@ -1062,8 +1062,8 @@ EntryAbility.onSaveState（崩溃恢复）
 ```
 Callaite/entry/src/main/ets/
 ├── components/              68 文件 (UI 层)
-│   ├── outliner/            11  (BlockView / BlockList / BlockChildren / BlockDragHandler / BlockSelection /
-│   │                            WebEditor / RichBlockEditor / SlashMenu / AutoComplete / Toolbar / FindInPage)
+│   ├── outliner/            12  (BlockView / BlockList / BlockChildren / BlockDragLayer / BlockSelection /
+│   │                            WebEditor / RichBlockEditor / IntegralEditor / SlashMenu / AutoComplete / Toolbar / FindInPage)
 │   ├── sidebar/              5  (LeftSidebar / RightSidebar / PageTree / PageContextMenu / BacklinkFilters)
 │   ├── page/                 4  (PageView / ContentArea / JournalFeed / AllPagesPage)
 │   ├── layout/               9  (MainContainer / Ribbon / TabBar / StatusBar / MobileHeader /

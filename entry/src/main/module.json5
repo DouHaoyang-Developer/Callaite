@@ -83,7 +83,7 @@
         }
       },
       {
-        // S1-E：拖拽起止触感反馈（BlockDragHandler.triggerVibration）。
+        // S1-E：拖拽起止触感反馈（BlockDragLayer.triggerVibration）。
         // normal 级 system_grant 权限，安装即授予，无需 reason / usedScene，也无需运行时申请。
         "name": "ohos.permission.VIBRATE"
       }
