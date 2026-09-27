@@ -863,7 +863,8 @@ export struct SettingsPage {
     .onClick(() => {
       this.selectedTheme = mode;
       ThemeManager.setThemeMode(mode);
-      AppStorage.setOrCreate('themeMode', mode);
+      // 双写到 ThemeManager 的规范键，避免遗留无前缀 'themeMode' 死链（该键已无任何读者）。
+      AppStorage.setOrCreate('callaite_themeMode', mode);
     })
   }
 
