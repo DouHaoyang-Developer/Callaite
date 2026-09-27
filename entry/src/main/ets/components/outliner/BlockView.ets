@@ -8,6 +8,11 @@ import { WebEditor } from './WebEditor';
 import { TablerIcon } from '../common/Icons';
 import { AppState } from '../../state/AppState';
 import { InlineQueryBlock } from '../query/InlineQueryBlock';
+import {
+  registerBlockRow,
+  invalidateBlockRow,
+  unregisterBlockRow
+} from './BlockDragLayer';
 
 interface EmbedItem {
   kind: string;   // 'block' | 'page'
@@ -63,10 +68,23 @@ export struct BlockView {
   @State isAnchorHighlighted: boolean = false;
   /** 闪烁计时器 id，重置/离场时清理，避免旧回调把新一轮高亮误关 */
   private highlightTimer: number = -1;
+  /**
+   * S1-H：行级长按上报。
+   *
+   * 语义：本行被长按 500ms → 把 (本行 uuid, 按下点窗口坐标 vp) 交给拖拽层。
+   * 这里**只上报**，不做命中计算、不改数据 —— 命中测试、三态判定、落库全部在
+   * BlockDragLayer 单实例内完成（整页只挂 1 个，故不存在每行手势与 List 滚动竞争）。
+   *
+   * 缺省为空实现：嵌入式（日志流 feed）与其它复用场景不传该回调 → 长按不产生任何行为。
+   */
+  onRowGrab: (uuid: string, globalX: number, globalY: number) => void = () => {};
   private blockData: BlockData | undefined;
 
   aboutToAppear(): void {
     this.refreshBlock();
+    // S1-H：先作废本 uuid 的旧行矩形（组件被 LazyForEach 复用时几何会立刻变化，
+    // 作废可保证「旧几何绝不参与命中」），真正的矩形由 onAreaChange 回填。
+    invalidateBlockRow(this.blockUuid);
     // U2.1a：本块可能是「滚到目标行时才被 LazyForEach 创建」的。@Watch 只在值**变化**时
     // 触发，创建晚于高亮写入的实例不会收到回调，故此处按当前值补一次自检。
     this.applyAnchorHighlightIfTarget();
@@ -78,6 +96,9 @@ export struct BlockView {
       clearTimeout(this.highlightTimer);
       this.highlightTimer = -1;
     }
+    // S1-H：行被回收 → 从命中表反注册。这是「幽灵行」的第一道防线
+    // （块 uuid 消失后若无记录清理，命中测试可能落到一个已不存在的行矩形上）。
+    unregisterBlockRow(this.blockUuid);
   }
 
   /**
@@ -249,6 +270,29 @@ export struct BlockView {
             this.isHovered = isHover;
             this.bulletColor = isHover ? $r('app.color.primary') : $r('app.color.muted_text');
           })
+          // S1-H：行矩形登记。onAreaChange 给出的 position/globalPosition/height
+          // 单位均为 vp（SDK Area：width/height/position/globalPosition 全部 vp），
+          // globalPosition 即窗口坐标系 —— 与手指的 FingerInfo.globalY / TouchObject.windowY
+          // 同一坐标系，拖拽层可直接相减得到列表局部坐标。
+          // 每次布局变化（滚动、展开、LazyForEach 复用）都会重新触发，因此命中表始终是最新几何。
+          .onAreaChange((_oldArea: Area, newArea: Area) => {
+            registerBlockRow(
+              this.blockUuid,
+              BlockView.areaVp(newArea.globalPosition.y),
+              BlockView.areaVp(newArea.height),
+              this.depth
+            );
+          })
+          // S1-H：长按激活拖拽。
+          // 这里只挂**长按**（不挂 Pan）—— 长按 500ms 内手指不动，List 的滚动识别器
+          // 因不满足距离条件而判负，故不与 S1-B 的 List 纵向滚动竞争；
+          // 真正的位移跟踪由拖拽层单实例的 onTouch 承担。
+          .gesture(
+            LongPressGesture({ fingers: 1, repeat: false, duration: 500 })
+              .onAction((event: GestureEvent) => {
+                this.reportRowGrab(event);
+              })
+          )
           .onClick(() => {
             if (!this.isEditing) {
               EditorService.getInstance().setFocusedBlock(this.blockUuid);
@@ -649,6 +693,37 @@ export struct BlockView {
   enterEdit(): void {
     EditorService.getInstance().setFocusedBlock(this.blockUuid);
     this.isEditing = true;
+  }
+
+  /**
+   * S1-H：把 Area 的 Length（string | number | Resource）取成 vp 数值。
+   * 布局回调中 position/height 实际都是 number（vp），但类型仍是 Length 联合体，
+   * ArkTS 禁用 any，故必须显式收窄；取不到数值时返回 0（= 未完成布局，不参与命中）。
+   */
+  static areaVp(value: Length | undefined): number {
+    if (value === undefined) {
+      return 0;
+    }
+    if (typeof value === 'number') {
+      return value;
+    }
+    return 0;
+  }
+
+  /**
+   * S1-H：长按上报 —— 只把「哪一行 + 手指在窗口坐标系的落点」交给拖拽层。
+   *
+   * 为什么必须带坐标：拖拽层是**整页唯一**的覆盖层，它需要知道长按落在哪一行；
+   * 若在此处自行判定目标，就会与拖拽层的命中逻辑形成第二份实现（本项目的既有教训）。
+   * 手指不可用（fingerList 为空，如键鼠触发）时按不可用（-1）上报，拖拽层据此放弃本次拖拽。
+   */
+  private reportRowGrab(event: GestureEvent): void {
+    const fingers = event.fingerList;
+    if (fingers === undefined || fingers.length === 0) {
+      this.onRowGrab(this.blockUuid, -1, -1);
+      return;
+    }
+    this.onRowGrab(this.blockUuid, fingers[0].globalX, fingers[0].globalY);
   }
 
   /**

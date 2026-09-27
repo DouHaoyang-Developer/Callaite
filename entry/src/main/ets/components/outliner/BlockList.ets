@@ -3,6 +3,7 @@ import { BlockView } from './BlockView';
 import { BlockChildren } from './BlockChildren';
 import { BlockSelection } from './BlockSelection';
 import { FindInPage } from './FindInPage';
+import { BlockDragLayer, forwardRowGrab } from './BlockDragLayer';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { EditorService } from '../../services/EditorService';
 import { SlashMenu } from './SlashMenu';
@@ -85,6 +86,13 @@ export struct BlockList {
   @State slashMenuVisible: boolean = false;
   @State slashMenuBlockUuid: string = '';
   @State findInPageVisible: boolean = false;
+  /**
+   * S1-H：当前页 uuid。
+   *
+   * 拖拽层需要它做「幽灵行」的跨页校验（命中表是模块级共享的，换页/复用后
+   * 若残留了别的页面的行记录，不得成为落点）。refreshBlocks 每次刷新都会同步它。
+   */
+  @State pageUuidForDrag: string = '';
   // 监听 blocksVersion 变化，触发刷新
   @StorageLink('callaite_blocksVersion') @Watch('onBlocksVersionChanged') private blocksVersion: number = 0;
   // LazyForEach 数据源
@@ -92,6 +100,39 @@ export struct BlockList {
   // 自持 Scroller：未注入外部 Scroller 时使用（ArkTS 不支持 ??=）。
   // 成员初始化先于 aboutToAppear / build，故 build() 中一定非空。
   private ownScroller: Scroller = new Scroller();
+  /**
+   * S1-H：整页拖拽层的注册键（**整页只对应 1 个实例**）。
+   *
+   * ArkTS 不允许把 UI 组件实例化语句写成赋值表达式
+   * （编译器报 "'this.x = BlockDragLayer({...})' does not meet UI component syntax"），
+   * 因此父组件无法用成员变量持有子组件实例。改为：拖拽层在 aboutToAppear 时按本 key
+   * 自注册到模块级实例表（BlockDragLayer.ets 的 bindDragLayer），
+   * 行内长按回调按同一 key 路由（forwardRowGrab）—— 「整页 1 个实例」的语义不变。
+   *
+   * 每个 BlockList（含分屏的另一窗格 / feed 内嵌）生成各自的 key，
+   * 但只有整页分支会实例化拖拽层，故实际绑定数 == 整页大纲数。
+   */
+  private dragLayerId: string = '';
+
+  /**
+   * 惰性生成本实例的注册键。
+   * 用 ArkUI 的组件唯一 id（CustomComponent.getUniqueId，common.d.ts:24726）而不是随机数：
+   * 天然每实例唯一、无需额外 import，也不会与其它实例撞键。
+   */
+  private ensureDragLayerId(): string {
+    if (this.dragLayerId === '') {
+      this.dragLayerId = 'callaite_blockDragLayer_' + this.getUniqueId();
+    }
+    return this.dragLayerId;
+  }
+
+  /**
+   * S1-H：行长按回调 —— 转发给本整页唯一的拖拽层。
+   * 行本身不做任何命中/落库，只上报「哪一行 + 按下点窗口坐标」。
+   */
+  private handleRowGrab(uuid: string, globalX: number, globalY: number): void {
+    forwardRowGrab(this.ensureDragLayerId(), uuid, globalX, globalY);
+  }
 
   /**
    * 实际使用的 Scroller。
@@ -130,8 +171,10 @@ export struct BlockList {
     const page = ws.getPageByName(this.pageName);
     if (page) {
       this.blocks = ws.getPageBlocks(page.uuid);
+      this.pageUuidForDrag = page.uuid;
     } else {
       this.blocks = [];
+      this.pageUuidForDrag = '';
     }
     this.dataSource.setBlocks(this.blocks);
   }
@@ -200,11 +243,26 @@ export struct BlockList {
               LazyForEach(this.dataSource, (block: BlockData) => {
                 ListItem() {
                   Column() {
-                    BlockView({ blockUuid: block.uuid, depth: block.level })
+                    // S1-H：onRowGrab 指向**同一个**拖拽层实例（见 handleRowGrab），
+                    // 行内不挂任何拖拽/Pan 手势，位移跟踪全部由该单实例承担。
+                    BlockView({
+                      blockUuid: block.uuid,
+                      depth: block.level,
+                      onRowGrab: (uuid: string, gx: number, gy: number) => {
+                        this.handleRowGrab(uuid, gx, gy);
+                      }
+                    })
 
                     // 子 Block 由 BlockChildren 组件递归渲染
+                    // （S1-H：透传行级长按上报，使子块同样可被拖拽）
                     if (!block.collapsed) {
-                      BlockChildren({ parentUuid: block.uuid, depth: block.level })
+                      BlockChildren({
+                        parentUuid: block.uuid,
+                        depth: block.level,
+                        onRowGrab: (uuid: string, gx: number, gy: number) => {
+                          this.handleRowGrab(uuid, gx, gy);
+                        }
+                      })
                     }
                   }
                   .width('100%')
@@ -232,6 +290,19 @@ export struct BlockList {
         }
         .width('100%')
         .height('100%')
+
+        // ─── S1-H：块拖拽重排层 ───
+        // 位置：整页分支的 Stack 内、**List 之外**，且整页只挂这 1 个实例。
+        // 因此不存在「每行一个手势容器」与 List 纵向滚动竞争的问题；
+        // 行内只保留一个 LongPressGesture（时长内不移动 → 滚动识别器判负），
+        // 位移跟踪由本层的 onTouch 承担。
+        // 命中模式为 Transparent（层内自设）：本层参与命中但不阻塞兄弟 List 的命中，
+        // 滚动、行内点击、hover 全部照旧。
+        BlockDragLayer({
+          layerId: this.ensureDragLayerId(),
+          pageUuid: this.pageUuidForDrag,
+          scroller: this.activeScroller()
+        })
       }
 
       // 多选批量操作浮动栏（feed 内嵌模式不渲染，避免每个日期节叠一层）
