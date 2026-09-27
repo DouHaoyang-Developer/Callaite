@@ -26,6 +26,20 @@ const TAG = 'PenCanvasPage';
 export struct PenCanvasPage {
   /** 手写套件功能入口 */
   private controller: HandwriteController = new HandwriteController();
+  /**
+   * 手写文件名（可配置，默认单板文件）。
+   *
+   * 本页此前把 `callaite_whiteboard.hw` 写死在 aboutToAppear 里，只能承载一块手写板。
+   * 现改为经 `setStorageFile()` 注入文件名，多块手写板可各自持有一个 .hw：
+   *   · 不注入 → 保持原行为，仍是 filesDir/callaite_whiteboard.hw（零回归）
+   *   · 注入   → filesDir/ + 注入的文件名（仅文件名，不含路径分隔符）
+   * 注意：必须在 aboutToAppear 之前调用（即本组件被构造后立即调用），
+   *       因为 aboutToAppear 会据此一次性算出 filePath 并 load()。
+   *
+   * 与形状板的隔离：形状板走 WhiteboardFileService → filesDir/whiteboards/default.canvas，
+   * 本页走 filesDir/*.hw，两者目录与扩展名均不同，不存在覆盖冲突。
+   */
+  private hwFileName: string = 'callaite_whiteboard.hw';
   /** 手写文件路径（.hw） */
   @State filePath: string = '';
   /** 当前缩放比 */
@@ -64,7 +78,7 @@ export struct PenCanvasPage {
     // 手写文件放在应用沙箱 filesDir 下（与官方示例一致）
     const ctx = this.getUIContext().getHostContext();
     const dir: string = ctx !== undefined ? ctx.filesDir : '';
-    this.filePath = dir + '/callaite_whiteboard.hw';
+    this.filePath = dir + '/' + this.hwFileName;
     this.prepareFile();
     // 注册加载完成回调（回调参数为该手写内容页 id）
     this.controller.onLoad((err, pageId) => {
@@ -90,6 +104,20 @@ export struct PenCanvasPage {
   aboutToDisappear(): void {
     // 退出页面自动保存，避免笔迹丢失
     this.doSave(true);
+  }
+
+  /**
+   * 配置手写板存储文件名（多手写板：每块板一个 .hw）。
+   *
+   * @param name 仅文件名，例如 'note_a.hw'；传入非法值（含路径分隔符或 '..'）时忽略并保持默认，
+   *             避免逃逸出 filesDir。
+   */
+  setStorageFile(name: string): void {
+    if (name.length === 0 || name.indexOf('/') >= 0 || name.indexOf('\\') >= 0 || name.indexOf('..') >= 0) {
+      hilog.warn(DOMAIN, TAG, 'setStorageFile rejected invalid name, keep default');
+      return;
+    }
+    this.hwFileName = name;
   }
 
   /** 确保手写文件存在（Pen Kit 的 load 需要文件已存在或可创建） */
