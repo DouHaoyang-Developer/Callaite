@@ -1,4 +1,5 @@
 import { WorkspaceService } from './WorkspaceService';
+import { DirtyPageTracker } from './DirtyPageTracker';
 import { BlockData } from '../core/models/Block';
 import { UUID } from '../utils/UUID';
 
@@ -36,7 +37,16 @@ export class EditorService {
 
   // ─── 焦点管理 ───
 
+  /**
+   * 设置焦点块。
+   *
+   * ⚠️ 落盘时机（事件驱动 flush 点 ①「编辑焦点离开」）：焦点从 A 块移到 B 块，
+   * 意味着 A 块的编辑会话结束 —— 此时把「已标脏未落盘」的页面写下去。
+   * 保守起见这里**无条件** flush（不做「A 与 B 是否同页」的判断）：
+   * 脏页数在正常使用下为 1，且同页时 flush 的正是刚结束编辑的那一页，没有多余写。
+   */
   setFocusedBlock(uuid: string): void {
+    DirtyPageTracker.getInstance().flushNow();
     this.focusedBlockUuid = uuid;
     // 同步到 AppStorage：BlockView 据此在其他块获焦时自动退出编辑态
     AppStorage.setOrCreate('callaite_focusedBlock', uuid);
@@ -46,7 +56,11 @@ export class EditorService {
     return this.focusedBlockUuid;
   }
 
+  /**
+   * 清除焦点（Esc / 工具条收起等）—— 同上，是「编辑器失焦」的收口点。
+   */
   clearFocus(): void {
+    DirtyPageTracker.getInstance().flushNow();
     this.focusedBlockUuid = '';
     AppStorage.setOrCreate('callaite_focusedBlock', '');
     this.selectedUuids = [];

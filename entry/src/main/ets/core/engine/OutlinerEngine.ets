@@ -1,6 +1,7 @@
 import { BlockTree } from './BlockTree';
 import { DataStore } from '../db/DataStore';
 import { BlockData } from '../models/Block';
+import { DirtyPageTracker } from '../../services/DirtyPageTracker';
 import {
   OutlinerOp,
   InsertBlockOp,
@@ -358,20 +359,113 @@ export class OutlinerEngine {
     return result;
   }
 
-  private persistForOp(op: OutlinerOp): void {
-    if (op.type === 'insert-block' || op.type === 'delete-block' ||
-        op.type === 'delete-blocks' || op.type === 'update-block' ||
-        op.type === 'move-block' || op.type === 'move-blocks' ||
-        op.type === 'indent' || op.type === 'outdent' ||
-        op.type === 'set-marker' || op.type === 'set-priority' ||
-        op.type === 'set-scheduled' || op.type === 'set-deadline' ||
-        op.type === 'add-property' || op.type === 'remove-property') {
+  // ─── 持久化 ───
 
-      // 找到受影响的 page 并保存
+  /**
+   * 纯文本内容变更的操作类型 —— 只有这些走「标脏 + 延迟 flush」。
+   *
+   * 判定标准：只改 `block.content`，不动块的存在性与层级（父子/左右兄弟关系），
+   * 因此中间态即便丢失也不会造成结构损坏，且高频（每次按键，实测 150ms 级）。
+   * 与之相对，`set-marker` / `add-property` 等虽然也低频，但保守起见仍即时落盘。
+   *
+   * ⚠️ 只放 `update-block` 一项。`rename-page` 虽然也改文件，但其落盘发生在
+   *    `DataStore.renamePage`（:217）内部，本就不经过这里；若将来把它移出来，
+   *    应走结构性分支（先 flush 再写），而不是被延迟。
+   */
+  private static readonly TEXT_ONLY_OPS: string[] = [
+    'update-block'
+  ];
+
+  /**
+   * 结构性操作后是否要把所有脏页先写下去。
+   *
+   * 结构性操作会立即读写同一批 .md 文件；若此时还有「已标脏未落盘」的文本内容，
+   * 必须先 flush，否则内存内容与文件内容不一致的窗口会被拉长。
+   * 实现上保守取「flush 全部脏页」—— 脏页数在正常使用下为 1。
+   */
+  private static readonly STRUCTURAL_OPS: string[] = [
+    'insert-block', 'delete-block',
+    'delete-blocks', 'update-block',
+    'move-block', 'move-blocks',
+    'indent', 'outdent',
+    'set-marker', 'set-priority',
+    'set-scheduled', 'set-deadline',
+    'add-property', 'remove-property'
+  ];
+
+  private isTextOnlyOp(op: OutlinerOp): boolean {
+    for (let i = 0; i < OutlinerEngine.TEXT_ONLY_OPS.length; i++) {
+      if (OutlinerEngine.TEXT_ONLY_OPS[i] === op.type) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private isStructuralOp(op: OutlinerOp): boolean {
+    for (let i = 0; i < OutlinerEngine.STRUCTURAL_OPS.length; i++) {
+      if (OutlinerEngine.STRUCTURAL_OPS[i] === op.type) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 操作后的持久化分流（本方法取代原先「一律同步 savePage」的 persistForOp）。
+   *
+   *   · 文本类变更（update-block）→ **只标脏**，不落盘。
+   *     落盘由 DirtyPageTracker 的 flush 时机决定（失焦 / 切页 / 进后台 / 销毁前 /
+   *     5s 兜底定时器）。
+   *   · 结构性变更 → **先 flush 全部脏页**（把待写的文本内容写下去），
+   *     再同步 savePage 本次受影响的页面。保留原有的即时落盘语义。
+   *   · 其余操作（collapse 等）→ 不动文件，与原实现一致
+   *     （`collapse` 从未在 persistForOp 的落盘清单里）。
+   */
+  private persistForOp(op: OutlinerOp): void {
+    if (this.isTextOnlyOp(op)) {
       const pageId = this.findPageForOp(op);
       if (pageId) {
-        this.dataStore.savePage(pageId);
+        DirtyPageTracker.getInstance().markDirty(pageId);
       }
+      return;
+    }
+
+    if (!this.isStructuralOp(op)) {
+      return;
+    }
+
+    // 结构性操作之前：必须先把「已标脏未落盘」的内容写下去
+    DirtyPageTracker.getInstance().flushNow();
+
+    const pageId = this.findPageForOp(op);
+    if (pageId) {
+      this.persistNow(pageId);
+    }
+  }
+
+  /**
+   * 立即把单个页面写盘。
+   *
+   * 唯一的落盘出口（除 DataStore 自身的 CRUD 内部调用外），供
+   * DirtyPageTracker 的注入回调与 persistForOp 共用。
+   *
+   * ⚠️ 刻意不改 `DataStore.savePage` / `FileRepository.writeTextSync` 的内部实现
+   *    （临时文件 + fsync + rename 是最后一道防线），只决定调用时机。
+   *
+   * @returns 是否确实写盘成功。失败时由调用方（DirtyPageTracker）重新标脏，
+   *          交给下一次兜底重试，避免「写失败即静默丢弃」。
+   */
+  persistNow(pageId: string): boolean {
+    if (!this.dataStore.getPage(pageId)) {
+      return false;
+    }
+    try {
+      this.dataStore.savePage(pageId);
+      return true;
+    } catch (e) {
+      console.error('[OutlinerEngine] persistNow failed for page ' + pageId + ': ' + JSON.stringify(e));
+      return false;
     }
   }
 

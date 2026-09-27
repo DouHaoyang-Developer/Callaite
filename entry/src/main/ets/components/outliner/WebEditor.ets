@@ -2,6 +2,7 @@ import { webview } from '@kit.ArkWeb';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { EditorService } from '../../services/EditorService';
 import { WorkspaceService } from '../../services/WorkspaceService';
+import { DirtyPageTracker } from '../../services/DirtyPageTracker';
 import { JournalService } from '../../services/JournalService';
 import { FileService } from '../../services/FileService';
 import { ThemeManager } from '../common/ThemeManager';
@@ -188,6 +189,10 @@ class NativeBridge {
 
     if (action === 'save') {
       editor.updateBlockContent(this.parent.blockUuid, data);
+      // 事件驱动 flush 点 ①：WebEditor 的 DOM blur（HTML 侧第 447 行 `blur` 监听）
+      // 会把最终文本写进 block，这里紧接着把脏页落盘。
+      // 必须放在 updateBlockContent **之后**：flush 写的是内存中 block 的最新内容。
+      DirtyPageTracker.getInstance().flushNow();
       this.parent.onSave();
     } else if (action === 'newBlock') {
       const page = ws.getPageByName(this.parent.pageName);

@@ -1,5 +1,6 @@
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { EditorService } from '../../services/EditorService';
+import { DirtyPageTracker } from '../../services/DirtyPageTracker';
 import { ContentRenderer, ContentSegment, SegmentType } from '../../utils/ContentRenderer';
 
 /**
@@ -46,8 +47,9 @@ export struct RichBlockEditor {
           });
         })
         .onBlur(() => {
-          // 失焦时保存
+          // 失焦时保存（事件驱动 flush 点 ①：编辑器失焦）
           EditorService.getInstance().updateBlockContent(this.blockUuid, this.currentContent);
+          DirtyPageTracker.getInstance().flushNow();
           this.onSave();
         })
         .width('100%')

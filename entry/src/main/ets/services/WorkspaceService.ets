@@ -1,4 +1,5 @@
 import { SaveQueue } from './SaveQueue';
+import { DirtyPageTracker } from './DirtyPageTracker';
 import { DataStore } from '../core/db/DataStore';
 import { OutlinerEngine } from '../core/engine/OutlinerEngine';
 import { PageData } from '../core/models/Page';
@@ -28,10 +29,14 @@ export class WorkspaceService {
   static getInstance(): WorkspaceService {
     if (!WorkspaceService.instance) {
       WorkspaceService.instance = new WorkspaceService();
-      // O1：向保存队列注入落盘回调（静默 1.2s 自动 saveAll，原子写逐页落盘）
       const created = WorkspaceService.instance;
+      // 历史兼容：SaveQueue 只保留「全库落盘」回调入口，不再自行定时调用
       SaveQueue.getInstance().init((): void => {
         created!.saveAll();
+      });
+      // 惰性落盘：把「写单页」能力注入脏页协调器（由它在事件/兜底时机调用）
+      DirtyPageTracker.getInstance().setPageSaver((pageId: string): boolean => {
+        return created!.getOutlinerEngine().persistNow(pageId);
       });
     }
     return WorkspaceService.instance;
@@ -110,28 +115,19 @@ export class WorkspaceService {
   }
 
   executeOp(op: OutlinerOp): OpResult {
-    const result = this.outlinerEngine.execute(op);
-    // O1：变更成功即标记脏（静默 1.2s 落盘，强杀丢失窗口 ≤1.2s）
-    if (result.success) {
-      SaveQueue.getInstance().markDirty();
-    }
-    return result;
+    // 落盘时机完全由 OutlinerEngine.persistForOp 分流：
+    //   文本类（update-block）→ 标脏等 flush；结构性 → 先 flush 再即时写。
+    // 故此处不再调用 SaveQueue.markDirty()（原先它会导致「结构性操作已落盘，
+    // 却又留下一个脏标记 → 下次 flush 再写一遍」的冗余写）。
+    return this.outlinerEngine.execute(op);
   }
 
   undo(): OpResult {
-    const result = this.outlinerEngine.undo();
-    if (result.success) {
-      SaveQueue.getInstance().markDirty();
-    }
-    return result;
+    return this.outlinerEngine.undo();
   }
 
   redo(): OpResult {
-    const result = this.outlinerEngine.redo();
-    if (result.success) {
-      SaveQueue.getInstance().markDirty();
-    }
-    return result;
+    return this.outlinerEngine.redo();
   }
 
   // ─── 搜索 ───
@@ -150,7 +146,24 @@ export class WorkspaceService {
 
   // ─── 保存 ───
 
+  /**
+   * 立即落盘「已标脏但未 flush」的页面。
+   *
+   * 事件驱动 flush 的统一入口：块/编辑器失焦、切换页面/标签、应用进入后台、
+   * 应用销毁前都必须先调它（结构性操作前由 OutlinerEngine.persistForOp 自行调用）。
+   */
+  flushDirtyPages(): void {
+    DirtyPageTracker.getInstance().flushNow();
+  }
+
+  /** 是否存在「已标脏但未落盘」的页面（供 UI/诊断使用） */
+  hasUnflushedPages(): boolean {
+    return DirtyPageTracker.getInstance().hasPending();
+  }
+
   savePage(pageId: string): void {
+    // 先把待写的文本内容写下去，再写目标页（两者都走同一批 .md 文件）
+    DirtyPageTracker.getInstance().flushNow();
     this.dataStore.savePage(pageId);
   }
 
@@ -159,6 +172,9 @@ export class WorkspaceService {
   }
 
   saveAll(): void {
+    // 兜底路径（onBackground / onSaveState / 未捕获异常）同样先 flush 脏页；
+    // 注意 saveAll 依旧逐页全量写，不走 DirtyPageTracker —— 它是最后一道防线。
+    DirtyPageTracker.getInstance().flushNow();
     this.dataStore.saveAll();
   }
 

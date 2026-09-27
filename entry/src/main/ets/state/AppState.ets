@@ -1,5 +1,6 @@
 import { SupportedLanguage, I18n } from '../utils/i18n';
 import { ThemeManager, ThemeMode } from '../components/common/ThemeManager';
+import { DirtyPageTracker } from '../services/DirtyPageTracker';
 import { display } from '@kit.ArkUI';
 
 export interface AppConfig {
@@ -261,6 +262,12 @@ export class AppState {
   }
 
   static setCurrentPage(pageName: string): void {
+    // 事件驱动 flush 点 ②-a：切换页面。
+    // 必须在改写路由键**之前**把「已标脏未落盘」的页面写下去 —— 页面切换会重建
+    // 编辑器（旧编辑器的 DOM 随之销毁，其 blur 不保证还会触发一次），
+    // 也意味着用户已经离开这一页，延迟落盘再无收益。
+    // 无脏页时 flushNow() 是零开销的空操作，不会被启动期的重复调用放大。
+    DirtyPageTracker.getInstance().flushNow();
     const prev = AppStorage.get<string>(STORAGE_KEYS.currentPage);
     AppStorage.setOrCreate(STORAGE_KEYS.currentPage, pageName);
     AppState.addRecentPage(pageName);
@@ -331,6 +338,9 @@ export class AppState {
       const newCurrent = stack.current - 1;
       const newStack: HistoryStack = { pages: stack.pages, current: newCurrent };
       AppStorage.setOrCreate('callaite_historyStack', JSON.stringify(newStack));
+      // 事件驱动 flush 点 ②-a（同 setCurrentPage）：后退也是切换页面，
+      // 且这里**绕过** setCurrentPage 直接写路由键，故必须单独挂一次。
+      DirtyPageTracker.getInstance().flushNow();
       // 直接设置 currentPage，不触发 pushHistory
       AppStorage.setOrCreate(STORAGE_KEYS.currentPage, stack.pages[newCurrent]);
       AppStorage.setOrCreate('callaite_historyBack', Date.now());
@@ -348,6 +358,8 @@ export class AppState {
       const newCurrent = stack.current + 1;
       const newStack: HistoryStack = { pages: stack.pages, current: newCurrent };
       AppStorage.setOrCreate('callaite_historyStack', JSON.stringify(newStack));
+      // 事件驱动 flush 点 ②-a（同 setCurrentPage）：前进同样绕过 setCurrentPage。
+      DirtyPageTracker.getInstance().flushNow();
       AppStorage.setOrCreate(STORAGE_KEYS.currentPage, stack.pages[newCurrent]);
       AppStorage.setOrCreate('callaite_historyForward', Date.now());
     } catch (e) {

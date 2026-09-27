@@ -45,6 +45,16 @@ export default class EntryAbility extends UIAbility {
 
   onDestroy(): void {
     hilog.info(DOMAIN, 'EntryAbility', '%{public}s', 'Ability onDestroy');
+
+    // 事件驱动 flush 点 ④：应用销毁前把「已标脏未落盘」的文本内容写下去。
+    // 直接调 saveAll() —— 其内部已先 flush 脏页再全量写（见 WorkspaceService.saveAll）。
+    // ⚠️ onDestroy 不保证在「用户强杀 / 系统低内存回收」时被调用（见 onBackground 注释），
+    //    因此它只是补充时机，真正兜底的是 DirtyPageTracker 的 5s 定时器。
+    try {
+      WorkspaceService.getInstance().saveAll();
+    } catch (_e) {
+      // 保存失败不阻塞销毁流程
+    }
   }
 
   /**
@@ -53,6 +63,7 @@ export default class EntryAbility extends UIAbility {
   onSaveState(reason: AbilityConstant.StateType, wantParam: Record<string, Object>): AbilityConstant.OnSaveResult {
     hilog.info(DOMAIN, 'EntryAbility', 'onSaveState reason=%{public}d', reason);
     try {
+      // 兜底时机（等价于 onBackground）：saveAll 内部先 flush 脏页再全量保存
       WorkspaceService.getInstance().saveAll();
     } catch (_e) {
       // 保存失败不阻塞
@@ -229,7 +240,12 @@ export default class EntryAbility extends UIAbility {
   onBackground(): void {
     hilog.info(DOMAIN, 'EntryAbility', '%{public}s', 'Ability onBackground');
 
-    // 后台时保存所有页面
+    // 事件驱动 flush 点 ③：应用进入后台。
+    // ⚠️ 触发可靠性：onBackground 在「用户按 Home / 切换应用 / 息屏」时由框架调用，
+    //    但在**进程被强杀（上滑清理、LMK 回收、`kill -9`）**时不保证被调用。
+    //    因此这里只是「正常退后台」路径的落盘时机，不能作为唯一防线 ——
+    //    强杀场景由 DirtyPageTracker 的 5s 兜底定时器覆盖。
+    // saveAll() 内部会先 flush 脏页（单页、代价小），再全量写（最后一道防线）。
     try {
       WorkspaceService.getInstance().saveAll();
     } catch (_e) {

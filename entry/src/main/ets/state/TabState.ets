@@ -1,4 +1,5 @@
 import { AppState } from './AppState';
+import { DirtyPageTracker } from '../services/DirtyPageTracker';
 import { pageTitle } from '../utils/PageTitle';
 
 /**
@@ -135,6 +136,11 @@ export class TabState {
     if (tab === undefined) {
       return;
     }
+    // 事件驱动 flush 点 ②-b：切换标签。
+    // 注意这条路径**可能不经过** AppState.setCurrentPage（当 tab.page 恰好等于
+    // 当前路由时，下面的 if 不成立），因此必须在 TabState 侧单独挂一次，
+    // 否则「切到同路由的另一个标签」会绕过所有 flush 时机，只剩 5s 兜底。
+    DirtyPageTracker.getInstance().flushNow();
     TabState.persist(TabState.getTabs(), id);
     if (AppState.getCurrentPage() !== tab.page) {
       AppState.setCurrentPage(tab.page);
@@ -150,6 +156,9 @@ export class TabState {
     if (target === undefined) {
       return;
     }
+    // 事件驱动 flush 点 ②-b（同 activateTab）：关闭标签会销毁对应页面视图，
+    // 分支里还可能绕过 setCurrentPage（非激活标签分支），故统一在此挂一次。
+    DirtyPageTracker.getInstance().flushNow();
     const idx = tabs.indexOf(target);
     const remaining: TabInfo[] = [];
     for (let i = 0; i < tabs.length; i++) {
@@ -198,6 +207,8 @@ export class TabState {
     if (target === undefined) {
       return;
     }
+    // 事件驱动 flush 点 ②-b（同 activateTab）：批量关闭会销毁多个页面视图。
+    DirtyPageTracker.getInstance().flushNow();
     TabState.persist([target], id);
     AppState.setCurrentPage(target.page);
   }
