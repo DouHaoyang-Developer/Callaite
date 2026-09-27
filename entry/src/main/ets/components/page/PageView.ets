@@ -26,6 +26,16 @@ export struct PageView {
    * 采用「覆盖式」而非「再造一份状态」，使主/副窗格复用同一套渲染与数据逻辑。
    */
   @Prop @Watch('onPageChanged') pageOverride: string = '';
+  /**
+   * S1-B：由 ContentArea 注入的 Block 列表滚动控制器，原样透传给 BlockList。
+   *
+   * 整页大纲页的滚动现在由 BlockList 内部的 List 承担（LazyForEach 虚拟化前提），
+   * 上层若需要对该列表定位（U2.1a）必须拿到同一个 Scroller 实例，故在此透传。
+   *
+   * 不加 @Prop：Scroller 是稳定引用对象，无需参与状态观察；
+   * 普通成员变量在父组件构造时同步赋值，build() 首次执行前已就绪。
+   */
+  blockScroller?: Scroller;
   @State displayName: string = '';
   /**
    * Properties 属性区折叠开关。
@@ -192,13 +202,20 @@ export struct PageView {
           }})
         } else {
         // Block 列表
-        Scroll() {
-          BlockList({ pageName: this.displayName })
+        // ─── S1-B：原内层 Scroll 已移除 ───
+        // 迁移前：外层 ContentArea.Scroll > PageView.Scroll > BlockList(LazyForEach in Column)。
+        // 这个内层 Scroll 既让外层 Scroll 高度不受约束，又使 LazyForEach 的最近滚动祖先
+        // 与真正的滚动承担者错位；现在 BlockList 内部自带 List 作为唯一滚动容器，
+        // 再套一层 Scroll 只会重新引入双层滚动冲突，故直接移除。
+        //
+        // layoutWeight(1) 取代原 Scroll.layoutWeight(1)：BlockList 自身 height('100%')，
+        // 由本容器给出确定高度，其内部 List 才有确定视口（虚拟化计算视口的前提）。
+        Column() {
+          BlockList({ pageName: this.displayName, scroller: this.blockScroller })
         }
         .width('100%')
         .layoutWeight(1)
-        .align(Alignment.TopStart)
-        .scrollBar(BarState.Auto)
+        .alignItems(HorizontalAlign.Start)
 
         Blank()
         }

@@ -27,9 +27,19 @@ export struct ContentArea {
    */
   @Prop pageOverride: string = '';
   /**
-   * 窗格标识。Scroll 的 id 与初始焦点按窗格区分，避免两个窗格争抢同一个 id / 焦点。
+   * 窗格标识。焦点容器 id 与初始焦点按窗格区分，避免两个窗格争抢同一个 id / 焦点。
    */
   @Prop paneId: string = 'primary';
+  /**
+   * S1-B：Block 列表的滚动控制器。
+   *
+   * 迁移前外层 Scroll 承担滚动；现在整页大纲的滚动由 BlockList 内部的 List 承担
+   * （这是 LazyForEach 虚拟化生效的前提）。本字段由 ContentArea 创建并注入 BlockList，
+   * 使上层仍能拿到当前窗格的滚动控制器（供 U2.1a 块定位使用）。
+   *
+   * 仅暴露，不实现任何定位逻辑。
+   */
+  private blockScroller: Scroller = new Scroller();
 
   private isPrimaryPane(): boolean {
     return this.pageOverride === '';
@@ -39,11 +49,35 @@ export struct ContentArea {
     return this.isPrimaryPane() ? 'contentAreaScroll' : 'contentAreaScroll_' + this.paneId;
   }
 
+  /**
+   * 取当前窗格的 Block 列表滚动控制器（S1-B 第 3 项：仅暴露）。
+   * 后续 U2.1a 可在此实例上调用 scrollToIndex / currentOffset 等 API。
+   */
+  getBlockScroller(): Scroller {
+    return this.blockScroller;
+  }
+
+  /**
+   * 发布滚动控制器到 AppStorage（S1-B 第 3 项：仅暴露）。
+   *
+   * 键名：`callaite_blockScroller_<paneId>`（主窗格 paneId='primary'）。
+   * 分屏时主/副窗格各写各的键，互不覆盖。
+   *
+   * 消费方（U2.1a）用法：
+   *   const s = AppStorage.get<Scroller>('callaite_blockScroller_primary');
+   *   if (s !== undefined) { s.scrollToIndex(i, false, ScrollAlign.START); }
+   */
+  private publishScroller(): void {
+    AppStorage.setOrCreate('callaite_blockScroller_' + this.paneId, this.blockScroller);
+  }
+
   aboutToAppear(): void {
-    // 主动夺取焦点，否则 Scroll 未持焦时 onKeyEvent 不触发（快捷键整体失效）。
+    // 先发布 Scroller，保证子组件构建期（BlockList 构造）之前该键已存在。
+    this.publishScroller();
+    // 主动夺取焦点，否则焦点容器未持焦时 onKeyEvent 不触发（快捷键整体失效）。
     // 仅主窗格抢焦点：分屏时两个窗格抢同一焦点会导致快捷键路由错乱。
     if (this.isPrimaryPane()) {
-      focusControl.requestFocus('contentAreaScroll');
+      focusControl.requestFocus(this.scrollId());
     }
   }
 
@@ -68,18 +102,23 @@ export struct ContentArea {
       Column() {
         Toolbar()
 
-        Scroll() {
-          PageView({ pageOverride: this.pageOverride })
+        // ─── S1-B：原外层 Scroll 已移除 ───
+        // 迁移前：Scroll > PageView > Scroll > BlockList(LazyForEach in Column)。
+        // 虚拟化不生效（LazyForEach 不在滚动容器内），且外层 Scroll 与内层 Scroll 双层滚动。
+        // 迁移后：整页大纲的滚动由 BlockList 内部的 List 承担（虚拟化前提），
+        // 此处改为承载快捷键焦点语义的普通容器（无滚动能力）。
+        //
+        // 原本挂在外层 Scroll 上、现已迁移到本 Column 的能力见下方各修饰符注释。
+        Column() {
+          PageView({ pageOverride: this.pageOverride, blockScroller: this.blockScroller })
         }
         .width('100%')
-        .layoutWeight(1)
-        .scrollBar(BarState.Auto)
-        .align(Alignment.TopStart)
-        .focusable(true)
-        .defaultFocus(true)
-        .id(this.scrollId())
+        .layoutWeight(1)          // ← 原 Scroll.layoutWeight(1)：撑满工具栏以下区域
+        .focusable(true)          // ← 原 Scroll.focusable(true)：保留键盘事件接收能力
+        .defaultFocus(true)       // ← 原 Scroll.defaultFocus(true)：入页默认焦点
+        .id(this.scrollId())      // ← 原 Scroll.id()：focusControl.requestFocus 的目标
         .onKeyEvent((event: KeyEvent) => {
-          // 统一路由到 ShortcutService（含 Ctrl+K/Ctrl+Z/Tab/Alt+↑↓ 等全部快捷键）
+          // ← 原 Scroll.onKeyEvent：统一路由到 ShortcutService（Ctrl+K/Ctrl+Z/Tab/Alt+↑↓ 等）
           if (event.type === KeyType.Down) {
             ShortcutService.getInstance().handleKeyEvent(event);
           }
@@ -102,7 +141,16 @@ export struct ContentArea {
             })
 
           Row() {
-            CommandPalette()
+            // S1-F：命令面板自持键盘导航（↑↓/↵/esc），并把「归属权」写清楚：
+            //  - 打开时面板主动 requestFocus 到自身输入框，压过下方 Column 的 defaultFocus；
+            //  - 关闭时通过 restoreFocusId 把焦点归还给内容区焦点容器（本窗格的 scrollId()），
+            //    否则内容区的 onKeyEvent（全局快捷键）在面板关闭后会失效。
+            CommandPalette({
+              onRequestClose: () => {
+                AppState.setSearchPanelOpen(false);
+              },
+              restoreFocusId: this.scrollId()
+            })
           }
           .width('92%')
           .constraintSize({ maxWidth: 560 })
