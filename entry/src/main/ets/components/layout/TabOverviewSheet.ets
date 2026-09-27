@@ -90,7 +90,7 @@ export struct TabOverviewSheet {
             }
             .width('46%')
             .margin({ left: '2%', right: '2%', bottom: 12 })
-          }, (tab: TabInfo) => tab.id + '_' + (tab.id === this.activeTabId ? 'a' : 'i'))
+          }, (tab: TabInfo) => tab.id)   // ⚠️ 键去激活态：与 TabBar 同源问题（键随激活态变化 = 删除+插入，浮层内会闪叠影）
         }
         .width('100%')
         .padding({ top: 8 })

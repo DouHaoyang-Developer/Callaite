@@ -23,9 +23,7 @@ export struct TabBar {
   @StorageLink('callaite_activeTabId') activeTabId: string = '';
   @StorageLink('callaite_currentPage') currentPage: string = 'Journal';
   @State tabsList: TabInfo[] = [];
-  @State hoveredTabId: string = '';
   @State hoveredAction: string = '';
-  @State hoveredCloseId: string = '';
   // ─── 分屏（对齐 Obsidian 桌面 split）───
   @StorageLink('callaite_splitEnabled') splitEnabled: boolean = false;
   @StorageLink('callaite_splitPage') splitPage: string = 'Journal';
@@ -95,76 +93,8 @@ export struct TabBar {
     return 'file';
   }
 
-  @Builder
-  TabItem(tab: TabInfo) {
-    Row({ space: 6 }) {
-      TablerIcon(this.iconFor(tab), 14,
-        tab.id === this.activeTabId ? $r('app.color.primary') : $r('app.color.muted_text'))
+  // TabItem @Builder 已迁移为文件末尾的 TabItemView @Component（见该组件注释说明原因）
 
-      Text(TabState.tabTitle(tab.page))
-        .fontSize(13)
-        .fontColor(tab.id === this.activeTabId ? $r('app.color.text') : $r('app.color.muted_text'))
-        .fontWeight(tab.id === this.activeTabId ? FontWeight.Medium : FontWeight.Normal)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        // 文本上限 156vp = 页签上限 220 − 固定开销 64（内边距 16 + 图标 14 + 间距 6+6 + 关闭按钮 22）
-        .constraintSize({ maxWidth: 156 })
-
-      // 关闭按钮：激活或 hover 时显示（命中区 22vp，避免 18vp 过小难点）
-      if (tab.id === this.activeTabId || this.hoveredTabId === tab.id) {
-        Row() {
-          TablerIcon('x', 12, this.hoveredCloseId === tab.id
-            ? $r('app.color.danger')
-            : $r('app.color.muted_text'))
-        }
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .width(22)
-        .height(22)
-        // 视觉保持 22vp 以免撑开页签，命中区用 responseRegion 扩展到 40vp
-        .responseRegion({ x: -9, y: -9, width: 40, height: 40 })
-        .borderRadius(4)
-        .backgroundColor(this.hoveredCloseId === tab.id ? $r('app.color.surface2') : Color.Transparent)
-        .animation({ duration: 120, curve: Curve.EaseOut })
-        .onHover((isHover: boolean) => {
-          this.hoveredCloseId = isHover ? tab.id : '';
-        })
-        .onClick(() => {
-          TabState.closeTab(tab.id);
-        })
-      } else {
-        Row().width(22).height(22)
-      }
-    }
-    // 页签整体高度 40vp：满足官方点击热区下限（原 30vp 不达标），
-    // 页签填满标签栏高度也是编辑器标签栏的常规形态
-    .height(40)
-    // 宽度随标题自适应（Obsidian 形态）：不使用固定等宽，仅设上下限
-    //   minWidth 88vp = 固定开销 64vp（内边距 16 + 图标 14 + 间距 6+6 + 关闭按钮 22）+ 24vp 文本
-    //   maxWidth 220vp：长标题不挤占整条标签栏，超出交给 Text 省略号截断
-    .constraintSize({ minWidth: 88, maxWidth: 220 })
-    .padding({ left: 12, right: 4 })
-    .borderRadius(6)
-    .margin({ left: 2, right: 2 })
-    .stateStyles({
-      normal: {
-        .backgroundColor(tab.id === this.activeTabId
-          ? $r('app.color.surface0')
-          : (this.hoveredTabId === tab.id ? $r('app.color.surface2') : Color.Transparent))
-      },
-      pressed: { .backgroundColor($r('app.color.surface3')) }
-    })
-    .animation({ duration: 140, curve: Curve.EaseOut })
-    .border({ width: 0.5, color: tab.id === this.activeTabId ? $r('app.color.border') : Color.Transparent })
-    .shadow(tab.id === this.activeTabId ? { radius: 4, color: 'rgba(0,0,0,0.06)', offsetY: 1 } :
-      { radius: 0, color: Color.Transparent })
-    .onClick(() => {
-      TabState.activateTab(tab.id);
-    })
-    .onHover((isHover: boolean) => {
-      this.hoveredTabId = isHover ? tab.id : '';
-    })
-  }
 
   build() {
     Row({ space: 2 }) {
@@ -193,9 +123,14 @@ export struct TabBar {
       // ─── 标签滚动区 ───
       Scroll() {
         Row({ space: 0 }) {
+          // ⚠️ 不变式：ForEach 键 = 数据身份（tab.id），**不携带任何 UI 态**。
+          //    原键含激活态（…_a / …_i）：每次切换标签时恰好两个条目的键同时变化，
+          //    ArkUI 按「删除 + 插入」处理 → 新旧页签在同一渲染槽位短暂共存且位置重叠；
+          //    低帧率（模拟器 ~20-30fps）下 140ms 过渡横跨 3-5 帧，叠影肉眼可见。
+          //    样式刷新改由 TabItemView 的 @StorageLink('callaite_activeTabId') 承担。
           ForEach(this.tabsList, (tab: TabInfo) => {
-            this.TabItem(tab)
-          }, (tab: TabInfo) => tab.id + '_' + (tab.id === this.activeTabId ? 'a' : 'i'))
+            TabItemView({ tab: tab, icon: this.iconFor(tab) })
+          }, (tab: TabInfo) => tab.id)
         }
       }
       .layoutWeight(1)
@@ -313,5 +248,105 @@ export struct TabBar {
           })
       }
     }
+  }
+}
+
+/**
+ * TabItemView — 单个标签页（子组件化，2026-09-26 修复标签页重叠）
+ *
+ * **为什么必须是 @Component，而不是父组件的 @Builder**：
+ *   ArkUI 的 @Builder **不响应状态变化重渲染** —— `activeTabId` 改变后 Builder 内的样式三元
+ *   不会刷新。历史实现因此把激活态编进 ForEach 键（`tab.id + '_' + (active?'a':'i')`）来
+ *   「借用键变化强制重建」强刷样式。副作用：每次切换标签恰好两个条目的键同时变化 →
+ *   ArkUI 按「删除 + 插入」处理 → 旧组件进入销毁周期、新组件同帧挂载，两者在同一渲染槽位
+ *   短暂共存；旧组件上 140ms 的 stateStyles/animation 在拆除窗口内继续出帧，低帧率设备
+ *   （模拟器 ~20-30fps，过渡横跨 3-5 帧）表现为肉眼可见的**标签页叠影**。
+ *
+ * **本组件的解法**：激活态用 `@StorageLink('callaite_activeTabId')` 自刷新、hover 态用
+ *   `@State` 自持，父组件 ForEach 键回归稳定身份 `tab.id`，组件树只做「复用 + 更新」。
+ *
+ * **不变式（防回归）**：ForEach 键 = 数据身份，**不携带任何 UI 态**。
+ *   任何「想让 ForEach 条目刷新样式」的需求，一律用子组件 + @StorageLink/@Prop/@Watch 实现。
+ */
+@Component
+struct TabItemView {
+  /** 标签数据（身份：id）。icon 由父组件按 page 推导后传入，避免重复实现图标映射 */
+  @Prop tab: TabInfo = { id: '', page: '', pinned: false };
+  @Prop icon: string = 'file';
+  /** 激活态：组件自持并随 AppStorage 刷新，父组件无需参与 */
+  @StorageLink('callaite_activeTabId') activeTabId: string = '';
+  /** hover 态组件内自持：组件复用后 hover 不丢失、切换标签后不残留 */
+  @State hovered: boolean = false;
+  @State hoveredClose: boolean = false;
+
+  private isActive(): boolean {
+    return this.tab.id === this.activeTabId;
+  }
+
+  build() {
+    Row({ space: 6 }) {
+      TablerIcon(this.icon, 14,
+        this.isActive() ? $r('app.color.primary') : $r('app.color.muted_text'))
+
+      Text(TabState.tabTitle(this.tab.page))
+        .fontSize(13)
+        .fontColor(this.isActive() ? $r('app.color.text') : $r('app.color.muted_text'))
+        .fontWeight(this.isActive() ? FontWeight.Medium : FontWeight.Normal)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        // 文本上限 156vp = 页签上限 220 − 固定开销 64（内边距 16 + 图标 14 + 间距 6+6 + 关闭按钮 22）
+        // minWidth: 0 必填 —— 否则 Row 收缩时文本节点宽度协商不收敛，长标题偶发不出现省略号
+        .constraintSize({ maxWidth: 156, minWidth: 0 })
+
+      // 关闭按钮：激活或 hover 时显示（视觉 22vp，命中区经 responseRegion 扩到 40vp）
+      if (this.isActive() || this.hovered) {
+        Row() {
+          TablerIcon('x', 12, this.hoveredClose
+            ? $r('app.color.danger')
+            : $r('app.color.muted_text'))
+        }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .width(22)
+        .height(22)
+        .responseRegion({ x: -9, y: -9, width: 40, height: 40 })
+        .borderRadius(4)
+        .backgroundColor(this.hoveredClose ? $r('app.color.surface2') : Color.Transparent)
+        .animation({ duration: 120, curve: Curve.EaseOut })
+        .onHover((isHover: boolean) => {
+          this.hoveredClose = isHover;
+        })
+        .onClick(() => {
+          TabState.closeTab(this.tab.id);
+        })
+      } else {
+        Row().width(22).height(22)
+      }
+    }
+    // 页签整体高度 40vp：满足官方点击热区下限（原 30vp 不达标）
+    .height(40)
+    // 宽度随标题自适应：minWidth 88vp（固定开销 64 + 24vp 文本）、maxWidth 220vp（超出交给省略号）
+    .constraintSize({ minWidth: 88, maxWidth: 220 })
+    .padding({ left: 12, right: 4 })
+    .borderRadius(6)
+    .margin({ left: 2, right: 2 })
+    .stateStyles({
+      normal: {
+        .backgroundColor(this.isActive()
+          ? $r('app.color.surface0')
+          : (this.hovered ? $r('app.color.surface2') : Color.Transparent))
+      },
+      pressed: { .backgroundColor($r('app.color.surface3')) }
+    })
+    .animation({ duration: 140, curve: Curve.EaseOut })
+    .border({ width: 0.5, color: this.isActive() ? $r('app.color.border') : Color.Transparent })
+    .shadow(this.isActive() ? { radius: 4, color: 'rgba(0,0,0,0.06)', offsetY: 1 } :
+      { radius: 0, color: Color.Transparent })
+    .onClick(() => {
+      TabState.activateTab(this.tab.id);
+    })
+    .onHover((isHover: boolean) => {
+      this.hovered = isHover;
+    })
   }
 }
