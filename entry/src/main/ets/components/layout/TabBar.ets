@@ -92,6 +92,10 @@ export struct TabBar {
   }
 
   private iconFor(tab: TabInfo): string {
+    if (tab.page === TabState.NEW_TAB_PAGE) {
+      // U1.7：新标签页用 home 图标，与「有内容的页面」在视觉上区分开
+      return 'home';
+    }
     if (tab.page === 'Journal' || /^\d{4}-\d{2}-\d{2}$/.test(tab.page)) {
       return 'calendar';
     }
@@ -205,7 +209,8 @@ export struct TabBar {
 
       // 「新建」—— 原最右缘的加号，本次改造把最右缘让给右栏开关，本按钮功能不变、位置左移一位。
       // 该动作并非本按钮独有：标签列表下拉菜单的「新建标签」走同一入口
-      // （本文件 TabsMenu() 内 `TabState.newTab('Journal')`），故不存在功能丢失。
+      // （本文件 TabsMenu() 内 `TabState.newTab(TabState.NEW_TAB_PAGE)`），故不存在功能丢失。
+      // U1.7：新建标签打开的是「新标签页」起始页（HomePage），不再是今日日志。
       Row() {
         TablerIcon('plus', 18, $r('app.color.icon_color'))
       }
@@ -227,7 +232,7 @@ export struct TabBar {
         this.hoveredAction = isHover ? 'new' : '';
       })
       .onClick(() => {
-        TabState.newTab('Journal');
+        TabState.newTab(TabState.NEW_TAB_PAGE);
       })
 
       // ─── 右侧栏开关（本栏最右缘）───
@@ -281,7 +286,7 @@ export struct TabBar {
       MenuItemGroup() {
         MenuItem({ content: t('tab_new') })
           .onClick(() => {
-            TabState.newTab('Journal');
+            TabState.newTab(TabState.NEW_TAB_PAGE);
           })
       }
       MenuItemGroup() {

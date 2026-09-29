@@ -185,9 +185,15 @@ export class AppState {
     AppStorage.setOrCreate('language', config.preferredLanguage);
     AppStorage.setOrCreate('themeMode', config.themeMode);
 
-    // 启动行为调整：不再恢复上次页面/直接加载大纲，统一进入首页（Obsidian 新标签页式）。
-    // 上次页面键仍持久化（供历史栈等使用），但启动初始页固定为 Home。
-    AppStorage.setOrCreate(STORAGE_KEYS.currentPage, 'Home');
+    // 启动页：默认「新标签页」（Home，Obsidian 新标签页式）。
+    // U1.7：只在**没有**已恢复的路由时才写默认值 —— TabState.initialize() 紧随本方法之后
+    // 执行（EntryAbility.ets:108 → 111），会把 currentPage 对齐到被恢复会话的激活标签；
+    // 若这里无条件覆写，恢复出来的会话会被立刻改成 Home。
+    // 另外 ContinuationManager.restoreFromContinue()（流转到本设备）也可能在更早的
+    // onRestoreData 阶段写好该键，同样不应被这里覆盖。
+    if (!AppStorage.has(STORAGE_KEYS.currentPage)) {
+      AppStorage.setOrCreate(STORAGE_KEYS.currentPage, 'Home');
+    }
 
     const storedLeft = AppStorage.get<boolean>(STORAGE_KEYS.leftSidebarOpen);
     let leftDefault = storedLeft ?? config.leftSidebarOpen;
@@ -548,9 +554,14 @@ export class AppState {
 
   /**
    * 判断是否为内部路由键（非真实笔记页面）。
+   *
+   * 'Home' 是「新标签页」起始页（U1.7 起也是新建标签的默认路由），没有正文、
+   * 不属于任何笔记，因此与 Journal/Settings 等同列为内部路由 —— 否则每次新建标签
+   * 都会往「最近打开」里塞一条 "Home"（LeftSidebar.ets:86 仅按本判定过滤）。
    */
   static isInternalRoute(pageName: string): boolean {
-    return pageName === 'Journal' || pageName === 'Settings' || pageName === 'Graph' ||
+    return pageName === 'Home' ||
+      pageName === 'Journal' || pageName === 'Settings' || pageName === 'Graph' ||
       pageName === 'Whiteboards' || pageName === 'Flashcards' || pageName === 'Pdf' ||
       pageName === 'ProUpgrade' || pageName === 'AllPages' || pageName === 'Recycle' ||
       pageName === 'About';

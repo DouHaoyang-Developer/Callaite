@@ -14,6 +14,10 @@ const DATE_ONLY: RegExp = /^\d{4}-\d{2}-\d{2}$/;
  * 统一入口：所有需要展示页面名的地方都应调用 pageTitle()，不要再直接用 currentPage。
  */
 export function pageTitle(page: string): string {
+  if (page === 'Home') {
+    // U1.7：Home 是「新标签页」起始页，标签条/标题栏统一显示本地化名称（不再露出裸 'Home'）
+    return t('nav_home');
+  }
   if (page === 'Journal') {
     return JournalService.formatJournalTitle(JournalService.getTodayDateString());
   }

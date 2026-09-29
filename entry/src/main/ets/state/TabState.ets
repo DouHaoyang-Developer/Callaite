@@ -1,4 +1,5 @@
 import { AppState } from './AppState';
+import { StatePersistence } from './StatePersistence';
 import { DirtyPageTracker } from '../services/DirtyPageTracker';
 import { pageTitle } from '../utils/PageTitle';
 
@@ -16,6 +17,16 @@ const ACTIVE_KEY = 'callaite_activeTabId';
 const VERSION_KEY = 'callaite_tabsVersion';
 
 /**
+ * 标签持久化落盘延迟（ms）。
+ *
+ * 标签切换/新建/关闭是用户节奏的操作，但要经 preferences.putSync + flushSync
+ * 真正落盘，不能每次点击都同步写一次 XML；400ms 足以把「连点几个标签」合并成一次写，
+ * 又短于用户「切完标签立刻上滑杀掉应用」的反应时间。
+ * 真正的兜底仍是 EntryAbility.onBackground 的 StatePersistence.save()。
+ */
+const PERSIST_DEBOUNCE_MS = 400;
+
+/**
  * TabState — Obsidian 式标签页管理。
  *
  * 设计要点（与 AppState.currentPage 单向数据流，避免循环）：
@@ -25,22 +36,50 @@ const VERSION_KEY = 'callaite_tabsVersion';
  *   - TabBar 点击 → activateTab()：写 activeTabId + 调 AppState.setCurrentPage()
  *     （历史/最近照常记录，sync 幂等无副作用）。
  *
- * 状态持久化到 AppStorage（JSON 字面量键序列化，混淆安全）。
+ * 状态持久化：AppStorage（JSON 字面量键序列化，混淆安全）+ 落盘。
+ * U1.7 起 `callaite_tabs` / `callaite_activeTabId` 登记进 StatePersistence.STATE_KEYS —
+ * AppStorage 本身是纯内存的，不落盘就谈不上「启动恢复上次会话」。
  */
 export class TabState {
   /**
-   * 初始化（EntryAbility 首次启动时调用）：至少一个 Journal 标签。
+   * 「新标签页」路由 —— 新建标签时打开的起始页（components/page/HomePage.ets）。
+   *
+   * 对齐 Obsidian：Ctrl/Cmd+T 打开的是一张空白起始页（创建新文件 / 打开文件 / 关闭当前页），
+   * 而不是直接切到今日日志。日志/图谱/白板等是**具体内容**，由各自入口显式打开。
+   */
+  static readonly NEW_TAB_PAGE: string = 'Home';
+
+  /**
+   * 初始化（EntryAbility 启动链调用，必须在 AppState.initialize() 之后）。
+   *
+   * 两种情形：
+   *   · **上次会话已恢复**：StatePersistence 在 onCreate 阶段把 `callaite_tabs` /
+   *     `callaite_activeTabId` 写回了 AppStorage（两键已登记进 StatePersistence.STATE_KEYS），
+   *     这里校验激活标签仍然存在，并把 currentPage 对齐到该标签的页面。
+   *   · **没有会话**（首次启动，或上次异常退出且未及落盘）：建一个「新标签页」。
+   *
+   * ⚠️ 为什么必须在这里对齐 currentPage：MainContainer.aboutToAppear（MainContainer.ets:157）
+   *    调 syncToCurrentPage(AppState.getCurrentPage()) —— 该方法是**以 currentPage 为准**
+   *    反向补标签。若不同步，恢复出来的标签组会被再补一个 currentPage（默认 Home）对应的标签。
    */
   static initialize(): void {
     const existing = TabState.getTabs();
     if (existing.length === 0) {
-      const home: TabInfo = { id: TabState.genId(), page: 'Journal', pinned: false };
+      const home: TabInfo = { id: TabState.genId(), page: TabState.NEW_TAB_PAGE, pinned: false };
       TabState.persist([home], home.id);
-    } else {
-      const active = AppStorage.get<string>(ACTIVE_KEY);
-      if (active === undefined || !TabState.findById(existing, active)) {
-        TabState.persist(existing, existing[0].id);
-      }
+      return;
+    }
+    // 会话恢复：activeTabId 可能指向一个已被关闭的标签（用户上次操作与落盘之间的窗口），
+    // 此时回落到第一个标签 —— 不允许留下「有标签但没有激活标签」的不一致状态
+    // （TabBar 的 activeTabId 找不到匹配项会让所有页签都渲染成未激活态）。
+    const active = AppStorage.get<string>(ACTIVE_KEY);
+    const activeTab = active === undefined ? undefined : TabState.findById(existing, active);
+    if (activeTab === undefined) {
+      TabState.persist(existing, existing[0].id);
+    }
+    const restored = TabState.getActiveTab();
+    if (restored !== undefined && AppState.getCurrentPage() !== restored.page) {
+      AppState.setCurrentPage(restored.page);
     }
   }
 
@@ -167,10 +206,10 @@ export class TabState {
       }
     }
     if (remaining.length === 0) {
-      // 最后一个标签：重置为 Journal，不允许空标签组
-      const home: TabInfo = { id: TabState.genId(), page: 'Journal', pinned: false };
+      // 最后一个标签：重置为「新标签页」，不允许空标签组
+      const home: TabInfo = { id: TabState.genId(), page: TabState.NEW_TAB_PAGE, pinned: false };
       TabState.persist([home], home.id);
-      AppState.setCurrentPage('Journal');
+      AppState.setCurrentPage(TabState.NEW_TAB_PAGE);
       return;
     }
     if (id === TabState.getActiveTabId()) {
@@ -184,7 +223,10 @@ export class TabState {
   }
 
   /**
-   * 新建标签页：Obsidian 默认打开欢迎/空页，这里打开 Journal（今日日志）。
+   * 新建标签页：打开「新标签页」起始页（HTML 路由 'Home' → components/page/HomePage.ets）。
+   *
+   * 传具体路由（'Graph' / 'Whiteboards' / 'AllPages' …）时行为不变：打开该路由的标签，
+   * 已存在同路由标签则直接激活（沿用原有去重语义）。
    */
   static newTab(page: string): void {
     const tabs = TabState.getTabs();
@@ -230,6 +272,10 @@ export class TabState {
     // 版本触发器：驱动 TabBar / MobileBottomBar 刷新
     const v = AppStorage.get<number>(VERSION_KEY) ?? 0;
     AppStorage.setOrCreate(VERSION_KEY, v + 1);
+    // 「启动恢复上次会话」的落盘时机：标签组每次变化都排一次去抖落盘。
+    // 持久化介质与其余跨进程状态同源（StatePersistence → preferences `callaite_app_state`），
+    // 两个键已登记进 StatePersistence.STATE_KEYS，否则 AppStorage 是纯内存的、重启即丢。
+    StatePersistence.scheduleSave(PERSIST_DEBOUNCE_MS);
   }
 
   private static escape(raw: string): string {

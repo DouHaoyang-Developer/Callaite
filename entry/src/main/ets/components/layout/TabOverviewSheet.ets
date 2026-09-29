@@ -110,7 +110,8 @@ export struct TabOverviewSheet {
         .width(48)
         .height(44)
         .onClick(() => {
-          TabState.newTab('Journal');
+          // U1.7：新建标签 = 打开「新标签页」起始页（对齐 Obsidian 的 ＋）
+          TabState.newTab(TabState.NEW_TAB_PAGE);
         })
 
         Blank()

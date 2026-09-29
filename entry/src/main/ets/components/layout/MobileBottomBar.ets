@@ -103,7 +103,8 @@ export struct MobileBottomBar {
             AppState.setSearchPanelOpen(true);
           })
           this.PillIcon('newtab', 'plus', true, () => {
-            TabState.newTab('Journal');
+            // U1.7：新建标签 = 打开「新标签页」起始页（对齐 Obsidian iOS 的 ＋）
+            TabState.newTab(TabState.NEW_TAB_PAGE);
           })
           this.TabCountBadge()
           this.PillIcon('menu', 'menu-2', true, () => {

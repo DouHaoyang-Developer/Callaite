@@ -27,7 +27,15 @@ const STATE_KEYS: string[] = [
   'callaite_rightSidebarOpen',
   'callaite_favorites',
   'callaite_recentPages',
-  'callaite_rightSidebarBlocks'
+  'callaite_rightSidebarBlocks',
+  // ─── U1.7：会话恢复（标签组 + 激活标签）───
+  // TabState 一直把标签写进 AppStorage，但 AppStorage 是**纯内存**的：进程重启即丢。
+  // 此前 TabState.initialize() 因此每次都从零建一个标签，「恢复上次会话」形同虚设。
+  // 两键的值都是 JSON 文本（TabState.persist 手工拼的 JSON，非字符串化对象），
+  // 与 callaite_favorites / callaite_recentPages 同型：存 JSON.stringify(字符串) = 带引号文本，
+  // 读 JSON.parse 后仍得到原字符串，往返一致。
+  'callaite_tabs',
+  'callaite_activeTabId'
 ];
 
 /**
@@ -55,12 +63,15 @@ interface LegacyStateFile {
  * 键名沿用原 AppStorage 键名（callaite_*），值统一以 JSON 文本存储。
  *
  * 值为什么用 JSON 文本：`preferences.getSync(key, defValue)` 在「已存值类型 ≠ defValue 类型」时
- * 会返回 defValue，而本线的 9 个键混有 boolean（onboarded / 两侧栏开合）与 string
+ * 会返回 defValue，而本线的 11 个键混有 boolean（onboarded / 两侧栏开合）与 string
  * （themeMode / language，以及本身就是 JSON 文本的 config / favorites / recentPages /
- * rightSidebarBlocks）。逐一按类型分支读取既脆弱、又会在未来新增键时静默读到默认值；
+ * rightSidebarBlocks / tabs / activeTabId）。逐一按类型分支读取既脆弱、又会在未来新增键时静默读到默认值；
  * 统一 JSON 文本可保证「迁移后读到的值与迁移前逐字段一致」，并与旧实现的语义完全对齐。
  */
 export class StatePersistence {
+  /** scheduleSave 排程中的定时器 id（-1 = 无排程） */
+  private static saveTimerId: number = -1;
+
   /**
    * 从 preferences 恢复 AppStorage（必须在任何 UI 读取这些键之前调用）。
    *
@@ -148,6 +159,25 @@ export class StatePersistence {
       PreferencesStore.logError(STORE_NAME, 'save', e as Object);
       return false;
     }
+  }
+
+  /**
+   * 去抖落盘：把「保存」推迟到 ms 后的下一次空闲，期间的重复调用合并为一次。
+   *
+   * 用途：标签组变化（TabState.persist）这类**高频但非关键**的状态更新。
+   * 直接每次 save() 会在每次点击标签时同步落一遍 XML（putSync + flushSync），
+   * 丢掉又会让「切完标签立刻被系统回收」的会话恢复落空，故取去抖。
+   *
+   * @param ms 去抖窗口，默认 0（等价于「本帧结束后立刻写」）。
+   */
+  static scheduleSave(ms: number = 0): void {
+    if (StatePersistence.saveTimerId >= 0) {
+      clearTimeout(StatePersistence.saveTimerId);
+    }
+    StatePersistence.saveTimerId = setTimeout(() => {
+      StatePersistence.saveTimerId = -1;
+      StatePersistence.save();
+    }, ms);
   }
 
   /**

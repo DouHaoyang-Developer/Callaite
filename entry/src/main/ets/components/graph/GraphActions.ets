@@ -235,10 +235,11 @@ export struct GraphActions {
    * 删除确认文案。
    *
    * ⚠️ 文案核实（勿凭印象改）：`DataStore.deletePage` → `FileRepository.deleteFile`
-   * → `fs.unlinkSync`，是**物理删除**；`RecycleEngine` 全库无任何 import/调用，
-   * `RecycleBinPage` 恒为空列表。因此「此操作不可撤销」是**准确**的，
+   * → `fs.unlinkSync`，是**物理删除**；回收站侧（原 core/engine/RecycleEngine.ets 与
+   * components/settings/RecycleBinPage.ets）零引用、列表恒空，已在 U1.5 死代码清扫中
+   * 删除，本仓不存在任何回收站数据通路。因此「此操作不可撤销」是**准确**的，
    * 绝不能改写成「将移入回收站」——那会是谎报可恢复。
-   * 若将来 RecycleEngine 真正接线，需同步把这里改成回收站措辞。
+   * 若将来重新引入回收站（需同时落地引擎 + 落盘 + 入口页），必须同步改这里。
    */
   private deleteConfirmMessage(): string {
     let msg: string = '确定要删除页面「' + this.pageName + '」吗？此操作不可撤销。';
