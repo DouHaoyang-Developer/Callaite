@@ -403,22 +403,6 @@ export struct PageContextMenu {
     .border({ width: 1, color: $r('app.color.border') })
   }
 
-  /**
-   * ★ U1.1 主路径：`bindContextMenuWithResponse` 的菜单内容。
-   *
-   * 形参 `trigger`（ResponseType）由 ArkUI 在右键 / 长按时**回填**：
-   * RightClick 或 LongPress。本实现不需要按手势分流（两种手势给同一份菜单），
-   * 但形参必须保留 —— `CustomBuilderT<ResponseType> = (t: ResponseType) => void`
-   * 要求 Builder 携带一个参数（见 common.d.ts:22841）。
-   *
-   * 注意：不要在本 Builder 里写 `const x = this.pageName` 之类的语句 ——
-   * 让参数一路显式传递，避免 ArkUI 在 Builder 重执行时读到已被复用的 this。
-   */
-  @Builder
-  ContextMenuWithResponse(trigger: ResponseType) {
-    this.ContextMenuPanel(this.pageName)
-  }
-
   @Builder
   MenuItemRow(item: ContextMenuItem, targetName: string) {
     Row({ space: 10 }) {
