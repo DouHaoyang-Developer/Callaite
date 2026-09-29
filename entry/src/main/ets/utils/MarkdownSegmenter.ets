@@ -180,11 +180,37 @@ function parseInlineMarkdown(text: string): MarkdownSegment[] {
       continue;
     }
 
+    // 高亮 ==text==
+    // 与粗体同构：标记段 syntax、内容段 content —— 编辑态显示 `==`、渲染态给内容加底色。
+    if (text.startsWith('==', i)) {
+      result.push({ text: '==', type: 'syntax' });
+      const end = text.indexOf('==', i + 2);
+      if (end > i + 2) {
+        result.push(...parseInlineMarkdown(text.slice(i + 2, end)));
+        result.push({ text: '==', type: 'syntax' });
+        i = end + 2;
+      } else {
+        // 未闭合：`==` 退回普通内容，避免「打了一半的高亮标记被当作语法隐藏」
+        result.push({ text: '=', type: 'content' });
+        i += 1;
+      }
+      continue;
+    }
+
     // 行内代码 `text`
+    // ⚠️ 必须拆成「反引号 / 内容 / 反引号」三段。原实现把**整段（含内容）**标为
+    //    syntax，而 LivePreview 对语法段的规则是「光标不在其中则隐藏」——于是
+    //    `code` 连内容一起变成不可见（实测：live 模式下单词 code 从页面上消失）。
+    //    内容段必须是 content，才能在没有光标时以「代码样式」渲染。
     if (text.charAt(i) === '`') {
       const end = text.indexOf('`', i + 1);
       if (end > i) {
-        result.push({ text: text.slice(i, end + 1), type: 'syntax' });
+        result.push({ text: '`', type: 'syntax' });
+        const inner = text.slice(i + 1, end);
+        if (inner) {
+          result.push(...parseInlineMarkdown(inner));
+        }
+        result.push({ text: '`', type: 'syntax' });
         i = end + 1;
         continue;
       }
@@ -245,14 +271,24 @@ function parseInlineMarkdown(text: string): MarkdownSegment[] {
     }
 
     // 普通字符
+    // specials 必须包含 '='（高亮标记起始符），否则 `==x==` 会被整体当作普通文本吞掉。
     let chunk = '';
-    const specials = '*`[!';
+    const specials = '*`[!=';
     while (i < text.length && !specials.includes(text.charAt(i))) {
       chunk += text.charAt(i);
       i++;
     }
     if (chunk) {
       result.push({ text: chunk, type: 'content' });
+      continue;
+    }
+    // ⚠️ 兜底推进：能走到这里说明 charAt(i) 是 specials 之一，但上面没有任何分支接手
+    //    （典型：孤立的 `!`（后面不接 `[`，例如正文写 "Hello!"）、未成对的单个 `=`）。
+    //    此时 chunk 为空且 i 不前进 → 外层 while 永远不退出 → **整段解析死循环**
+    //    （LivePreviewHelper.buildSpans 会挂死主线程）。必须显式消费一个字符。
+    if (i < text.length) {
+      result.push({ text: text.charAt(i), type: 'content' });
+      i += 1;
     }
   }
 

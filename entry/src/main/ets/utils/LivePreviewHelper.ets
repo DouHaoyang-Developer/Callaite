@@ -2,6 +2,7 @@
 // Lunius 风格实时阅览引擎 —— 基于 RichEditor Spans 的光标感知语法隐藏
 
 import { parseMarkdownSegments, MarkdownSegment } from './MarkdownSegmenter';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 // ─── 样式工厂 ─────────────────────────────────
 //
@@ -15,9 +16,15 @@ import { parseMarkdownSegments, MarkdownSegment } from './MarkdownSegmenter';
 // 无需 import ThemeManager 判断主题（与 ContentRenderer.ets:281 的既有做法一致）。
 
 function syntaxHiddenStyle(): RichEditorTextStyle {
+  // ⚠️ 「隐藏态」必须与 syntaxVisibleStyle() **字号/字体完全一致**，只把颜色设为透明。
+  //    原实现用 `fontSize: 1` 隐藏标记：光标移进标记时字号 1→14 会改变文本度量 →
+  //    触发原生重排 → 选区/caret 变化 → 再次触发重排的同步反馈，实测在
+  //    `**bold**` 标记内点击会把 JS 调用栈打爆（`Stack overflow!` @buildSpansInternal）
+  //    且编辑器被清成空白。改为「同度量、仅换色」后翻转不再引发重排。
   return {
     fontColor: Color.Transparent,
-    fontSize: 1
+    fontSize: 14,
+    fontFamily: 'monospace'
   };
 }
 
@@ -86,6 +93,40 @@ function embedSyntaxStyle(): RichEditorTextStyle {
   };
 }
 
+// ─── 行内格式的「渲染态」样式（D-Gate 1 判据③：加粗 / 行内代码 / 高亮）───
+//
+// 光标不在标记内时使用这三套样式，标记本身按 syntaxHiddenStyle() 隐藏。
+// 三者必须**视觉上互相可区分**，否则「渲染态」退化成普通正文，等于没渲染。
+
+/** 加粗渲染态：粗体正文色 */
+function inlineBoldStyle(): RichEditorTextStyle {
+  return {
+    fontColor: $r('app.color.text'), fontSize: 16,
+    fontWeight: FontWeight.Bold, fontFamily: 'monospace'
+  };
+}
+
+/** 行内代码渲染态：代码色 + 等宽 + 弱底色块 */
+function inlineCodeStyle(): RichEditorTextStyle {
+  return {
+    fontColor: $r('app.color.inline_code'), fontSize: 15, fontFamily: 'monospace',
+    textBackgroundStyle: { color: $r('app.color.surface2'), radius: 2 }
+  };
+}
+
+/**
+ * 高亮渲染态：真·底色填充。
+ * `RichEditorTextStyle.textBackgroundStyle`（@since 18，本项目 compatibleSdkVersion 26）——
+ * 这是「原生 span 做不出底色」这一旧假设的反例；无需 RichEditorStyledStringController。
+ * 色值走 `app.color.search_highlight`，明暗两套资源自动切换。
+ */
+function highlightStyle(): RichEditorTextStyle {
+  return {
+    fontColor: $r('app.color.text'), fontSize: 16, fontFamily: 'monospace',
+    textBackgroundStyle: { color: $r('app.color.search_highlight'), radius: 2 }
+  };
+}
+
 export interface RichEditorTextStyle {
   fontColor?: ResourceColor;
   fontSize?: number;
@@ -93,6 +134,8 @@ export interface RichEditorTextStyle {
   fontFamily?: string;
   fontStyle?: FontStyle;
   decoration?: DecorationStyle;
+  /** 文字底色（@since 18）——高亮渲染态用它做真·底色填充 */
+  textBackgroundStyle?: TextBackgroundStyle;
 }
 
 // ─── 行级上下文类型 ───────────────────────────
@@ -119,11 +162,20 @@ export class LivePreviewHelper {
   buildSpans(controller: RichEditorController, text: string, caretOffset: number): void {
     if (this.isRebuilding) return;
     this.isRebuilding = true;
+    // 出错时区分「哪一步抛的」：deleteSpans 抛 → 编辑器已被清空且未回填（表现为整页空白）；
+    // addTextSpan 抛 → 只丢失样式。`JSON.stringify(Error)` 恒为 {}，必须打 code/message。
+    let stage = 'start';
     try {
+      stage = 'deleteSpans';
       controller.deleteSpans();
+      stage = 'buildSpansInternal';
       this.buildSpansInternal(controller, text, caretOffset);
     } catch (e) {
-      console.error('LivePreviewHelper buildSpans error: ' + JSON.stringify(e));
+      const err = e as BusinessError;
+      console.error('LivePreviewHelper buildSpans error at ' + stage
+        + ' code=' + err.code + ' msg=' + err.message
+        + ' textLen=' + text.length.toString()
+        + ' caret=' + caretOffset.toString());
     } finally {
       this.isRebuilding = false;
     }
@@ -217,6 +269,12 @@ export class LivePreviewHelper {
     let headingLevel: number = 0;
     let inCodeBlock: boolean = false;
 
+    // 行内上下文（判据③）：粗体 / 行内代码 / 高亮 三类「编辑态↔渲染态」翻转。
+    // 标记段成对出现，进入时置位、离开时复位；内容段据此选渲染态样式。
+    let inBold: boolean = false;
+    let inInlineCode: boolean = false;
+    let inHighlight: boolean = false;
+
     for (let i = 0; i < segments.length; i++) {
       const seg: MarkdownSegment = segments[i];
       if (!seg.text) continue;
@@ -229,15 +287,42 @@ export class LivePreviewHelper {
       const cursorInside: boolean = caretOffset >= 0 &&
         caretOffset >= segStart && caretOffset < segEnd;
 
-      // 换行符重置行上下文
+      // ★ 换行符必须写回编辑器。
+      //   原实现在此 `continue` 而不 addTextSpan('\n')：每次 onDidChange 触发
+      //   buildSpans 都会把编辑器内的**所有换行抹掉**，整页塌成一行；随后
+      //   handleEditorChange 把塌缩结果回写 this.markdown，点「应用并重建」
+      //   即以 1 个块覆盖整页并落盘（实测 6 块 → 1 块，文件 71B → 66B）。
+      //   这就是「模式切换/重建后整页块被清空并落盘」的根因，而不是缺 markdown 回填。
+      //   保留换行后，getSpans() 读回的就是含 `  ` 缩进与 `- ` 前缀的原文。
       if (seg.text === '\n') {
         currentLineContext = LineContext.NORMAL;
         headingLevel = 0;
+        inBold = false;
+        inInlineCode = false;
+        inHighlight = false;
+        controller.addTextSpan('\n');
+        continue;
+      }
+
+      // ─── 行内格式标记段：翻转上下文 + 按光标位置决定显示/隐藏标记 ───
+      if (seg.type === 'syntax' &&
+          (seg.text === '**' || seg.text === '`' || seg.text === '==')) {
+        controller.addTextSpan(seg.text, {
+          style: cursorInside ? syntaxVisibleStyle() : syntaxHiddenStyle()
+        });
+        if (seg.text === '**') {
+          inBold = !inBold;
+        } else if (seg.text === '`') {
+          inInlineCode = !inInlineCode;
+        } else {
+          inHighlight = !inHighlight;
+        }
         continue;
       }
 
       // 根据段类型和行上下文选择样式
-      const style = this.chooseStyle(seg, cursorInside, currentLineContext, headingLevel);
+      const style = this.chooseStyle(seg, cursorInside, currentLineContext, headingLevel,
+        inBold, inInlineCode, inHighlight);
 
       // 更新行上下文
       if (seg.type === 'syntax') {
@@ -286,12 +371,24 @@ export class LivePreviewHelper {
   }
 
   private chooseStyle(seg: MarkdownSegment, cursorInside: boolean,
-    lineCtx: LineContext, headingLvl: number): RichEditorTextStyle | null {
+    lineCtx: LineContext, headingLvl: number,
+    inBold: boolean = false, inInlineCode: boolean = false,
+    inHighlight: boolean = false): RichEditorTextStyle | null {
 
     const isSyntax: boolean = seg.type === 'syntax';
 
     // ─── 内容段：始终显示 ───────────────────────
     if (!isSyntax) {
+      // 行内格式优先于行级样式：内容处在 `**` / `` ` `` / `==` 之间时走渲染态
+      if (inInlineCode) {
+        return inlineCodeStyle();
+      }
+      if (inHighlight) {
+        return highlightStyle();
+      }
+      if (inBold) {
+        return inlineBoldStyle();
+      }
       if (lineCtx === LineContext.CALLOUT) {
         return contentStyle();
       }
