@@ -161,6 +161,28 @@ fs.closeSync(file);
 8. **`LazyForEach` 只在 `List`/`Grid`/`WaterFall` 等滚动容器里才虚拟化**；放在普通 `Column` 中不虚拟化 ✗。
 9. **`Scroller.scrollToIndex` 只对 `ArcList`/`Grid`/`List`/`WaterFlow` 生效** —— 对 `Scroll` 无效。
 
+10. **`edit`/`write` 工具会把文件行尾改成 CRLF**，而**本仓基线是 LF** ✗
+    实例：一次改动后 `PageContextMenu.ets` 的 diff 膨胀到 940 行，**其中只有 249 行是真改动**，其余全是行尾噪声。
+    ⇒ **改完用 Python 字节级归一回 LF 再提交**；提交时 git 仍会打印 `LF will be replaced by CRLF`（仓库 `core.autocrlf=true` 的固有行为，属正常）。
+11. **触屏不产生 `onHover`** ⇒ **任何「靠 hover 才能触达」的入口，在平板上等于不存在** ✗
+    实例：菜单入口与菜单目标原先都靠 `onHover` 钉定，触屏上表现为「入口点不到」+「菜单标题为空」。
+    ⇒ 交互入口（按钮/菜单触发）**必须常显或走 `onTouch`**，不要只挂 `onHover`。
+12. **`bindContextMenu` / `bindMenu` 弹出的菜单与对话框在「独立子窗口」** ⇒ `uitest uiInput click` 的注入**到不了那里** ✗（逐点全扫命中区，`dumpLayout` 里也不出现菜单项/对话框文本，菜单只会被关掉）⇒ **这类交互默认「代码就绪、待手工验收」**。
+13. **`uitest uiInput longClick` 不可用**（实测只触发行 `onClick`、不弹菜单）；**模拟「按住」请用 `swipe x,y -> x,y+2 velocity=150`** ✓
+14. **`@Builder` 体内不能写普通语句**（如 `hilog` 调用会报 `does not meet UI component syntax`）⇒ 要日志就挂 `.onAppear(cb)`。
+
+---
+
+## 7b. 一条对抗性验证方法（值得复用）
+
+**「构建绿了」不等于「这个文件真的被编译了」** —— 零引用文件可能被 tree-shake 成**假绿** ✗
+**做法**：往目标文件**注入一处故意的类型错误**，重新构建 ——
+- 若构建失败且**报错落在该文件内** ⇒ 它确实在编译图里 ✓（可放心继续）
+- 若构建仍绿 ⇒ 它没被编译，**先前的「能编译」结论无效** ✗
+
+本仓已在 `PageContextMenu.ets` 上用过此法：注入后报 `PageContextMenu.ets:44:11 Type 'string' is not assignable to type 'number'`，撤销后复绿 ✓
+
+
 ---
 
 ## 8. 工程纪律（必须遵守）
