@@ -2,6 +2,8 @@ import { TablerIcon } from '../common/Icons';
 import { t } from '../../utils/i18n';
 import { AppState } from '../../state/AppState';
 import { PropertyEngine, PropertyType } from '../../core/engine/PropertyEngine';
+import { PropertyValueEditor } from './PropertyValueEditor';
+import { PropertyType as ValueType } from '../../core/models/Constants';
 
 /**
  * 属性类型选项（用于添加属性对话框中的类型选择按钮）。
@@ -26,6 +28,8 @@ export struct PropertyEditor {
   @State showAddDialog: boolean = false;
   @State newPropName: string = '';
   @State newPropType: PropertyType = PropertyType.TEXT;
+  /** W7-U1.2：添加属性失败时的可见提示（静默 no-op 会表现为「按钮失灵」） */
+  @State addError: string = '';
 
   aboutToAppear(): void {
     this.refreshProperties();
@@ -100,23 +104,59 @@ export struct PropertyEditor {
     return options;
   }
 
+  /**
+   * 各类型的合法默认值。
+   *
+   * ⚠️ W7-U1.2 修复（设备实测缺陷）：此前除 CHECKBOX 外一律返回空串，
+   * 而 PropertyEngine.validateProperty 对已注册 Schema 的 NUMBER 要求
+   * `^-?\d+(\.\d+)?$`、DATE 要求 `^\d{4}-\d{2}-\d{2}$` —— **空串一律不通过**，
+   * setProperty 随即静默 return：实测「添加属性 → 选『数字』→ 确认」后
+   * 面板仍是「暂无属性」、.md 无任何变化（按钮按了没反应）。
+   * 修复后按类型给出合法默认值：NUMBER→'0'、DATE→今天、CHECKBOX→'false'、其余→''。
+   */
   getDefaultForType(type: PropertyType): string {
     if (type === PropertyType.CHECKBOX) {
       return 'false';
     }
+    if (type === PropertyType.NUMBER) {
+      return '0';
+    }
+    if (type === PropertyType.DATE) {
+      return PropertyEditor.todayString();
+    }
     return '';
+  }
+
+  /** 今天的 yyyy-MM-dd（DATE 类型属性的合法默认值） */
+  static todayString(): string {
+    const now = new Date();
+    const m = now.getMonth() + 1;
+    const monthStr = m < 10 ? '0' + m : '' + m;
+    const day = now.getDate();
+    const dayStr = day < 10 ? '0' + day : '' + day;
+    return now.getFullYear() + '-' + monthStr + '-' + dayStr;
   }
 
   confirmAddProperty(): void {
     if (this.newPropName !== '') {
       const engine = PropertyEngine.getInstance();
-      if (this.newPropType !== PropertyType.TEXT) {
-        engine.registerSchema(this.newPropName, this.newPropType, '', []);
-      }
       const defaultValue = this.getDefaultForType(this.newPropType);
+      if (this.newPropType !== PropertyType.TEXT) {
+        // ⚠️ 必须把 defaultValue 一并写进 Schema（此前传的是 ''，见 getDefaultForType 注释）
+        engine.registerSchema(this.newPropName, this.newPropType, defaultValue, []);
+      }
       engine.setProperty(this.blockUuid, this.newPropName, defaultValue);
       AppState.bumpBlocksVersion();
       this.refreshProperties();
+
+      // 写回校验：PropertyEngine.setProperty 对「校验不通过」「块不存在」都是静默 return，
+      // 不回读就会出现「点了确认、界面无变化、也没有任何提示」的假成功（实测且已复现）。
+      if (!this.properties.has(this.newPropName)) {
+        this.addError = '写入失败：' + this.newPropName
+          + ' 可能已注册为其它类型（键名复用会沿用旧 Schema 校验），或该值不符合其校验规则';
+        return;
+      }
+      this.addError = '';
     }
     this.showAddDialog = false;
     this.newPropName = '';
@@ -127,6 +167,44 @@ export struct PropertyEditor {
     this.showAddDialog = false;
     this.newPropName = '';
     this.newPropType = PropertyType.TEXT;
+    this.addError = '';
+  }
+
+  /**
+   * W7-U1.2：数值型 PropertyType（PropertyEngine）→ 字符串型 PropertyType（Constants）映射。
+   *
+   * 仓库里存在**两套属性类型枚举**，取值口径不同：
+   *  · PropertyEngine.PropertyType：数值 0..5（TEXT/NUMBER/CHECKBOX/DATE/TAGS/LIST），无 URL/PAGE/BLOCK/CLASS
+   *  · Constants.PropertyType ：字符串 'text'/'number'/'checkbox'/'date'/'tags'/'url'/'page'/'block'/'class'，无 LIST
+   * PropertyValueEditor 用的是后者（@Prop propType: string）。
+   * TEXT/NUMBER/TAGS 两侧取值一一对应；LIST 在 Constants 无对应项，
+   * 故 LIST 不交给共享编辑器（见 usesSharedValueEditor）。
+   */
+  static sharedValueType(type: PropertyType): string {
+    if (type === PropertyType.NUMBER) {
+      return ValueType.NUMBER;
+    }
+    if (type === PropertyType.TAGS) {
+      return ValueType.TAGS;
+    }
+    return ValueType.TEXT;
+  }
+
+  /**
+   * W7-U1.2：哪些类型交给 PropertyValueEditor 渲染值列。
+   *
+   * 只承接与内置分支**能力等价**的三类（placeholder / 输入类型逐项对应）：
+   *  · TEXT   → placeholder 'value'        （一致）
+   *  · NUMBER → placeholder '0' + 数字键盘  （一致）
+   *  · TAGS   → placeholder 'tag1, tag2'   （一致）
+   * 不承接（保留本组件内置分支，替换必须保证既有能力不丢 ✗）：
+   *  · CHECKBOX → 需 Toggle 的 isOn 双向显示 + onChange 写回，PropertyValueEditor 无此绑定
+   *  · DATE     → 需点击拉起 DatePickerDialog，PropertyValueEditor 只是文本框
+   *  · LIST     → placeholder 'item1, item2' 在字符串枚举里无对应类型，会被降级为 'value'
+   */
+  usesSharedValueEditor(type: PropertyType): boolean {
+    return type === PropertyType.TEXT || type === PropertyType.NUMBER
+      || type === PropertyType.TAGS;
   }
 
   parseDate(dateStr: string): Date {
@@ -184,6 +262,7 @@ export struct PropertyEditor {
           .onClick(() => {
             this.newPropName = '';
             this.newPropType = PropertyType.TEXT;
+            this.addError = '';
             this.showAddDialog = true;
           })
         }
@@ -221,6 +300,7 @@ export struct PropertyEditor {
             .onClick(() => {
               this.newPropName = '';
               this.newPropType = PropertyType.TEXT;
+              this.addError = '';
               this.showAddDialog = true;
             })
           }
@@ -291,6 +371,14 @@ export struct PropertyEditor {
           .width('100%')
           .alignItems(HorizontalAlign.Start)
 
+          // W7-U1.2：写入失败提示（原先 setProperty 静默 return ⇒ 确认后毫无反馈）
+          if (this.addError !== '') {
+            Text(this.addError)
+              .fontSize(11)
+              .fontColor($r('app.color.danger'))
+              .width('100%')
+          }
+
           // 确认/取消
           Row({ space: 10 }) {
             Button(t('cancel')).type(ButtonType.Capsule)
@@ -337,17 +425,35 @@ export struct PropertyEditor {
   @Builder
   PropertyRow(key: string) {
     Row({ space: 8 }) {
-      // 属性名
-      Text(key)
-        .fontSize(12)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.muted_text'))
-        .width(80)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (this.usesSharedValueEditor(this.getPropertyType(key))) {
+        // W7-U1.2：文本族（TEXT/NUMBER/TAGS）的值列改用 PropertyValueEditor。
+        // 该组件自带「属性名列（80vp）」——故此分支不再重复渲染 Text(key)，
+        // 写回由 onValueChange → updateProperty → PropertyEngine.setProperty 承担。
+        Column() {
+          PropertyValueEditor({
+            propKey: key,
+            propValue: this.getPropertyValue(key),
+            propType: PropertyEditor.sharedValueType(this.getPropertyType(key)),
+            onValueChange: (k: string, v: string): void => {
+              this.updateProperty(k, v);
+            }
+          })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+      } else {
+        // 属性名
+        Text(key)
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.muted_text'))
+          .width(80)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-      // 值编辑器
-      this.ValueEditor(key)
+        // 值编辑器（CHECKBOX / DATE / LIST 专属分支）
+        this.ValueEditor(key)
+      }
 
       // 删除按钮
       Row() {

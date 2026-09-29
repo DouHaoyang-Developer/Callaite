@@ -35,7 +35,11 @@ const STATE_KEYS: string[] = [
   // 与 callaite_favorites / callaite_recentPages 同型：存 JSON.stringify(字符串) = 带引号文本，
   // 读 JSON.parse 后仍得到原字符串，往返一致。
   'callaite_tabs',
-  'callaite_activeTabId'
+  'callaite_activeTabId',
+  // W7-U1.2：自定义属性 Schema 的完整定义（PropertyConfig 写入 AppStorage）。
+  // AppStorage 只是内存态，不进本白名单就**重启即失** —— 实测：不加这行时
+  // 「属性配置」新增的 schema 重启后列表为空（等于白配）。
+  'callaite_customSchemas'
 ];
 
 /**

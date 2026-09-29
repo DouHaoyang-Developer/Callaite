@@ -17,6 +17,8 @@ import { AppState } from '../../state/AppState';
 import { PageData } from '../../core/models/Page';
 import { bundleManager } from '@kit.AbilityKit';
 import { display } from '@kit.ArkUI';
+// W7-U1.2：块属性面板（PropertyEditor）——本文件是它唯一的挂载点
+import { PropertyEditor } from '../property/PropertyEditor';
 
 @Component
 export struct PageView {
@@ -48,6 +50,23 @@ export struct PageView {
   @State pagePropKeys: string[] = [];
   @State pagePropValues: string[] = [];
   @State versionText: string = '';
+  /**
+   * W7-U1.2：块属性面板开关（页面级**常显**入口，标题下方操作行的「属性」药丸）。
+   *
+   * 落点理由（不按路线图挂 BlockView ActionsBar）：
+   *  1) ActionsBar 的入口 dots 条件是 `isHovered || showActions`，而**触屏不产生
+   *     onHover**（AGENTS §7 陷阱 11）⇒ 平板上整个 ActionsBar 不可达，挂上去等于没挂；
+   *  2) 路线图原方案的 bindSheet 弹层在**独立子窗口**，uitest 注入不可达（陷阱 12），
+   *     且 SheetType 只是偏好、可被系统改判（陷阱 6）；
+   *  3) PropertyEditor 自带 `blockUuid === ''` 的「选择一个块以编辑属性」空态，
+   *     说明它本就设计成**常驻面板 + 选中块驱动**，而非一次性的块内弹层。
+   */
+  @State showBlockProps: boolean = false;
+  /**
+   * 面板目标块：EditorService.setFocusedBlock() 写入的全局聚焦块。
+   * 点击任意块行（BlockView 行 onClick 或内容区 onClick）都会更新它。
+   */
+  @StorageLink('callaite_focusedBlock') focusedBlockUuid: string = '';
 
   aboutToAppear(): void {
     this.resolvePage();
@@ -159,7 +178,10 @@ export struct PageView {
       this.AboutView()
     } else {
       // 外层容器：内容列限宽 960vp 并水平居中（--ls-main-content-max-width）
-      Column({ space: 0 }) {
+      // W7-U1.2：外层 Column → Stack —— 在其上叠一块**非模态**块属性面板。
+      // 「非模态」是刻意的：面板要求「边看面板边点选块切换目标」，
+      // 加全屏遮罩会把正文块行全部挡死（点不到块 = 面板永远只能编辑同一个块）。
+      Stack({ alignContent: Alignment.Center }) {
         Column({ space: 0 }) {
         // 页面标题（Logseq 风格: 大号粗体；日志日期页显示本地化日期）
         Text(this.getDisplayTitle())
@@ -191,6 +213,19 @@ export struct PageView {
           .borderRadius(4)
           .backgroundColor($r('app.color.surface2'))
           .onClick(() => { this.integralMode = !this.integralMode; })
+
+          // W7-U1.2：块属性面板入口 —— **常显**（不挂 onHover：触屏无 hover ⇒ 只挂 hover 的入口等于不存在）
+          Row({ space: 6 }) {
+            TablerIcon('adjustments', 14,
+              this.showBlockProps ? $r('app.color.primary') : $r('app.color.muted_text'))
+            Text('属性')
+              .fontSize(11)
+              .fontColor(this.showBlockProps ? $r('app.color.primary') : $r('app.color.muted_text'))
+          }
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .borderRadius(4)
+          .backgroundColor($r('app.color.surface2'))
+          .onClick(() => { this.showBlockProps = !this.showBlockProps; })
           Blank()
         }
         .width('100%')
@@ -224,12 +259,129 @@ export struct PageView {
       .height('100%')
       .constraintSize({ maxWidth: 960 })
       .alignItems(HorizontalAlign.Start)
+
+        // ─── W7-U1.2 块属性面板（非模态浮层；面板外的区域仍可点选块）───
+        if (this.showBlockProps) {
+          this.BlockPropsPanel()
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .padding({ left: this.getContentPadding(), right: this.getContentPadding() })
     }
-    .width('100%')
-    .height('100%')
-    .padding({ left: this.getContentPadding(), right: this.getContentPadding() })
-    .alignItems(HorizontalAlign.Center)
+  }
+
+  /**
+   * W7-U1.2：面板目标块 uuid —— 三重校验，任一不成立一律回空串。
+   *
+   * 为什么必须校验：`PropertyEngine.setProperty` 对不存在的块是**静默 return**
+   *（PropertyEngine.ets:92-95），若不校验就会出现「输入框能打字、磁盘无变化」的假成功。
+   * 回空串则 PropertyEditor 走它自带的「选择一个块以编辑属性」空态，不会给出假象。
+   *
+   * 三重校验：① 有聚焦块；② 该 uuid 在 BlockTree 里真实存在；③ 它属于**当前页**
+   *（聚焦块是全局键，切页后可能仍指向上一个页面的块）。
+   */
+  private resolvedBlockUuid(): string {
+    const uuid = this.focusedBlockUuid;
+    if (uuid === '') {
+      return '';
     }
+    const ws = WorkspaceService.getInstance();
+    const block = ws.getBlock(uuid);
+    if (block === undefined) {
+      return '';
+    }
+    const page = ws.getPageByName(this.displayName);
+    if (page === undefined || block.pageId !== page.uuid) {
+      return '';
+    }
+    return uuid;
+  }
+
+  /** 面板副标题：当前目标块的内容预览（未选中时给出可操作提示） */
+  private blockPropsHint(): string {
+    const uuid = this.resolvedBlockUuid();
+    if (uuid === '') {
+      return '未选中块 —— 点选正文中任意块行即可编辑其属性';
+    }
+    const block = WorkspaceService.getInstance().getBlock(uuid);
+    if (block === undefined) {
+      return '未选中块 —— 点选正文中任意块行即可编辑其属性';
+    }
+    const text = block.content.trim();
+    if (text === '') {
+      return '（空块）';
+    }
+    if (text.length > 32) {
+      return text.substring(0, 32) + '…';
+    }
+    return text;
+  }
+
+  /**
+   * W7-U1.2：块属性面板 —— 承载 PropertyEditor（此前全仓零挂载）。
+   *
+   * 观感：居中的浮层卡片，**无遮罩**（非模态，见 build 内注释）。
+   * 不用 bindSheet / bindMenu：那类弹层在独立子窗口，设备注入不可达（陷阱 12）。
+   */
+  @Builder
+  BlockPropsPanel() {
+    Column({ space: 0 }) {
+      // 标题栏：图标 + 标题 + 目标块预览 + 关闭
+      Row({ space: 8 }) {
+        TablerIcon('adjustments', 16, $r('app.color.primary'))
+        Column({ space: 2 }) {
+          Text('块属性')
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text'))
+          Text(this.blockPropsHint())
+            .fontSize(11)
+            .fontColor($r('app.color.muted_text'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+
+        Row() {
+          TablerIcon('x', 16, $r('app.color.muted_text'))
+        }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .width(32)
+        .height(32)
+        .borderRadius(4)
+        .onClick(() => { this.showBlockProps = false; })
+      }
+      .width('100%')
+      .height(52)
+      .padding({ left: 14, right: 8 })
+
+      Divider().color($r('app.color.border'))
+
+      // 属性编辑主体（PropertyEditor 自带空态与添加属性对话框）
+      Column() {
+        PropertyEditor({ blockUuid: this.resolvedBlockUuid() })
+      }
+      .width('100%')
+      .layoutWeight(1)
+
+      Divider().color($r('app.color.border'))
+      Text('提示：面板打开时可直接点选正文里的其它块来切换目标')
+        .fontSize(11)
+        .fontColor($r('app.color.muted_text'))
+        .width('100%')
+        .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+    }
+    .width('92%')
+    .constraintSize({ maxWidth: 480 })
+    .height('68%')
+    .backgroundColor($r('app.color.surface1'))
+    .borderRadius(12)
+    .border({ width: 0.6, color: $r('app.color.border') })
+    .shadow({ radius: 24, color: 'rgba(0,0,0,0.22)', offsetY: 8 })
+    .clip(true)
   }
 
   /**
@@ -240,8 +392,10 @@ export struct PageView {
    * 观感：标题行沿用 SectionHeader 风格（13vp 弱化色 + 底部分隔线）；
    *       每行属性名固定 120vp 弱化色、属性值 text 色，行高 28vp。
    *
-   * 注：本次仅展示，行内编辑待后续 —— 项目现有属性编辑入口是属性面板
-   *     （components/property/PropertyEditor.ets），此处不新增输入控件与保存逻辑。
+   * 注：本区仅展示**页面属性**（page.properties，来自 frontmatter），不做行内编辑。
+   *     块属性（BlockData.properties）的编辑入口是属性面板
+   *     （components/property/PropertyEditor.ets）——W7-U1.2 起由本文件
+   *     BlockPropsPanel() 真实挂载（此前该面板全仓零挂载，本注释描述的是一个不存在的入口）。
    */
   @Builder
   PropertiesSection() {

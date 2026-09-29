@@ -15,11 +15,27 @@ import { PropertyEngine, PropertyType, PropertySchema } from '../../core/engine/
  *
  * 注意：
  *  - 使用 PropertyEngine（core/engine/PropertyEngine.ets）的数值型 PropertyType 枚举
- *  - 自定义 Schema 名称列表持久化到 AppStorage（'callaite_customSchemas'）
+ *  - 自定义 Schema 的**完整定义**持久化到 AppStorage（'callaite_customSchemas'）
  *  - 注册时调用 PropertyEngine.registerSchema
  */
 
 const STORAGE_KEY_CUSTOM_SCHEMAS = 'callaite_customSchemas';
+
+/**
+ * 持久化到 AppStorage 的 Schema 形状（JSON）。
+ *
+ * ⚠️ W7-U1.2 修复（接线时实测）：此前只持久化**名字数组**，而
+ * PropertyEngine.schemas 是纯内存 Map（重启即空）⇒ loadCustomSchemas 里
+ * `getSchema(name)` 必然 undefined、该名字被 `if (schema)` 过滤掉 ⇒
+ * 「属性配置」每次重启都是空列表，等于白配。
+ * 现在持久化完整定义，启动时重新 registerSchema 回引擎。
+ */
+interface StoredSchema {
+  name: string;
+  type: PropertyType;
+  defaultValue?: string;
+  options?: string[];
+}
 
 // 类型选项列表：显示名 + PropertyType 值
 interface TypeOption {
@@ -43,6 +59,13 @@ interface SelectOption {
 
 @Component
 export struct PropertyConfig {
+  /**
+   * W7-U1.2：返回回调。
+   *
+   * 默认保持原行为（回到 Settings 路由）；作为**设置页内嵌子页**挂载时由宿主注入
+   * 回退到设置列表（对齐 ShortcutSettings({ onBack }) 的既有口径，见 SettingsPage.ets:325）。
+   */
+  onBack: () => void = (): void => { AppState.setCurrentPage('Settings'); };
   @State schemas: Map<string, PropertySchema> = new Map<string, PropertySchema>();
   @State schemaList: string[] = [];
   @State builtinList: string[] = [];
@@ -60,31 +83,39 @@ export struct PropertyConfig {
   }
 
   /**
-   * 从 AppStorage 加载自定义 Schema 名称列表，并重新从 PropertyEngine 读取 schema 定义。
+   * 从 AppStorage 加载自定义 Schema 完整定义，并**重新注册**进 PropertyEngine。
+   *
+   * 引擎的 schemas 只活在内存里，重启后为空；不重新注册的话，
+   * 既看不到列表，属性编辑器也会把所有属性当 TEXT 处理。
    */
   private loadCustomSchemas(): void {
+    const map = new Map<string, PropertySchema>();
+    const list: string[] = [];
     const raw = AppStorage.get<string>(STORAGE_KEY_CUSTOM_SCHEMAS);
-    const names: string[] = [];
     if (raw) {
       try {
-        const parsed = JSON.parse(raw) as string[];
-        if (parsed && parsed.length > 0) {
-          for (let i = 0; i < parsed.length; i++) {
-            names.push(parsed[i]);
+        const defs = JSON.parse(raw) as StoredSchema[];
+        if (defs) {
+          for (let i = 0; i < defs.length; i++) {
+            const def = defs[i];
+            if (!def || def.name === undefined || def.name === '') {
+              continue;
+            }
+            const defaultValue = def.defaultValue ?? '';
+            const options = def.options ?? [];
+            PropertyEngine.getInstance().registerSchema(def.name, def.type, defaultValue, options);
+            const schema: PropertySchema = {
+              name: def.name,
+              type: def.type,
+              defaultValue: defaultValue,
+              options: options
+            };
+            map.set(def.name, schema);
+            list.push(def.name);
           }
         }
       } catch (_e) {
-        // 忽略解析错误
-      }
-    }
-
-    const map = new Map<string, PropertySchema>();
-    const list: string[] = [];
-    for (let i = 0; i < names.length; i++) {
-      const schema = PropertyEngine.getInstance().getSchema(names[i]);
-      if (schema) {
-        map.set(names[i], schema);
-        list.push(names[i]);
+        // 解析失败按「无自定义属性」处理
       }
     }
     this.schemas = map;
@@ -92,10 +123,23 @@ export struct PropertyConfig {
   }
 
   /**
-   * 持久化自定义 Schema 名称列表到 AppStorage。
+   * 持久化自定义 Schema 的完整定义（名称/类型/默认值/选项）到 AppStorage。
    */
-  private persistCustomSchemaNames(): void {
-    AppStorage.setOrCreate(STORAGE_KEY_CUSTOM_SCHEMAS, JSON.stringify(this.schemaList));
+  private persistCustomSchemas(): void {
+    const defs: StoredSchema[] = [];
+    for (let i = 0; i < this.schemaList.length; i++) {
+      const schema = this.schemas.get(this.schemaList[i]);
+      if (schema) {
+        const def: StoredSchema = {
+          name: schema.name,
+          type: schema.type,
+          defaultValue: schema.defaultValue,
+          options: schema.options
+        };
+        defs.push(def);
+      }
+    }
+    AppStorage.setOrCreate(STORAGE_KEY_CUSTOM_SCHEMAS, JSON.stringify(defs));
   }
 
   /**
@@ -269,8 +313,9 @@ export struct PropertyConfig {
       }
       newList.push(name);
       this.schemaList = newList;
-      this.persistCustomSchemaNames();
     }
+    // 新增与编辑都要落盘（此前只在新增分支持久化 ⇒ 改类型/默认值重启后丢失）
+    this.persistCustomSchemas();
 
     // 触发 UI 刷新
     AppState.bumpBlocksVersion();
@@ -279,8 +324,13 @@ export struct PropertyConfig {
 
   /**
    * 删除自定义 Schema。
+   *
+   * W7-U1.2：同时从 PropertyEngine 注销（此前只删 UI 与 AppStorage，
+   * 引擎里的 Schema 仍生效 ⇒「删了但校验还按旧的走」）。
    */
   private deleteSchema(name: string): void {
+    PropertyEngine.getInstance().removeSchema(name);
+
     const newMap = new Map<string, PropertySchema>();
     this.schemas.forEach((v: PropertySchema, k: string) => {
       if (k !== name) {
@@ -296,7 +346,7 @@ export struct PropertyConfig {
       }
     }
     this.schemaList = newList;
-    this.persistCustomSchemaNames();
+    this.persistCustomSchemas();
     AppState.bumpBlocksVersion();
   }
 
@@ -313,7 +363,7 @@ export struct PropertyConfig {
           .alignItems(VerticalAlign.Center)
           .width(36).height(36)
           .onClick(() => {
-            AppState.setCurrentPage('Settings');
+            this.onBack();
           })
 
           Text('属性配置')

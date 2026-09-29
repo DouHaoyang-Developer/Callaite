@@ -7,6 +7,8 @@ import { ShortcutService, ShortcutDef } from '../../services/ShortcutService';
 import { SubscriptionService } from '../../services/SubscriptionService';
 import { CloudSyncService } from '../../services/CloudSyncService';
 import { ShortcutSettings } from './ShortcutSettings';
+// W7-U1.2：属性 Schema 配置页（此前全仓零挂载）
+import { PropertyConfig } from '../property/PropertyConfig';
 import { promptAction } from '@kit.ArkUI';
 import { PluginManager } from '../../plugins/PluginManager';
 import { HuaweiAccountService } from '../../services/HuaweiAccountService';
@@ -326,6 +328,11 @@ export struct SettingsPage {
       ShortcutSettings({ onBack: () => {
         this.currentSection = 'main';
       } })
+    } else if (this.currentSection === 'properties') {
+      // W7-U1.2：属性配置子页（PropertyConfig 此前零挂载；onBack 注入回退到设置列表）
+      PropertyConfig({ onBack: () => {
+        this.currentSection = 'main';
+      } })
     } else {
     Column({ space: 0 }) {
       // 固定标题栏
@@ -458,6 +465,11 @@ export struct SettingsPage {
           this.SelectRow(t('tab_width'), this.buildTabWidthOptions(), this.tabWidthIndex, (index: number) => {
             this.tabWidthIndex = index;
             AppStorage.setOrCreate(KEY_TAB_WIDTH, TAB_WIDTHS[index]);
+          })
+          // W7-U1.2：属性配置（自定义属性 Schema 的类型/默认值/枚举）——
+          // 以设置页内嵌子页挂载，与 ShortcutSettings 同口径（currentSection 切换 + onBack 回退）
+          this.ButtonRow('属性配置', 'adjustments', () => {
+            this.currentSection = 'properties';
           })
 
           this.SectionDivider()

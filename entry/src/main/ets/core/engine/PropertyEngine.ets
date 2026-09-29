@@ -208,6 +208,18 @@ export class PropertyEngine {
   }
 
   /**
+   * 移除属性 Schema（W7-U1.2 新增）。
+   *
+   * PropertyConfig 的「删除自定义属性」此前只删 UI 列表与 AppStorage，
+   * 引擎内的 Schema 仍然生效 —— 表现为「列表里删掉了，但类型校验仍按旧 Schema 走」。
+   *
+   * @returns 是否确实移除了一个已注册的 Schema
+   */
+  removeSchema(name: string): boolean {
+    return this.schemas.delete(name);
+  }
+
+  /**
    * 获取属性 Schema。
    *
    * @param name 属性名
