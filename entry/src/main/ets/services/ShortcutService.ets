@@ -1,6 +1,7 @@
 import { EditorService } from './EditorService';
 import { WorkspaceService } from './WorkspaceService';
 import { JournalService } from './JournalService';
+import { AppState } from '../state/AppState';
 
 /**
  * ShortcutDef — 快捷键定义。
@@ -409,29 +410,32 @@ export class ShortcutService {
 
     // ─── 文件操作 ───
 
-    // Ctrl+K — 全局搜索（Logseq mod+K）
+    // Ctrl+K — 命令面板 / 快速切换（U1.6：与全局搜索拆成两根键）
+    // 语义：过滤**页面名**，回车打开；无命中时按输入内容创建页面。
     self.register({
       id: 'app.search-global',
       key: 'K',
       ctrl: true,
       shift: false,
       alt: false,
-      description: '全局搜索',
+      description: '命令面板 / 快速切换',
       action: () => {
-        AppStorage.setOrCreate('callaite_searchPanelOpen', true);
+        AppState.setCommandPaletteOpen(true);
       }
     });
 
-    // Ctrl+F — 页内搜索
+    // Ctrl+F — 全局搜索（U1.6：Ctrl+F 打开 SearchPanel）
+    // 语义：搜索**页面名 + 块内容**，结果点击/回车跳转，块结果走 BlockAnchorService 定位。
+    // 注：快捷键重排是独立一轮的事；本轮先把两根键的归属定死 —— K = 命令面板、F = 搜索面板。
     self.register({
       id: 'app.search',
       key: 'F',
       ctrl: true,
       shift: false,
       alt: false,
-      description: '页内搜索',
+      description: '全局搜索（页面 + 内容）',
       action: () => {
-        AppStorage.setOrCreate('callaite_searchPanelOpen', true);
+        AppState.setSearchPanelOpen(true);
       }
     });
 

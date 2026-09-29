@@ -59,7 +59,9 @@ export struct MobileMenuSheet {
   private handle(row: MenuRow): void {
     this.close();
     if (row.action === 'switcher' || row.action === 'newPage') {
-      AppState.setSearchPanelOpen(true);
+      // U1.6：这两项是「快速切换 / 新建页面」语义 → 命令面板（过滤页面名，无命中即按输入建页）。
+      // 移动端的全局搜索入口是底部胶囊栏的放大镜 pill（仍走 setSearchPanelOpen）。
+      AppState.setCommandPaletteOpen(true);
     } else if (row.action === 'graph') {
       TabState.newTab('Graph');
     } else if (row.action === 'whiteboard') {

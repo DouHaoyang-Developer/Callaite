@@ -9,14 +9,14 @@ interface RibbonItem {
   key: string;       // 激活态判定（对应 AppState.currentPage 或动作 key）
   icon: string;      // Tabler 图标名
   label: string;     // 无障碍描述
-  action: string;    // 'route' | 'palette' | 'theme' | 'toggleLeft'
+  action: string;    // 'route' | 'search' | 'palette' | 'newFile' | 'toggleLeft'
   route?: string;    // action=route 时的目标页
 }
 
 /**
  * Ribbon — Obsidian 桌面端最左侧竖排图标栏（复刻自 Obsidian_Laptop.png 左缘）。
  *
- * 布局：上层功能图标（侧栏开关/快速切换/图谱/白板/闪卡/命令面板），
+ * 布局：上层功能图标（侧栏开关/全局搜索/图谱/白板/闪卡/命令面板），
  *       底部系统图标（主题切换/设置）。
  * 材质：玻璃光感半透明填充，与氛围渐变背景叠加产生通透感。
  */
@@ -59,7 +59,9 @@ export struct Ribbon {
   private topItems(): RibbonItem[] {
     const items: RibbonItem[] = [];
     items[0] = { key: 'sidebar', icon: 'layout-sidebar', label: t('ribbon_toggle_sidebar'), action: 'toggleLeft' };
-    items[1] = { key: 'switcher', icon: 'search', label: t('ribbon_quick_switcher'), action: 'palette' };
+    // U1.6：放大镜图标 = 全局搜索面板（SearchPanel，搜页面名 + 块内容）。
+    // 原先它指向命令面板，与 terminal-2 图标重复；拆分后两者语义不再重叠。
+    items[1] = { key: 'search', icon: 'search', label: t('search'), action: 'search' };
     items[2] = { key: 'Graph', icon: 'hierarchy', label: t('ribbon_graph'), action: 'route', route: 'Graph' };
     items[3] = { key: 'Whiteboards', icon: 'layout-grid', label: t('ribbon_whiteboard'), action: 'route', route: 'Whiteboards' };
     items[4] = { key: 'Flashcards', icon: 'stack-2', label: t('ribbon_flashcards'), action: 'route', route: 'Flashcards' };
@@ -77,8 +79,12 @@ export struct Ribbon {
   private handle(item: RibbonItem): void {
     if (item.action === 'toggleLeft') {
       AppState.toggleLeftSidebar();
-    } else if (item.action === 'palette') {
+    } else if (item.action === 'search') {
+      // U1.6：全局搜索面板（SearchPanel）—— 与命令面板是两件事、两把键
       AppState.setSearchPanelOpen(true);
+    } else if (item.action === 'palette') {
+      // U1.6：命令面板 / 快速切换（CommandPalette）
+      AppState.setCommandPaletteOpen(true);
     } else if (item.action === 'newFile') {
       // 原活动栏「新建」入口（打开新建文件对话框）
       AppStorage.setOrCreate('callaite_newFileDialogOpen', true);

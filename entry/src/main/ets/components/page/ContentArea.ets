@@ -1,5 +1,6 @@
 import { PageView } from './PageView';
 import { CommandPalette } from '../commandpalette/CommandPalette';
+import { SearchPanel } from '../search/SearchPanel';
 import { ExportDialog } from '../common/ExportDialog';
 import { ImportDialog } from '../common/ImportDialog';
 import { Toolbar } from '../outliner/Toolbar';
@@ -15,6 +16,21 @@ import { Breakpoints } from '../../state/Breakpoints';
  */
 @Component
 export struct ContentArea {
+  /**
+   * U1.6：命令面板与全局搜索面板的**两把独立开合键**。
+   *
+   * 迁移前两者共用 `callaite_searchPanelOpen`：该键实际只驱动 CommandPalette 的挂载，
+   * 而 `components/search/SearchPanel.ets` 虽然读同一个键、全仓却没有任何渲染点
+   * ——「全局搜索面板长期零挂载」，于是所有搜索入口（左栏搜索框 / 标签 / 移动端搜索 pill）
+   * 弹出来的都是命令面板。
+   *
+   * 拆分后的语义：
+   *   · `callaite_commandPaletteOpen` → CommandPalette（快速切换 + 命令面板，Ctrl+K）
+   *   · `callaite_searchPanelOpen`    → SearchPanel（全局搜索：页面名 + 块内容，Ctrl+F，结果可跳块）
+   * 二者互斥由 AppState.setCommandPaletteOpen / setSearchPanelOpen 保证
+   * （同时打开会叠成两层模态并争抢键盘焦点）。
+   */
+  @StorageLink('callaite_commandPaletteOpen') commandPaletteOpen: boolean = false;
   @StorageLink('callaite_searchPanelOpen') searchPanelOpen: boolean = false;
   @StorageLink('callaite_currentPage') currentPage: string = 'Journal';
   @StorageLink('callaite_exportDialogOpen') exportDialogOpen: boolean = false;
@@ -129,15 +145,17 @@ export struct ContentArea {
       .backgroundColor($r('app.color.surface0'))
       .padding({ top: this.mobileTopInset(), bottom: this.mobileBottomInset() })
 
-      // ─── 快速切换 / 命令面板：Obsidian 风格居中玻璃卡片 ───
-      if (this.searchPanelOpen) {
+      // ─── 快速切换 / 命令面板（Ctrl+K）：Obsidian 风格居中玻璃卡片 ───
+      // 键为 callaite_commandPaletteOpen；全局搜索面板走下面 searchPanelOpen 的独立渲染位。
+      // 仅主窗格挂载：分屏时两个 ContentArea 读同一把键，两处都挂会出现两层叠在一起的模态。
+      if (this.commandPaletteOpen && this.isPrimaryPane()) {
         Column() {
           Column()
             .width('100%')
             .layoutWeight(1)
             .backgroundColor('rgba(0,0,0,0.35)')
             .onClick(() => {
-              AppState.setSearchPanelOpen(false);
+              AppState.setCommandPaletteOpen(false);
             })
 
           Row() {
@@ -147,7 +165,7 @@ export struct ContentArea {
             //    否则内容区的 onKeyEvent（全局快捷键）在面板关闭后会失效。
             CommandPalette({
               onRequestClose: () => {
-                AppState.setSearchPanelOpen(false);
+                AppState.setCommandPaletteOpen(false);
               },
               restoreFocusId: this.scrollId()
             })
@@ -165,11 +183,20 @@ export struct ContentArea {
             .layoutWeight(1)
             .backgroundColor(Color.Transparent)
             .onClick(() => {
-              AppState.setSearchPanelOpen(false);
+              AppState.setCommandPaletteOpen(false);
             })
         }
         .width('100%')
         .height('100%')
+      }
+
+      // ─── 全局搜索面板（Ctrl+F）：SearchPanel 自带遮罩与居中，与命令面板互不共用键 ───
+      // U1.6：这一行是 SearchPanel 的唯一渲染点（迁移前全仓零挂载）。
+      // 仍只挂主窗格，理由同命令面板：分屏时两个窗格读同一把键会挂出两层面板。
+      // 注意：SearchPanel 内部仍以 isOpen（@StorageLink 同一把键）自持显隐，
+      // 因此它自己的关闭路径（点结果 / 点遮罩 / Esc）写回本键后，这里随即卸载它。
+      if (this.searchPanelOpen && this.isPrimaryPane()) {
+        SearchPanel()
       }
 
       if (this.exportDialogOpen) {

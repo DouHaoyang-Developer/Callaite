@@ -285,6 +285,11 @@ export struct LeftSidebar {
           .height(30)
           .padding({ left: 12, right: 10 })
           .onClick(() => {
+            // U1.6：标签行此前只「打开面板」而不注入过滤词 —— SearchPanel 挂载后，
+            // 面板打开就是一张空的最近访问列表（看起来像坏了）。
+            // 编辑器内点标签走的是同一意图（ContentRenderer：先写 callaite_tagFilter 再开面板），
+            // 这里补齐这一步，让 SearchPanel 既有的 '#tag' 检索路径可被点击触达。
+            AppStorage.setOrCreate('callaite_tagFilter', tag);
             AppState.setSearchPanelOpen(true);
           })
         }, (tag: string) => tag)

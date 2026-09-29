@@ -20,8 +20,10 @@ export struct HomePage {
   }
 
   private openSearch(): void {
-    // 打开文件（Ctrl + O）→ 快速切换 / 搜索面板
-    AppState.setSearchPanelOpen(true);
+    // 打开文件（Ctrl + O）→ 快速切换：过滤页面名，无命中即按输入建页
+    // U1.6：这里要的是「打开 / 快速切换文件」，不是全局内容搜索，故改开命令面板；
+    // 全局搜索面板（页面名 + 块内容）的入口是 Ctrl+F / Ribbon 放大镜 / 左栏搜索框。
+    AppState.setCommandPaletteOpen(true);
   }
 
   private closeCurrentTab(): void {

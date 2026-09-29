@@ -561,16 +561,30 @@ export class AppState {
     return AppStorage.get<boolean>(STORAGE_KEYS.commandPaletteOpen) ?? false;
   }
 
+  /**
+   * 命令面板 / 快速切换（CommandPalette，Ctrl+K）。
+   * U1.6：与全局搜索面板**互斥** —— 两块浮层同时打开会叠成两层模态并争抢键盘焦点。
+   */
   static setCommandPaletteOpen(open: boolean): void {
     AppStorage.setOrCreate(STORAGE_KEYS.commandPaletteOpen, open);
+    if (open) {
+      AppStorage.setOrCreate(STORAGE_KEYS.searchPanelOpen, false);
+    }
   }
 
   static isSearchPanelOpen(): boolean {
     return AppStorage.get<boolean>(STORAGE_KEYS.searchPanelOpen) ?? false;
   }
 
+  /**
+   * 全局搜索面板（SearchPanel，Ctrl+F）。
+   * U1.6：开面板时顺手关掉命令面板（互斥理由同上）。
+   */
   static setSearchPanelOpen(open: boolean): void {
     AppStorage.setOrCreate(STORAGE_KEYS.searchPanelOpen, open);
+    if (open) {
+      AppStorage.setOrCreate(STORAGE_KEYS.commandPaletteOpen, false);
+    }
   }
 
   static isExportDialogOpen(): boolean {
