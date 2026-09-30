@@ -2,6 +2,7 @@ import { WorkspaceService } from './WorkspaceService';
 import { DirtyPageTracker } from './DirtyPageTracker';
 import { BlockData } from '../core/models/Block';
 import { UUID } from '../utils/UUID';
+import { AppState } from '../state/AppState';
 
 /**
  * EditorService — 编辑器服务。
@@ -236,6 +237,8 @@ export class EditorService {
       });
       if (result.success && result.affectedUuids.length > 0) {
         this.focusedBlockUuid = result.affectedUuids[0];
+        // ★ W6：结构已变 ⇒ 必须通知视图重建可见行序列，否则新块**不进列表**
+        AppState.bumpBlocksVersion();
         return this.focusedBlockUuid;
       }
       return '';
@@ -253,6 +256,11 @@ export class EditorService {
 
     if (result.success && result.affectedUuids.length > 0) {
       this.focusedBlockUuid = result.affectedUuids[0];
+      // ★ W6：同上一分支。`OutlinerEngine` **刻意不 bump** `callaite_blocksVersion`
+      //    （全仓仅 UI 组件负责 bump），而它正是 `BlockList` 重算 `rows` 的唯一入口
+      //    ⇒ 不补这一步，回车建块会「数据/磁盘都对、列表里没有这一行」，
+      //    新行的 `BlockView` 根本不被创建 ⇒ 随后的一切焦点迁移都无从发生。
+      AppState.bumpBlocksVersion();
       return this.focusedBlockUuid;
     }
     return '';
@@ -282,6 +290,10 @@ export class EditorService {
 
     if (result.success && result.affectedUuids.length > 0) {
       this.focusedBlockUuid = result.affectedUuids[0];
+      // ★ W6：与 `createBlockBelow` 同一缺陷、同一修法（见那里的详尽注释）。
+      //    本方法的调用方 `ShortcutService`（Ctrl+Shift+Enter → `editor.create-child`）
+      //    同样不会 bump ⇒ 不补这一步，新建的子块只进数据与磁盘、**不进列表**。
+      AppState.bumpBlocksVersion();
       return this.focusedBlockUuid;
     }
     return '';

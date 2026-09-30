@@ -1018,11 +1018,40 @@ export struct BlockView {
   }
 
   /**
-   * 全局焦点变化回调：焦点落到别的块（或被清除）时退出本块编辑态。
-   * 内容安全：WebEditor 已在 input 事件中 400ms 防抖自动保存。
+   * 全局焦点变化回调（`callaite_focusedBlock` 的 @Watch）。
+   *
+   * 【W6 修】这里过去**只做退出**（`isEditing = false`），从不做进入 ⇒ 它只能被
+   * `enterEdit()` 从「点击」这一条路径点亮。于是凡**由代码写权威焦点**来迁移焦点的路径
+   * （回车建块、跨块 ↑↓）都落不进编辑态，新行永远停在只读渲染分支。
+   *
+   * 实测链条（W6，基线 `0ddf7a3`，夹具 4661 B / `501bf94f…`）：
+   *   点第 1 行 ⇒ `dumpLayout` 有 `RichEditor id=callaite_blockEditor_<uuid>`（1 个）；
+   *   注入 `a` ⇒ 内容 `测试块 2a`；
+   *   注入 `Enter` ⇒ 磁盘 4661→4665（`- 测试块 2a` + 新空块 `- `，**建块本身成功**）✓
+   *   但紧随其后 `dumpLayout` 里 `RichEditor` **计数 = 0** ✗ —— 旧行退出编辑态之后，
+   *   新行**从未进入**；再注入 `x` ⇒ 磁盘逐字节不变（4665，MD5 `9dff4873…`）✗。
+   *   ⇒ 与 W5 §6.1 的定位线索（「没有出现新 uuid 的 RichEditor」）完全一致，
+   *     根因不是「新行没拿到焦点」，而是**新行根本没进编辑态**。
+   *
+   * 语义上这是**补全**而非新增行为：`setFocusedBlock()` 全仓 14 处调用点全部是
+   * 「让这个块进入编辑」的意图（点击行/正文、点标记圈、`enterEdit()`、`BlockEditor` 的
+   * 回车建块与跨块 ↑↓、`WebEditor` 的三处）—— 没有任何一处是「只高亮不编辑」。
+   * 唯一的例外是多选模式：那时点击行**刻意不进编辑**（见 `enterEdit()` 开头），
+   * 故这里照抄同一道闸，保持既有语义不变。
+   *
+   * ⚠️ 刻意**不**反向写 `setFocusedBlock`（否则形成「焦点回调 → 写焦点 → 焦点回调」的回环）；
+   *    本方法只把「权威焦点已经是我」翻译成「我进编辑态」，是**单向派生**。
+   * 内容安全：旧行退出时会走 `BlockEditor.aboutToDisappear` 的回写 + flush。
    */
   onGlobalFocusChanged(): void {
-    if (this.isEditing && this.focusedBlockUuid !== this.blockUuid) {
+    if (this.focusedBlockUuid === this.blockUuid) {
+      // W6：权威焦点落到本块 ⇒ 本块进编辑态（多选模式下让位，与 enterEdit 同一道闸）
+      if (!this.isEditing && !this.selectionMode) {
+        this.isEditing = true;
+      }
+      return;
+    }
+    if (this.isEditing) {
       this.isEditing = false;
       this.refreshBlock();
     }
