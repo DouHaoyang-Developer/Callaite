@@ -1,35 +1,20 @@
 import { BlockData } from '../../core/models/Block';
+import { PageData } from '../../core/models/Page';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { TablerIcon } from '../common/Icons';
 import { OverlayKeyRouter, OverlayId, OverlayKeyBinding } from '../../utils/OverlayKeyRouter';
 import { AppState } from '../../state/AppState';
+import { AnchorRegistry, AnchorSource } from '../../services/AnchorRegistry';
 import { KeyCode } from '@kit.InputKit';
-
-/**
- * 页内搜索**本体**是否已就绪。
- *
- * U2.4 的排程裁决（计划 §U2.4 原文）：
- *   「键位 Ctrl+Shift+F **先注册（打开即占位提示「编辑器重铸后可用」）**，
- *     组件本体随编辑器节奏走。」
- * ⇒ 本窗口（W12）只做**前两件**：显隐统一 + 可达入口；**本体保持占位**。
- *
- * 为什么用常量而不是删掉下面那段实现：
- *   · 计划 §U2.4 第 3 件（跳块走 `AnchorRegistry` + 文本级高亮）**尚未做**，
- *     现在就把它打开 = 交付一个「能打开、搜得到计数、但既不滚动也不高亮」的半成品，
- *     用户看到的「跳块」是假的 —— 比占位更糟（可点但无用的 UI）。
- *   · 保留实现、只由这一个常量切换 ⇒ 第 3 件做完时**改一行**即可，
- *     不会出现「现在删、下轮再写一遍」的两轮 churn（这正是计划延后它的理由）。
- */
-const FIND_IN_PAGE_BODY_READY: boolean = false;
 
 /**
  * FindInPage — 页内搜索浮动组件。
  *
- * 在当前页面所有 Block 中搜索文本，提供上/下导航。
+ * 在当前页面所有 Block 中搜索文本，提供上/下导航，并**跳块 + 块内文本级高亮**。
  * 对应 Logseq 的 find-in-page 功能。
  *
  * 用法与开合：
- *   `FindInPage({ pageId: 'xxx' })` —— 显隐**不再由本组件自己的 @State 决定**，
+ *   `FindInPage({ pageId: 'xxx' })` —— 显隐**不由本组件自己的 @State 决定**，
  *   而是与宿主共用 AppStorage 的 `callaite_findInPageOpen`（读写都走 `AppState`）。
  *   入口 = `Ctrl+Shift+F`（`ShortcutService.app.find-in-page`）；
  *   关闭 = Esc / ✕ / `AppState.closeFindInPage()`。
@@ -38,7 +23,16 @@ const FIND_IN_PAGE_BODY_READY: boolean = false;
  *   1. 递归遍历当前页所有 Block（getPageBlocks + getChildrenOfBlock）
  *   2. 匹配 content 包含 searchQuery（不区分大小写）
  *   3. 显示 "N/M" 匹配计数
- *   4. 上/下按钮循环导航匹配项
+ *   4. 上/下按钮（或 ↵ / Shift+↵）循环导航匹配项
+ *
+ * ─── U2.4 三件套在本文件的落点（Sprint-02 / W12 前两件 + W13 第三件）───
+ *   第 1 件「显隐统一」   W12：删内部 `@State isVisible`，改 `@StorageLink` 共用键 ✓
+ *   第 2 件「挂载层/触发源」W12：`Ctrl+Shift+F` 注册；挂载仍在 `BlockList` 顶部 ✓
+ *   第 3 件「**跳块 + 文本级高亮**」 **本窗口（W13）完成** ✓
+ *     · 跳块：`navigatePrev/Next` → `AnchorRegistry.jump()`（**不自己写滚动/定位**）；
+ *     · 文本级高亮：发布「命中块 + 命中词」到 `AppState.setFindInPageHighlight()`，
+ *       由 `BlockView` 按 `utils/TextHighlighter.splitHighlight` 切段渲染底色。
+ *   ⇒ 原先封存本体的常量 `FIND_IN_PAGE_BODY_READY` 与占位分支**已删除**（占位封存解除）。
  */
 @Component
 export struct FindInPage {
@@ -75,8 +69,7 @@ export struct FindInPage {
     //   · 显隐统一：删掉本组件的 `@State isVisible`，与宿主共用
     //     `AppStorage['callaite_findInPageOpen']`（写入口只有 `AppState.open/closeFindInPage`）；
     //   · 可达入口：`ShortcutService` 注册 `Ctrl+Shift+F`（计划 §U2.3 目标键位表）。
-    // 仍未做的第 3 件（**跳块走 `AnchorRegistry` + 文本级高亮**）见文件头
-    // `FIND_IN_PAGE_BODY_READY` 的说明；本组件当前以占位形态呈现。
+    // 第 3 件（跳块走 `AnchorRegistry` + 文本级高亮）**W13 已完成**，见类头。
     const router = OverlayKeyRouter.getInstance();
     router.registerOverlay(OverlayId.FIND_IN_PAGE, new OverlayKeyBinding((keyCode: number, event: KeyEvent) => {
       return this.applyNavKey(keyCode, event);
@@ -158,12 +151,17 @@ export struct FindInPage {
 
   /**
    * 清空搜索态（关闭时调用；也供将来「重开时从零开始」复用）。
+   *
+   * U2.4 第 3 件（W13）：一并清掉**块内文本级高亮**的发布量 ——
+   * 否则关掉搜索条后，上一次命中的那一行会留着一片底色（`AppState.closeFindInPage`
+   * 也会清一次，两条关闭路径都覆盖）。
    */
   private clearSearchState(): void {
     this.searchQuery = '';
     this.matchCount = 0;
     this.currentMatch = 0;
     this.matchedUuids = [];
+    AppState.clearFindInPageHighlight();
   }
 
   /**
@@ -218,6 +216,67 @@ export struct FindInPage {
     } else {
       this.currentMatch = 0;
     }
+    // U2.4 第 3 件（W13）：查询变化后，把**文本级高亮**立即落到当前命中块上
+    // （只发布高亮，不滚动 —— 滚动由 ↵/「下一个」触发，与计划验收「输入 → Enter 循环跳转」一致）。
+    AppState.setFindInPageHighlight(this.currentMatchUuid(), this.searchQuery);
+  }
+
+  /**
+   * 当前命中项（`currentMatch` 是 1-based；无命中返回空串）。
+   */
+  private currentMatchUuid(): string {
+    if (this.matchedUuids.length === 0 || this.currentMatch <= 0) {
+      return '';
+    }
+    const idx: number = this.currentMatch - 1;
+    if (idx >= this.matchedUuids.length) {
+      return '';
+    }
+    return this.matchedUuids[idx];
+  }
+
+  /**
+   * 本页的页名（供 `AnchorRegistry` 在索引缺失时兜底）。
+   * 取法与 `BlockAnchorService.revealBlockByUuid` 同源（IndexStore.getPage(pageId).originalName）。
+   */
+  private resolvePageName(): string {
+    const ws = WorkspaceService.getInstance();
+    const page: PageData | undefined = ws.getDataStore().getIndexStore().getPage(this.pageId);
+    return page ? page.originalName : '';
+  }
+
+  /**
+   * 把「当前命中块」推到屏幕上 —— **跳块 + 文本级高亮**（U2.4 第 3 件 / W13）。
+   *
+   * 两件事分开做，各有唯一入口：
+   *   ① **文本级高亮**：`AppState.setFindInPageHighlight(uuid, query)` ⇒ BlockView 切段渲染底色；
+   *   ② **跳块**：`AnchorRegistry.jump()` ⇒ 入口层（选窗格/对齐路由/跨页等一帧）⇒
+   *      算法层 `BlockAnchorService.revealBlock`（下标计算 + `scrollToIndex` + 块闪烁 + 统一降级）。
+   *
+   * ─── 为什么不自己写滚动/定位（本条的硬约束）───
+   * 本仓 Sprint-01 已建立 `AnchorRegistry`（入口层）+ `BlockAnchorService`（算法层）这条**单一通路**，
+   * 里面已经沉淀了三个只有踩过才知道的坑，自己再写一套必然重踩：
+   *   · 陷阱 19：`AppStorage` 里那个 `Scroller` **不是 `List` 绑定的那一个**，
+   *     对它 `scrollToIndex` 不抛错也**不滚动** ⇒ 必须用 `BlockList` 自报的直接引用；
+   *   · 陷阱 20：`scrollToIndex` **异步**生效，且**切页后首帧会被静默忽略**
+   *     ⇒ `revealBlockDeferred` 的幂等重试（80ms/+240ms）正是为此而建；
+   *   · 折叠祖先必须先展开再算下标（顺序反了会误报「不在大纲中」）。
+   * 另：`jump()` **不传 `onDismiss`** —— 本搜索条不是带遮罩的模态（挂在内容区顶部），
+   * 跳转后保持打开，用户才能连按 ↵ 逐个走（与右侧栏大纲/反链同一取舍）。
+   */
+  private revealCurrentMatch(): void {
+    const uuid: string = this.currentMatchUuid();
+    if (uuid === '') {
+      return;
+    }
+    // ① 文本级高亮（唯一写入口在 AppState）
+    AppState.setFindInPageHighlight(uuid, this.searchQuery);
+    // ② 跳块（唯一入口在 AnchorRegistry）
+    AnchorRegistry.getInstance().jump({
+      blockUuid: uuid,
+      source: AnchorSource.FIND_IN_PAGE,
+      pageNameHint: this.resolvePageName()
+    });
   }
 
   /**
@@ -232,6 +291,7 @@ export struct FindInPage {
     } else {
       this.currentMatch = this.currentMatch - 1;
     }
+    this.revealCurrentMatch();
   }
 
   /**
@@ -246,58 +306,19 @@ export struct FindInPage {
     } else {
       this.currentMatch = this.currentMatch + 1;
     }
+    this.revealCurrentMatch();
   }
 
   build() {
     if (!this.isVisible) {
+      // 关：画成 0 高（宿主 BlockList 只在键为 true 时构造本组件，这里是二重保险）
       Row().width('100%').height(0)
-    } else if (!FIND_IN_PAGE_BODY_READY) {
-      // ─── U2.4 占位形态（计划原文：「键位 Ctrl+Shift+F 先注册，打开即占位提示
-      //     『编辑器重铸后可用』，组件本体随编辑器节奏走」）───
-      //
-      // 为什么不直接把下面那份实现打开：第 3 件（跳块走 AnchorRegistry + 文本级高亮）
-      // 未做 ⇒ 那样交付的是「能搜到计数、但点了既不滚动也不高亮」的半成品，
-      // 用户会以为跳块坏了。占位是**诚实**的状态，也不会挡住 Esc 关闭这条回路。
-      //
-      // 提示里必须写明「怎么关」：占位条本身只有一个 ✕，用户第一反应是找 Esc。
-      Row({ space: 8 }) {
-        TablerIcon('search', 16, $r('app.color.muted_text'))
-        Text('页内搜索：编辑器重铸后可用')
-          .fontSize(13)
-          .fontColor($r('app.color.muted_text'))
-          .layoutWeight(1)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .id('callaite_findInPagePlaceholder')
-        Text('Esc 关闭')
-          .fontSize(11)
-          .fontColor($r('app.color.muted_text'))
-          .opacity(0.7)
-        Row() {
-          TablerIcon('x', 16, $r('app.color.muted_text'))
-        }
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .width(28)
-        .height(28)
-        .borderRadius(4)
-        .id('callaite_findInPageClose')
-        .onClick(() => {
-          this.hide();
-        })
-      }
-      .width('100%')
-      .height(44)
-      .padding({ left: 12, right: 8 })
-      .backgroundColor($r('app.color.surface1'))
-      .border({ width: { bottom: 1 }, color: $r('app.color.border') })
-      // 兜底落点：焦点不在本条上时仍要能接管 Esc（与下面正式形态同一份路由器去重标记）
-      .onKeyEvent((event: KeyEvent) => {
-        if (OverlayKeyRouter.getInstance().handle(event, OverlayId.FIND_IN_PAGE)) {
-          event.stopPropagation();
-        }
-      })
     } else {
+      // ─── U2.4 第 3 件（W13）已完成 ⇒ 原先「FIND_IN_PAGE_BODY_READY=false 占位分支」已删除 ───
+      // 封存解除的依据：本形态下每个命中项都会
+      //   ① 经 `AnchorRegistry.jump()` 真滚动到目标块（含跨页延迟 + 幂等重试），
+      //   ② 由 `AppState.setFindInPageHighlight` 让目标块内命中词显示 `search_highlight` 底色。
+      // 即计划 §U2.4 验收要求的「滚动 + 块高亮 + 块内文本高亮」三样都到位，不再是「点了没反应」的半成品。
       Row({ space: 8 }) {
         TablerIcon('search', 16, $r('app.color.muted_text'))
 
@@ -307,6 +328,9 @@ export struct FindInPage {
           .height(32)
           .backgroundColor(Color.Transparent)
           .borderRadius(0)
+          // W13：稳定 id —— 供 `-uiLayout` / `-click <widgetId>` 精确定位（陷阱 25：
+          // 侧栏/浮层坐标会陈旧，2in1 上必须走 widgetId 通道，不要自己换算坐标）。
+          .id('callaite_findInPageInput')
           .onChange((value: string, previewText?: PreviewText) => {
             this.searchQuery = value;
             // U2.2/W11：上报 IME 预览文本 —— 组词态下的回车归输入法（见 OverlayKeyRouter 类头 §SDK 依据）
@@ -315,8 +339,9 @@ export struct FindInPage {
           })
           // ↵ 跳到下一个匹配 —— 走 onSubmit（输入法处理完合成之后才发出）；
           // 组词态的回车归输入法上屏（理由与实测见 OverlayKeyRouter 类头 §IME 守卫）。
-          // 注：Shift+Enter=上一个 无法在 onSubmit 里判修饰键（其形参只有 EnterKeyType），
-          // 该键位留给 U2.4 重做时随显隐反转一并接（本轮本组件尚不可达）。
+          // 注：Shift+Enter=上一个 无法在 onSubmit 里判修饰键（其形参只有 EnterKeyType）；
+          // 该键位由 `applyNavKey`（onKeyEvent → OverlayKeyRouter）承担 —— 输入框持焦时
+          // 注入/物理 Shift+↵ 会先经 IME，未被 IME 吃掉的那一次才落到路由器（陷阱 21 ④⑤）。
           .onSubmit(() => {
             this.navigateNext();
           })
@@ -344,6 +369,7 @@ export struct FindInPage {
         .width(28)
         .height(28)
         .borderRadius(4)
+        .id('callaite_findInPagePrev')
         .onClick(() => {
           this.navigatePrev();
         })
@@ -357,6 +383,7 @@ export struct FindInPage {
         .width(28)
         .height(28)
         .borderRadius(4)
+        .id('callaite_findInPageNext')
         .onClick(() => {
           this.navigateNext();
         })
@@ -370,6 +397,7 @@ export struct FindInPage {
         .width(28)
         .height(28)
         .borderRadius(4)
+        .id('callaite_findInPageClose')
         .onClick(() => {
           this.hide();
         })

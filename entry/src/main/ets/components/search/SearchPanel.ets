@@ -7,6 +7,10 @@ import { BlockData } from '../../core/models/Block';
 import { AnchorRegistry, AnchorSource } from '../../services/AnchorRegistry';
 import { KeyCode } from '@kit.InputKit';
 import { OverlayKeyRouter, OverlayId, OverlayKeyBinding } from '../../utils/OverlayKeyRouter';
+// U2.4 第 3 件（W13）：切段算法上移到 utils/TextHighlighter，本组件的 splitHighlight 改为委托。
+// 目的 = 让「FindInPage 的块内文本级高亮」与本面板的结果行高亮是**同一套切分语义**
+// （计划 §U2.4 原文：「匹配块内的文本级高亮**沿用 SearchPanel 的 splitHighlight 段渲染**」）。
+import { splitHighlight, HighlightSegment } from '../../utils/TextHighlighter';
 
 /**
  * 搜索结果项。
@@ -17,14 +21,6 @@ interface SearchResultItem {
   blockUuid: string;
   content: string;
   matchedText: string;
-}
-
-/**
- * 文本分段（用于搜索高亮）。
- */
-interface TextSegment {
-  text: string;
-  isMatch: boolean;
 }
 
 /**
@@ -431,38 +427,13 @@ export struct SearchPanel {
 
   /**
    * 将文本按搜索词拆分为分段（匹配段标记 isMatch=true）。
+   *
+   * U2.4 第 3 件（W13）：算法已上移到 `utils/TextHighlighter.splitHighlight`，
+   * 本方法只作委托 —— **行为逐字不变**（W12 已设备验收的 Ctrl+F 结果行高亮不受影响），
+   * 收益是 FindInPage 的块内高亮与本面板共用同一套切分语义。
    */
-  splitHighlight(text: string, query: string): TextSegment[] {
-    if (query === '' || text === '') {
-      const seg: TextSegment = { text: text, isMatch: false };
-      return [seg];
-    }
-
-    const lowerText = text.toLowerCase();
-    const lowerQuery = query.toLowerCase();
-    const segments: TextSegment[] = [];
-    let idx = 0;
-
-    while (idx < text.length) {
-      const found = lowerText.indexOf(lowerQuery, idx);
-      if (found === -1) {
-        const seg: TextSegment = { text: text.substring(idx), isMatch: false };
-        segments.push(seg);
-        break;
-      }
-      if (found > idx) {
-        const seg: TextSegment = { text: text.substring(idx, found), isMatch: false };
-        segments.push(seg);
-      }
-      const matchSeg: TextSegment = {
-        text: text.substring(found, found + query.length),
-        isMatch: true
-      };
-      segments.push(matchSeg);
-      idx = found + query.length;
-    }
-
-    return segments;
+  splitHighlight(text: string, query: string): HighlightSegment[] {
+    return splitHighlight(text, query);
   }
 
   build() {
@@ -614,24 +585,36 @@ export struct SearchPanel {
         if (result.type === 'page') {
           // 页面结果：高亮页面名
           Text() {
-            ForEach(this.splitHighlight(result.content, this.searchQuery), (seg: TextSegment, idx: number) => {
+            ForEach(this.splitHighlight(result.content, this.searchQuery), (seg: HighlightSegment, idx: number) => {
               Span(seg.text)
                 .fontSize(14)
                 .fontColor(seg.isMatch ? $r('app.color.primary') : $r('app.color.text'))
-                .backgroundColor(seg.isMatch ? $r('app.color.search_highlight') : 'rgba(0,0,0,0)')
-            }, (seg: TextSegment, idx: number) => idx.toString())
+                // ⚠️ W13 修：`Span` **没有** `backgroundColor`（`component/span.d.ts` 里
+                //    `SpanAttribute` 只从 `CommonMethod` 继承同名方法 ⇒ 能编译但**渲染层静默忽略**）。
+                //    实测：改前结果行命中词只有字色变紫、**没有底色**（整屏扫 `#FEF08A` = 0 像素）；
+                //    改用 `textBackgroundStyle` 后才真有底色（与 U2.4 计划里
+                //    「文本级高亮 = 高亮样式」的语义一致）。
+                .textBackgroundStyle({
+                  color: seg.isMatch ? $r('app.color.search_highlight') : Color.Transparent,
+                  radius: 2
+                })
+            }, (seg: HighlightSegment, idx: number) => idx.toString())
           }
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         } else {
           // Block 结果：内容预览 + 所属页面
           Text() {
-            ForEach(this.splitHighlight(result.content, this.searchQuery), (seg: TextSegment, idx: number) => {
+            ForEach(this.splitHighlight(result.content, this.searchQuery), (seg: HighlightSegment, idx: number) => {
               Span(seg.text)
                 .fontSize(13)
                 .fontColor(seg.isMatch ? $r('app.color.primary') : $r('app.color.text'))
-                .backgroundColor(seg.isMatch ? $r('app.color.search_highlight') : 'rgba(0,0,0,0)')
-            }, (seg: TextSegment, idx: number) => idx.toString())
+                // 同上：Span 的底色必须走 textBackgroundStyle（见上方页面结果分支的说明）
+                .textBackgroundStyle({
+                  color: seg.isMatch ? $r('app.color.search_highlight') : Color.Transparent,
+                  radius: 2
+                })
+            }, (seg: HighlightSegment, idx: number) => idx.toString())
           }
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })

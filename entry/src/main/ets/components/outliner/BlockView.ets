@@ -2,6 +2,8 @@ import { BlockData } from '../../core/models/Block';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { EditorService } from '../../services/EditorService';
 import { ContentRenderer, ContentSegment, SegmentType } from '../../utils/ContentRenderer';
+// U2.4 第 3 件（W13）：块内**文本级高亮**的切段函数（与 SearchPanel 同一实现，见该文件头）
+import { splitHighlight, containsQuery, HighlightSegment } from '../../utils/TextHighlighter';
 import { MathRenderer } from '../extensions/MathRenderer';
 import { MermaidRenderer } from '../extensions/MermaidRenderer';
 import { CodeBlock } from '../extensions/CodeBlock';
@@ -135,6 +137,18 @@ export struct BlockView {
   @State isAnchorHighlighted: boolean = false;
   /** 闪烁计时器 id，重置/离场时清理，避免旧回调把新一轮高亮误关 */
   private highlightTimer: number = -1;
+  // ─── U2.4 第 3 件：页内搜索的**块内文本级**高亮（W13）───
+  // `findMatchUuid` = 当前命中块，`findQuery` = 命中词，两者同由
+  // `AppState.setFindInPageHighlight()` 写入（唯一写入口）。
+  //
+  // ⚠️ **刻意不加 `@Watch`**（与相邻的 `highlightSeq` 不同）：本组件每行一份，
+  //    若挂 @Watch 并在回调里 `refreshBlock()`，则**每次按键**都会让所有可见行重跑
+  //    `ContentRenderer.parse`（1000 块页面上是 O(可见行) 次 markdown 解析/键）
+  //    ⇒ 与 W8/W11 的性能红线（ANR）正面冲突。
+  //    这里只把两个键当**只读的响应式依赖**用在 `build()` 的渲染分支上：
+  //    ArkUI 只会重跑真正读了它们的那个节点的 build 闭包，代价与命中行数同阶。
+  @StorageLink('callaite_findInPageMatchUuid') private findMatchUuid: string = '';
+  @StorageLink('callaite_findInPageQuery') private findQuery: string = '';
   /**
    * S1-H：行级长按上报。
    *
@@ -593,6 +607,29 @@ export struct BlockView {
 
   // ─── 内容 Segments 渲染 ───
 
+  /**
+   * U2.4 第 3 件（W13）：本段是否要走「命中词文本级高亮」渲染。
+   *
+   * 三个条件全真才走（否则一律回到原有 `Text(seg.text)` 分支，零回归面）：
+   *   ① 本块就是当前页内搜索的命中块（`callaite_findInPageMatchUuid` 与自身 uuid 相等）；
+   *   ② 命中词非空；
+   *   ③ 本段文本真的含命中词。
+   *
+   * 为什么不把 `seg.type` 也列成白名单：本分支只出现在 `RenderSegment` 的**最后一个
+   * else-if**（即已排除 IMAGE / 数学 / Mermaid / 引用 / 链接 / 标签 / 整块代码等
+   * 自有渲染形态的段），到达这里的段本来就是「普通文本类」（TEXT/BOLD/ITALIC/
+   * CODE/HIGHLIGHT/STRIKETHROUGH），样式逐项照抄下方 else 分支即可。
+   */
+  private isFindHitSegment(seg: ContentSegment): boolean {
+    if (this.findMatchUuid === '' || this.findQuery === '') {
+      return false;
+    }
+    if (this.findMatchUuid !== this.blockUuid) {
+      return false;
+    }
+    return containsQuery(seg.text, this.findQuery);
+  }
+
   @Builder
   ContentSegments() {
     Row({ space: 0 }) {
@@ -693,6 +730,49 @@ export struct BlockView {
         .onClick(() => {
           ContentRenderer.handleClick(SegmentType.LINK, seg.text);
         })
+    } else if (this.isFindHitSegment(seg)) {
+      // ─── U2.4 第 3 件（W13）：命中块内的**文本级高亮** ───
+      // 计划原文：「匹配块内的文本级高亮**沿用 SearchPanel 的 splitHighlight 段渲染**
+      //           （把匹配块临时切到高亮样式）」⇒ 这里用与 `SearchPanel.ResultItem`
+      //           **同一个** `splitHighlight`（已上移到 `utils/TextHighlighter`），
+      //           把命中词那段 Span 铺 `search_highlight` 底色。
+      // 只在本块是当前命中块、且本段真的含命中词时才走本分支
+      // ⇒ 普通行/普通段的渲染路径**逐字节未变**（回归面为零）。
+      // 样式逐项照抄下方 else 分支，保证加高亮前后字重/字形/装饰/等宽完全一致，
+      // 差异只有命中词的底色（判据也因此可归因到高亮本身）。
+      Text() {
+        ForEach(splitHighlight(seg.text, this.findQuery), (part: HighlightSegment, partIdx: number) => {
+          Span(part.text)
+            .fontSize(this.contentFontSize)
+            .fontColor(ContentRenderer.getSegmentColor(seg.type))
+            .fontWeight(seg.type === SegmentType.BOLD ? FontWeight.Bold : FontWeight.Normal)
+            .fontStyle(seg.type === SegmentType.ITALIC ? FontStyle.Italic : FontStyle.Normal)
+            .decoration({
+              type: seg.type === SegmentType.STRIKETHROUGH ? TextDecorationType.LineThrough : TextDecorationType.None,
+              color: $r('app.color.muted_text')
+            })
+            .fontFamily(seg.type === SegmentType.CODE ? 'monospace' : '')
+            // ⚠️ 必须用 `textBackgroundStyle`，**不能用 `backgroundColor`** ✗：
+            //    `SpanAttribute`（SDK `component/span.d.ts`）根本没有 `backgroundColor`，
+            //    它只从 `CommonMethod` 继承了一个同名方法 ⇒ **能编译、但渲染层静默忽略**。
+            //    W13 实测：用 `backgroundColor` 时命中块内**看不到任何底色**
+            //    （整屏扫描 `#FEF08A` = 0 像素），改用 `textBackgroundStyle` 后正常填充。
+            //    同一缺陷也存在于 SearchPanel 的结果行（已一并修，见其 ResultItem 注释）。
+            .textBackgroundStyle({
+              color: part.isMatch ? $r('app.color.search_highlight') : Color.Transparent,
+              radius: 2
+            })
+        }, (part: HighlightSegment, partIdx: number) => partIdx.toString())
+      }
+      .height(28)
+      .id('callaite_findHit_' + this.blockUuid)
+      .onClick(() => {
+        if (ContentRenderer.isClickable(seg.type)) {
+          ContentRenderer.handleClick(seg.type, seg.text);
+        } else {
+          this.enterEdit();
+        }
+      })
     } else {
       Text(seg.text)
         .fontSize(this.contentFontSize)

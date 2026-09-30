@@ -33,6 +33,8 @@ interface StorageKeys {
   slashMenuOpen: string;
   slashMenuBlockUuid: string;
   findInPageOpen: string;
+  findInPageMatchUuid: string;
+  findInPageQuery: string;
   exportDialogOpen: string;
   importDialogOpen: string;
   rightSidebarBlocks: string;
@@ -50,6 +52,8 @@ const STORAGE_KEYS: StorageKeys = {
   slashMenuOpen: 'callaite_slashMenuOpen',
   slashMenuBlockUuid: 'callaite_slashMenuBlockUuid',
   findInPageOpen: 'callaite_findInPageOpen',
+  findInPageMatchUuid: 'callaite_findInPageMatchUuid',
+  findInPageQuery: 'callaite_findInPageQuery',
   exportDialogOpen: 'callaite_exportDialogOpen',
   importDialogOpen: 'callaite_importDialogOpen',
   rightSidebarBlocks: 'callaite_rightSidebarBlocks'
@@ -238,6 +242,11 @@ export class AppState {
     // FindInPage 自己也以 @StorageLink 读同一个键决定显隐（此前是 BlockList 的 @State
     // 与组件内部 @State 两份互不相通的标志，见 FindInPage 类头 §可达性）。
     AppStorage.setOrCreate(STORAGE_KEYS.findInPageOpen, false);
+    // U2.4 第 3 件（W13）：页内搜索的**命中块 + 命中词**（块内文本级高亮的驱动量）。
+    // 初值必须在页面挂载前存在 —— BlockView 每行都以 @StorageLink 读它们决定
+    // 「本行要不要走高亮渲染分支」，缺初值会让 LazyForEach 新建的行取到 undefined。
+    AppStorage.setOrCreate(STORAGE_KEYS.findInPageMatchUuid, '');
+    AppStorage.setOrCreate(STORAGE_KEYS.findInPageQuery, '');
     AppStorage.setOrCreate(STORAGE_KEYS.exportDialogOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.importDialogOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.rightSidebarBlocks, JSON.stringify([]));
@@ -677,8 +686,51 @@ export class AppState {
     AppStorage.setOrCreate(STORAGE_KEYS.slashMenuOpen, false);
   }
 
+  /**
+   * 关闭页内搜索条。
+   *
+   * U2.4 第 3 件（W13）：**同时清掉命中块/命中词的发布量** —— 否则关掉搜索条之后，
+   * 上一次命中的那一行会永远留着一片 `search_highlight` 底色（「关不掉的高亮」）。
+   * 把清理放在这个**唯一关闭入口**里（而不是各调用点），与 `onVisibilityChanged`
+   * 把「关时清搜索态」收敛到状态变化是同一判据：任何关闭路径都不会漏。
+   */
   static closeFindInPage(): void {
     AppStorage.setOrCreate(STORAGE_KEYS.findInPageOpen, false);
+    AppState.clearFindInPageHighlight();
+  }
+
+  // ─── 页内搜索：命中块 + 命中词（U2.4 第 3 件 / W13）───
+
+  /** 当前页内搜索命中块 uuid（空串 = 无命中）。 */
+  static getFindInPageMatchUuid(): string {
+    return AppStorage.get<string>(STORAGE_KEYS.findInPageMatchUuid) ?? '';
+  }
+
+  /** 当前页内搜索的查询词（空串 = 无查询）。 */
+  static getFindInPageQuery(): string {
+    return AppStorage.get<string>(STORAGE_KEYS.findInPageQuery) ?? '';
+  }
+
+  /**
+   * 发布「当前命中块 + 命中词」—— 块内**文本级高亮**的**唯一写入口**
+   * （与 `openFindInPage`/`closeFindInPage` 同一约定：开合态、命中态都只有一条写路径）。
+   *
+   * 为什么走 AppStorage 而不是给 BlockView 加 @Prop：
+   *   BlockView 由 `LazyForEach` 创建、键是 `row.uuid`，**结构性变更不重跑 itemGenerator**
+   *   ⇒ 传参型 @Prop 会停在旧值上（AGENTS 陷阱 15，W10 已为此把 `depth` 从 @Prop 改成自读）。
+   *   命中块还可能**此刻尚不存在**（在视口外、被 LazyForEach 回收），
+   *   它是在滚到该行时才被创建的 —— 这种情况只有「全局可读的键 + 组件 aboutToAppear 自检」
+   *   能覆盖（与 `callaite_highlightedBlock` 的既有做法一致）。
+   */
+  static setFindInPageHighlight(blockUuid: string, query: string): void {
+    AppStorage.setOrCreate(STORAGE_KEYS.findInPageMatchUuid, blockUuid);
+    AppStorage.setOrCreate(STORAGE_KEYS.findInPageQuery, query);
+  }
+
+  /** 清掉块内文本级高亮（不关搜索条；关条走 `closeFindInPage`）。 */
+  static clearFindInPageHighlight(): void {
+    AppStorage.setOrCreate(STORAGE_KEYS.findInPageMatchUuid, '');
+    AppStorage.setOrCreate(STORAGE_KEYS.findInPageQuery, '');
   }
 
   static isExportDialogOpen(): boolean {

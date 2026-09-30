@@ -305,7 +305,12 @@ export struct BlockList {
         Column({ space: 0 }) {
           // 页内搜索栏
           if (this.findInPageVisible) {
-            FindInPage({ pageId: this.pageId })
+            // W13：必须传**真实页面 uuid**。此前传的是 `this.pageId`，而本组件的唯一调用点
+            // （PageView.ets:254）**没有传 pageId** ⇒ @Prop 恒为 '' ⇒ FindInPage 会去
+            // `getPageBlocks('')` 里搜 ⇒ **恒 0 匹配**（实测：注入查询后计数停在 `0/0`）。
+            // 与 BlockList.ets:440-446 给 BlockSelection 修的是同一个坑
+            // （那里改用了 pageUuidForDrag，见其字段注释）。
+            FindInPage({ pageId: this.pageUuidForDrag })
           }
 
           if (this.blocks.length === 0) {
@@ -348,7 +353,8 @@ export struct BlockList {
         Column({ space: 0 }) {
           // 页内搜索栏（浮动在顶部）
           if (this.findInPageVisible) {
-            FindInPage({ pageId: this.pageId })
+            // W13：同内嵌分支 —— 传真实页面 uuid（`this.pageId` 恒为 ''，见上方说明）
+            FindInPage({ pageId: this.pageUuidForDrag })
           }
 
           List({ space: 0, scroller: this.activeScroller() }) {

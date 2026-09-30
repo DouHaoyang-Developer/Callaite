@@ -48,6 +48,10 @@ export enum AnchorSource {
   SEARCH = 'search',
   OUTLINE = 'outline',
   BACKLINK = 'backlink',
+  /** 页内搜索条（FindInPage，U2.4 第 3 件 / W13 接线）。
+   *  与 SEARCH（全局搜索面板，带遮罩的模态）区分开：本来源**不传 onDismiss**
+   *  —— 搜索条不是模态，跳转后保持打开才能连按 ↵ 逐个走。 */
+  FIND_IN_PAGE = 'find-in-page',
   DIRECT = 'direct'
 }
 
