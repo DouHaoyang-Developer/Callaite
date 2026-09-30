@@ -4,6 +4,7 @@ import { LivePreviewHelper } from '../../utils/LivePreviewHelper';
 import { MarkdownExporter } from '../../core/parser/MarkdownExporter';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { SaveQueue } from '../../services/SaveQueue';
+import { DirtyPageTracker } from '../../services/DirtyPageTracker';
 import { AppState } from '../../state/AppState';
 import { promptAction } from '@kit.ArkUI';
 
@@ -55,6 +56,26 @@ export struct IntegralEditor {
   private lastSpanCaret: number = -2;
   /** rebuildSpans 重入闸（含 setCaretOffset 触发的同步回调窗口），见 rebuildSpans 注释 */
   private isRebuildingSpans: boolean = false;
+  /**
+   * 编辑内容「已改但尚未落库」标记。
+   *
+   * ⚠️ 为什么需要它，而不是每次落盘前用字符串比较判脏：
+   *   本组件的容错闸门会让 `this.markdown` 与编辑器里的文本**合法地不一致**
+   *   （「空提取不覆盖非空」`t !== ''`、以及「结构塌缩不覆盖」两条），
+   *   因此拿 `this.markdown` 当「上次已存内容」会误报 —— 未改一个字也会触发整页重建。
+   */
+  private isDirty: boolean = false;
+  /** 上一次成功落库（replacePageBlocks 成功）的 markdown 快照，用于跳过重复写 */
+  private lastSavedText: string = '';
+  /**
+   * 自动落盘防抖计时器。
+   *
+   * ⚠️ 与 `DirtyPageTracker` 的 5s 兜底定时器是**两件事**：本计时器只决定
+   *   「什么时候把编辑器文本折进数据模型」，之后由 DirtyPageTracker 的既有机制决定写盘。
+   */
+  private saveTimerId: number = -1;
+  /** 自动落盘防抖窗口（ms） */
+  private static readonly AUTOSAVE_DEBOUNCE_MS: number = 800;
   private pageUuid: string = '';
   private static readonly TAG = 'IntegralEditor';
   private static readonly DOMAIN = 0x0002;
@@ -78,6 +99,80 @@ export struct IntegralEditor {
       console.error('[IntegralEditor] page not found: ' + this.pageName);
     }
     this.rebuildPreview();
+  }
+
+  /**
+   * 编辑器文本 → 数据模型（内存）→ 惰性落盘。
+   *
+   * ⚠️ **这是「不点 ✓ 也不丢字」的唯一保证**，修的是本窗口复核到的数据丢失缺陷：
+   *   迁移前唯一写盘路径是 `applyAndRebuild()`，而它只由顶部 ✓ 按钮调用；
+   *   `handleEditorChange()` 只更新内存副本 `this.markdown`
+   *   ⇒ 切模式 / 切页 / `LazyForEach` 回收销毁 `RichEditor`（本组件随
+   *   PageView 的模式切换整体卸载）时，未点 ✓ 的输入**不可恢复地丢失**。
+   *
+   * **为什么不引入 ANR 风险**（逐条对应历史 ANR 的两条线索）：
+   *   1. 历史 ANR 的成因已被证伪为「全文扫描成本」—— 那份 fault 报告发生在
+   *      **1 个块 / 66 字节**的页面上（见设计文档 §1.5）。本条改动**不改变**
+   *      span 重建路径的任何一行（`rebuildSpans` 的输入、调用点、复杂度都不变）。
+   *   2. 本方法本身是 O(块数) 的字符串工作（`toMarkdown` 切行 + `replacePageBlocks`
+   *      的整页解析与写盘），与「点一次 ✓ 按钮」**完全等价**，不是一个新量级的工作。
+   *      真正的风险是「每次按键都跑一遍」⇒ 故这里用 **800ms 防抖**：连续输入 N 个键
+   *      只会触发**一次**（最后一次按键后 800ms），单次成本与「按一次 ✓」同阶。
+   *   3. 与今天 `WebEditor` 的自动保存**同构但更省**：WebEditor 在每次按键的
+   *      `onDidChange` 上直接跑 `updateBlockContent`；本方法连那一步都合并掉了。
+   *   4. 兜底不变：本方法成功 ⇒ 走既有 `DirtyPageTracker`（失焦 / 切页 / 结构操作 /
+   *      **5s 硬截止**）；`aboutToDisappear` 另做一次收尾 flush。
+   */
+  private flushSave(): void {
+    if (this.saveTimerId !== -1) {
+      clearTimeout(this.saveTimerId);
+      this.saveTimerId = -1;
+    }
+    if (this.pageUuid === '') {
+      return;
+    }
+    // 与 rebuildSpans 的「空提取」容错同一理由：销毁瞬间控制器可能已不可读，
+    // 此时 extractsTo 返回 ''，绝不能把空串当成「用户清空了全文」写下去。
+    const extracted = LivePreviewHelper.extractText(this.richController);
+    if (extracted === '') {
+      return;
+    }
+    const text = this.toMarkdown(extracted);
+    if (text === '' || text === this.lastSavedText) {
+      return;
+    }
+    // 防误删硬闸（与 applyAndRebuild 同判据，但**不弹 toast、不退出编辑态**）：
+    // 自动路径是后台行为，弹提示会打断打字；拒绝后保留脏标记，等待下一次触发。
+    const ws = WorkspaceService.getInstance();
+    let oldCount = ws.getAllPageBlocks(this.pageUuid).length;
+    if (oldCount === 0) {
+      oldCount = ws.getPageBlocks(this.pageUuid).length;
+    }
+    if (oldCount > 1 && text.indexOf('\n') < 0) {
+      console.error('[IntegralEditor] autosave refused: text collapsed to a single line,'
+        + ' page had ' + oldCount.toString() + ' blocks, len=' + text.length.toString());
+      return;
+    }
+    const ok = ws.replacePageBlocks(this.pageUuid, text);
+    if (ok) {
+      this.lastSavedText = text;
+      this.isDirty = false;
+      // `replacePageBlocks` 内部已 savePage（整页重建属结构性写，不走惰性路径）；
+      // 这里只额外通知一次 SaveQueue，保持与 applyAndRebuild 的接线一致。
+      SaveQueue.getInstance().markDirty();
+      console.info('[IntegralEditor] autosaved page=' + this.pageName
+        + ' blocks=' + oldCount.toString() + ' len=' + text.length.toString());
+    } else {
+      console.error('[IntegralEditor] autosave refused: parsed 0 blocks, len=' + text.length.toString());
+    }
+  }
+
+  aboutToDisappear(): void {
+    // 组件被卸载（切模式 / 切页 / 页面结构变化）前做最后一次收尾：
+    // 把「已改但未落库」的编辑器文本折进数据模型并立即写盘。
+    // ⚠️ 这也覆盖了「用户打完字直接切到阅读模式」这条最容易被忽略的路径。
+    this.flushSave();
+    DirtyPageTracker.getInstance().flushNow();
   }
 
   private rebuildPreview(): void {
@@ -275,6 +370,22 @@ export struct IntegralEditor {
         console.error('[IntegralEditor] refused collapsed extraction len=' + t.length.toString());
       } else {
         this.markdown = t;
+        // ★ 事件驱动落盘（修数据丢失缺陷，见 flushSave 注释）：
+        //   走到这里说明这是一次**真实的文本变更**（既非重建期的空提取，也不是塌缩）。
+        //   WebEditor 路径同样在这里接自动保存（HTML 侧 400ms 防抖 → onAction('autosave')），
+        //   整页编辑器此前**完全没有**这条线 ⇒ 未点 ✓ 的输入必然丢失。
+        if (t !== this.lastSavedText) {
+          this.isDirty = true;
+        }
+        if (this.viewMode !== 'preview') {
+          if (this.saveTimerId !== -1) {
+            clearTimeout(this.saveTimerId);
+          }
+          this.saveTimerId = setTimeout(() => {
+            this.saveTimerId = -1;
+            this.flushSave();
+          }, IntegralEditor.AUTOSAVE_DEBOUNCE_MS);
+        }
       }
     }
     if (this.viewMode === 'live' || this.viewMode === 'source') {

@@ -159,7 +159,20 @@ export class LivePreviewHelper {
 
   // ─── 主体方法：将 Markdown 文本渲染为 RichEditor Spans ────
 
-  buildSpans(controller: RichEditorController, text: string, caretOffset: number): void {
+  /**
+   * @param codeBlockOpen 本段文本的**第一行是否处在未闭合围栏内**。
+   *        B 形态（块级编辑器）专用：块级化之后每个块各自持有独立文本，看不到前序块，
+   *        而迁移前的实现里 `inCodeBlock` 是**跨行存活、换行不复位**的唯一跨块传播项
+   *        （见设计文档 §2.6 的表）。调用方用 `FenceOpenCache.isFenceOpenAt()` 得到的
+   *        派生属性播种。整页编辑器（IntegralEditor）不传 —— 它扫的就是全文，语义不变。
+   *
+   *        ⚠️ 播种为 true 时会在跨度序列**最前面**补一个 `\n`，使「spans 之和」仍然
+   *        **逐字符等于**传入的 text：块级编辑器的销毁前比对是
+   *        「读回文本 vs `BlockData.content`」，若这里凭空多/少一个换行，
+   *        每次销毁都会误判为「内容变了」并写入一个假的换行。
+   */
+  buildSpans(controller: RichEditorController, text: string, caretOffset: number,
+    codeBlockOpen: boolean = false): void {
     if (this.isRebuilding) return;
     this.isRebuilding = true;
     // 出错时区分「哪一步抛的」：deleteSpans 抛 → 编辑器已被清空且未回填（表现为整页空白）；
@@ -169,7 +182,7 @@ export class LivePreviewHelper {
       stage = 'deleteSpans';
       controller.deleteSpans();
       stage = 'buildSpansInternal';
-      this.buildSpansInternal(controller, text, caretOffset);
+      this.buildSpansInternal(controller, text, caretOffset, codeBlockOpen);
     } catch (e) {
       const err = e as BusinessError;
       console.error('LivePreviewHelper buildSpans error at ' + stage
@@ -260,7 +273,8 @@ export class LivePreviewHelper {
 
   // ─── 内部实现：逐行解析 + 光标感知 ─────────────
 
-  private buildSpansInternal(controller: RichEditorController, text: string, caretOffset: number): void {
+  private buildSpansInternal(controller: RichEditorController, text: string, caretOffset: number,
+    codeBlockOpen: boolean = false): void {
     const segments = parseMarkdownSegments(text);
     let offset: number = 0;
 
@@ -274,6 +288,18 @@ export class LivePreviewHelper {
     let inBold: boolean = false;
     let inInlineCode: boolean = false;
     let inHighlight: boolean = false;
+
+    // ★ B 形态（块级）的围栏播种：见 buildSpans 的 @param 说明。
+    //   补的那个 `\n` 是**跨度结构上的占位**，不是内容的一部分 —— 它让 offset 与
+    //   真实字符坐标一一对应（offset 0 落在 `\n` 上，块内第 1 个真实字符在 offset 1）。
+    //   块级编辑器的 caretOffset 是块内相对坐标，因此无论这里是否补 `\n`，
+    //   `cursorInside` 的判定都仍然正确（它比的是 segStart/segEnd，两者一起平移）。
+    if (codeBlockOpen && text !== '') {
+      inCodeBlock = true;
+      currentLineContext = LineContext.CODE;
+      controller.addTextSpan('\n');
+      offset = 1;
+    }
 
     for (let i = 0; i < segments.length; i++) {
       const seg: MarkdownSegment = segments[i];

@@ -6,6 +6,7 @@ import { MathRenderer } from '../extensions/MathRenderer';
 import { MermaidRenderer } from '../extensions/MermaidRenderer';
 import { CodeBlock } from '../extensions/CodeBlock';
 import { WebEditor } from './WebEditor';
+import { BlockEditor } from './BlockEditor';
 import { TablerIcon } from '../common/Icons';
 import { AppState } from '../../state/AppState';
 import { InlineQueryBlock } from '../query/InlineQueryBlock';
@@ -36,6 +37,18 @@ interface EmbedItem {
  */
 @Component
 export struct BlockView {
+  /**
+   * 块内容编辑器的实现选择（EXEC-SPRINT-02 / W2：B 形态落地开关）。
+   *
+   * `'native'` = `BlockEditor`（原生 `RichEditor`，本窗口新落地，默认）
+   * `'web'`    = `WebEditor`（WebView contenteditable，改造前的实现，**保留不删**）
+   *
+   * 为什么留成常量而不是直接删掉 WebEditor 分支：设计文档 §2.1 明确要求二者并存、
+   * 由 BlockView 按一个模式常量二选一（**不做** mode 分支合并 —— 二者内部几乎无共享代码）。
+   * 保留的另一个价值是：一旦原生路径在真机上出现「打不了中文」这类只有设备才暴露的问题，
+   * 可以把这一行改成 `'web'` 立即回退，不需要回滚整棵改动。
+   */
+  private static readonly EDITOR_IMPL: string = 'native';
   @Prop blockUuid: string = '';
   /**
    * 本行缩进层级（= 缩进引导线格数）。
@@ -302,19 +315,39 @@ export struct BlockView {
 
               // 内容区域
               if (this.isEditing) {
-                WebEditor({
-                  blockUuid: this.blockUuid,
-                  initialContent: this.blockData.content,
-                  pageName: this.resolvePageName(),
-                  fontSize: this.contentFontSize,
-                  onSave: () => {
-                    this.isEditing = false;
-                    this.refreshBlock();
-                  },
-                  onAction: (_a: string, _d: string) => {
-                    this.refreshBlock();
-                  }
-                }).layoutWeight(1)
+                // B 形态（块级按需实例化）：原生 RichEditor 取代 WebView contenteditable。
+                // 参数面与回调**逐字沿用** WebEditor（blockUuid / initialContent / pageName /
+                // fontSize / onSave / onAction）⇒ 本处只改类名，语义零漂移。
+                // WebEditor 保留不删：按下面的 EDITOR_IMPL 常量二选一（见该常量注释）。
+                if (BlockView.EDITOR_IMPL === 'native') {
+                  BlockEditor({
+                    blockUuid: this.blockUuid,
+                    initialContent: this.blockData.content,
+                    pageName: this.resolvePageName(),
+                    fontSize: this.contentFontSize,
+                    onSave: () => {
+                      this.isEditing = false;
+                      this.refreshBlock();
+                    },
+                    onAction: (_a: string, _d: string) => {
+                      this.refreshBlock();
+                    }
+                  }).layoutWeight(1)
+                } else {
+                  WebEditor({
+                    blockUuid: this.blockUuid,
+                    initialContent: this.blockData.content,
+                    pageName: this.resolvePageName(),
+                    fontSize: this.contentFontSize,
+                    onSave: () => {
+                      this.isEditing = false;
+                      this.refreshBlock();
+                    },
+                    onAction: (_a: string, _d: string) => {
+                      this.refreshBlock();
+                    }
+                  }).layoutWeight(1)
+                }
               } else {
                 Column() {
                   if (this.isTable) {
