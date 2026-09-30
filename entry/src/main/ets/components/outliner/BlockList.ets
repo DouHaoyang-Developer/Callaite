@@ -3,11 +3,17 @@ import { BlockView } from './BlockView';
 import { BlockSelection } from './BlockSelection';
 import { FindInPage } from './FindInPage';
 import { BlockDragLayer, forwardRowGrab } from './BlockDragLayer';
+import {
+  bindSlashMenuSlot,
+  unbindSlashMenuSlot,
+  SlashMenuRequestHandler
+} from './BlockListSlashSlot';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { BlockAnchorService } from '../../services/BlockAnchorService';
 import { EditorService } from '../../services/EditorService';
 import { SlashMenu } from './SlashMenu';
 import { TablerIcon } from '../common/Icons';
+import { AppState } from '../../state/AppState';
 import { t } from '../../utils/i18n';
 
 /**
@@ -114,9 +120,18 @@ export struct BlockList {
   @State blocks: BlockData[] = [];
   /** 可见行序列（List 的数据源；顶层块 + 已展开子块，屏幕顺序）。 */
   @State rows: BlockData[] = [];
-  @State slashMenuVisible: boolean = false;
-  @State slashMenuBlockUuid: string = '';
   @State findInPageVisible: boolean = false;
+  /**
+   * U2.3：Slash 菜单开合态与目标块 —— **改由 AppStorage 单一来源**。
+   *
+   * 为什么不是本组件的 @State：入口有两个，其中一个在 BlockView 内部（行内常显按钮），
+   * 而 BlockView 够不到父组件的 @State（且 LazyForEach 复用会让传参型 @Prop 陈旧）。
+   * 开合态还必须能被 **SlashMenu 自己**关掉（执行完命令后宿主卸载它），
+   * 内部 @State 宿主观察不到 —— 这正是旧实现的缺陷：`dismissMenu()` 只把组件
+   * 自己画成 0×0，组件仍挂在树上，路由开合态与视觉状态由此分叉。
+   */
+  @StorageLink('callaite_slashMenuOpen') private slashMenuOpen: boolean = false;
+  @StorageLink('callaite_slashMenuBlockUuid') private slashMenuUuid: string = '';
   /**
    * S1-H：当前页 uuid。
    *
@@ -144,6 +159,13 @@ export struct BlockList {
    * 但只有整页分支会实例化拖拽层，故实际绑定数 == 整页大纲数。
    */
   private dragLayerId: string = '';
+  /**
+   * U2.3：Slash 入口的注册键（惰性生成，与 dragLayerId 同一手法）。
+   * 行内入口按它找到本 BlockList 实例。
+   */
+  private slashMenuListId: string = '';
+  /** 本实例登记到入口注册表的回调（卸载时按同一引用撤回）。 */
+  private slashMenuHandler: SlashMenuRequestHandler | undefined;
 
   /**
    * 惰性生成本实例的注册键。
@@ -187,6 +209,14 @@ export struct BlockList {
 
   aboutToAppear(): void {
     this.refreshBlocks();
+    // U2.3：登记 Slash 菜单入口（BlockView 的行内按钮按 listId 找到本实例）。
+    // 与 S1-H 拖拽层同一形态：只登记一个函数类型的回调，不需要在 BlockView 里
+    // 引用 BlockList 这个 struct（避免模块环）。回调存字段是为了卸载时能原样撤回
+    // （unbind 按「同一函数引用」判等，见 unbindSlashMenuSlot）。
+    this.slashMenuHandler = (blockUuid: string) => {
+      this.openSlashMenu(blockUuid);
+    };
+    bindSlashMenuSlot(this.ensureSlashMenuListId(), this.slashMenuHandler);
     // U2.1b 关键修复：把**本组件真正交给 List 的那个 Scroller** 直接登记给锚点服务。
     //
     // 为什么必须由本组件自报、而不是让 ContentArea 发布到 AppStorage：
@@ -195,6 +225,27 @@ export struct BlockList {
     // 于是 `scrollToIndex()` 静默无效（「搜索/大纲/反链点结果不跳块」的根因）。
     // 本组件手里的 `activeScroller()` 才是真正绑定到 `List({scroller})` 的那一个。
     BlockAnchorService.getInstance().registerScroller(this.paneId, this.activeScroller());
+  }
+
+  /**
+   * U2.3：惰性生成本实例的 Slash 入口注册键（与 ensureDragLayerId 同一手法）。
+   * 用 ArkUI 的组件唯一 id 而不是页面名：分屏时两个窗格各有实例，
+   * 用页面名会互相覆盖（点 A 窗格的行、开在 B 窗格上）。
+   */
+  private ensureSlashMenuListId(): string {
+    if (this.slashMenuListId === '') {
+      this.slashMenuListId = 'callaite_slashSlot_' + this.getUniqueId();
+    }
+    return this.slashMenuListId;
+  }
+
+  aboutToDisappear(): void {
+    // U2.3：本实例卸载 → 撤回入口回调（否则行内按钮会打到一个已销毁的实例上）。
+    const handler = this.slashMenuHandler;
+    if (handler !== undefined) {
+      unbindSlashMenuSlot(this.ensureSlashMenuListId(), handler);
+      this.slashMenuHandler = undefined;
+    }
   }
 
   /**
@@ -256,7 +307,10 @@ export struct BlockList {
             // 不会出现「父行把整棵子树包在一个容器里」导致的高度传播。
             LazyForEach(this.dataSource, (row: BlockData) => {
               Column() {
-                BlockView({ blockUuid: row.uuid })
+                BlockView({
+                  blockUuid: row.uuid,
+                  slashMenuListId: this.ensureSlashMenuListId()
+                })
               }
               .width('100%')
             }, (row: BlockData) => row.uuid)
@@ -266,14 +320,19 @@ export struct BlockList {
           if (!this.embedded) {
             this.AddBlockButton()
           }
-
-          // Slash 命令菜单
-          if (this.slashMenuVisible) {
-            SlashMenu({ blockUuid: this.slashMenuBlockUuid })
-          }
         }
         .width('100%')
         .height('auto')
+
+        // Slash 命令菜单（U2.3）。放在 **Stack 层**而不是上面的 Column 里：
+        // Stack 的子组件默认叠放，菜单才会「浮」在行内容之上；
+        // 放进 Column 会与 List 争抢纵向空间（List 是 layoutWeight(1) 的吸收项，
+        // 300vp 的菜单只能把它挤扁或者自己滚到视口之外）。
+        if (this.slashMenuOpen) {
+          SlashMenu({ blockUuid: this.slashMenuUuid })
+            .align(Alignment.BottomEnd)
+            .margin({ right: 16, bottom: 16 })
+        }
       } else {
         // ─── 整页模式（PageView 大纲页）───
         // List 自身即滚动容器，LazyForEach 的虚拟化在此条件下才真正生效。
@@ -314,6 +373,8 @@ export struct BlockList {
                     //    层级改为 BlockView 从块数据自读（见 BlockView.depth / onBlocksVersionChanged）。
                     BlockView({
                       blockUuid: row.uuid,
+                      // U2.3：行内 Slash 入口的宿主路由键（值恒定，不会被结构性刷新影响）
+                      slashMenuListId: this.ensureSlashMenuListId(),
                       onRowGrab: (uuid: string, gx: number, gy: number) => {
                         this.handleRowGrab(uuid, gx, gy);
                       }
@@ -336,11 +397,6 @@ export struct BlockList {
           .layoutWeight(1)
           .scrollBar(BarState.Auto)
           .edgeEffect(EdgeEffect.Spring)
-
-          // Slash 命令菜单
-          if (this.slashMenuVisible) {
-            SlashMenu({ blockUuid: this.slashMenuBlockUuid })
-          }
         }
         .width('100%')
         .height('100%')
@@ -357,6 +413,18 @@ export struct BlockList {
           pageUuid: this.pageUuidForDrag,
           scroller: this.activeScroller()
         })
+
+        // Slash 命令菜单（U2.3）。放在 **Stack 层**、BottomEnd 位：
+        //   · 浮在行内容之上（Stack 子组件默认叠放）；
+        //   · 不参与 Column 的纵向分配 —— 放进 Column 会与 layoutWeight(1) 的 List
+        //     争空间（要么把 List 挤扁，要么菜单自己被推到视口之外）；
+        //   · 右下角避开底部居中的多选入口胶囊（BlockSelection.SelectionEntry，
+        //     同样常显、同样在 Stack 底部），两个常显入口不叠在一起。
+        if (this.slashMenuOpen) {
+          SlashMenu({ blockUuid: this.slashMenuUuid })
+            .align(Alignment.BottomEnd)
+            .margin({ right: 16, bottom: 16 })
+        }
       }
 
       // 多选批量操作浮动栏 + 多选入口（feed 内嵌模式不渲染，避免每个日期节叠一层）
@@ -368,9 +436,74 @@ export struct BlockList {
       if (!this.embedded) {
         BlockSelection({ pageId: this.pageUuidForDrag })
       }
+
+      // ─── U2.3：页面级 Slash 命令入口（常显）───
+      // 位置：Stack 的 BottomStart（左下角）—— 与右下角的菜单本体、底部居中的多选入口
+      // 各占一角，三个常显元素互不遮挡。
+      //
+      // 为什么需要它（除了行内按钮）：行内按钮在**每一行**上，长列表里要滚到目标行才点得到；
+      // 页面级入口始终在屏，是「菜单存在」这件事本身的可见入口（与多选入口同一设计取舍）。
+      // 目标块 = 当前焦点块；无焦点时退回可见行第一行（无行则不可点，点击无副作用）。
+      if (!this.embedded && this.blocks.length > 0) {
+        this.SlashEntryButton()
+      }
     }
     .width('100%')
     .height(this.embedded ? 'auto' : '100%')
+  }
+
+  /**
+   * U2.3：页面级 Slash 命令入口。
+   *
+   * 常显、无 hover 依赖（AGENTS §7 陷阱 11：触屏不产生 onHover）——
+   * 这是本窗口对「SlashMenu 触发源全仓 0 调用」的正面修复：
+   *   ① 本入口（页面级，常显）；
+   *   ② BlockView 的行内入口（每行一个，常显，见 BlockView.SlashEntryButton）。
+   * 两者都写 `AppState.openSlashMenu(blockUuid)`，开合态只有一份。
+   */
+  @Builder
+  SlashEntryButton() {
+    Row({ space: 6 }) {
+      TablerIcon('command', 16, $r('app.color.primary'))
+      Text('命令')
+        .fontSize(13)
+        .fontColor($r('app.color.primary'))
+        .fontWeight(FontWeight.Medium)
+    }
+    .padding({ left: 12, right: 14, top: 8, bottom: 8 })
+    .backgroundColor($r('app.color.surface1'))
+    .borderRadius(18)
+    .border({ width: 1, color: $r('app.color.border') })
+    .shadow({ radius: 10, color: '#20000000', offsetX: 0, offsetY: 2 })
+    .margin({ left: 16, bottom: 16 })
+    .align(Alignment.BottomStart)
+    .id('callaite_slashEntry')
+    .onClick(() => {
+      const target = this.slashEntryTargetUuid();
+      if (target === '') {
+        return;
+      }
+      this.openSlashMenu(target);
+    })
+  }
+
+  /**
+   * 页面级入口的目标块：优先当前焦点块（在屏且属于本页时才有意义），
+   * 否则退回可见行第一行。两者都取不到时返回 ''（点击无副作用）。
+   */
+  private slashEntryTargetUuid(): string {
+    const focused = EditorService.getInstance().getFocusedBlockUuid();
+    if (focused !== '') {
+      for (let i = 0; i < this.rows.length; i++) {
+        if (this.rows[i].uuid === focused) {
+          return focused;
+        }
+      }
+    }
+    if (this.rows.length > 0) {
+      return this.rows[0].uuid;
+    }
+    return '';
   }
 
   // ─── 空页面状态 ───
@@ -438,8 +571,8 @@ export struct BlockList {
   }
 
   openSlashMenu(blockUuid: string): void {
-    this.slashMenuBlockUuid = blockUuid;
-    this.slashMenuVisible = true;
+    // U2.3：开合态写入 AppStorage（BlockView 的行内入口与 SlashMenu 的关闭路径都读它）。
+    AppState.openSlashMenu(blockUuid);
   }
 
   // ─── 页内搜索 ───

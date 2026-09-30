@@ -43,6 +43,11 @@ const ALL_COMMANDS: SlashCommand[] = [
   { id: 'priority-a', name: 'Priority A', icon: 'bolt', description: '设置优先级 A（高）', category: 'priority', keywords: 'priority 优先级 a high 高' },
   { id: 'priority-b', name: 'Priority B', icon: 'hash', description: '设置优先级 B（中）', category: 'priority', keywords: 'priority 优先级 b medium 中' },
   { id: 'priority-c', name: 'Priority C', icon: 'circle-minus', description: '设置优先级 C（低）', category: 'priority', keywords: 'priority 优先级 c low 低' },
+  // U2.3：`Ctrl+P = 循环优先级` 让位给「快速切换」后，循环动作落到这里（计划 §U2.3：
+  // 「移入 SlashMenu 命令『切换优先级 A/B/C』——块级操作归块上下文」）。
+  // 放在 A/B/C 之后（而不是之前）：三个绝对设置项是「一屏内直接点」的主路径，
+  // 循环是「连按多次」的次路径；且在过滤「优先级」时它同样可见、可达。
+  { id: 'priority-cycle', name: '切换优先级', icon: 'refresh', description: '循环切换（A → B → C → 无）', category: 'priority', keywords: 'priority 优先级 cycle 循环 切换 toggle' },
 
   // ─── 日期 ───
   { id: 'scheduled', name: 'SCHEDULED', icon: 'calendar-plus', description: '设置计划日期', category: 'date', keywords: 'scheduled date 计划 日期' },
@@ -126,7 +131,6 @@ export struct SlashMenu {
   @Prop blockUuid: string = '';
   @State filterText: string = '';
   @State filteredGroups: CommandGroup[] = [];
-  @State dismissed: boolean = false;
   @State showTemplateList: boolean = false;
   @State templates: TemplateInfo[] = [];
   /**
@@ -150,11 +154,15 @@ export struct SlashMenu {
    */
   private rowTops: Map<string, number> = new Map<string, number>();
 
+  /** 菜单卡片宽度（vp）。见 build() 里为什么必须自持宽度。 */
+  private static readonly MENU_WIDTH: number = 320;
+
   aboutToAppear(): void {
     // U2.2/W11：登记进按键路由器并声明「已打开」。
-    // ⚠️ 可达性说明：本组件的**触发源尚未接线**（`BlockList.openSlashMenu` 全仓 0 调用），
-    //    因此这段键盘导航目前不可达（代码就绪、待触发源接线那一轮验收）——
-    //    登记/开合态本身是准确的：本组件只在 BlockList.slashMenuVisible 为 true 时才被构造。
+    // U2.3：触发源已接线（BlockView 行内入口 + BlockList 页面级入口）—— 本组件只在这些
+    //       入口把 `AppState.openSlashMenu(uuid)` 的**开合态**置 true 时才被宿主构造。
+    // 开合态登记必须与「组件是否在树上」一致：宿主在关闭时就会卸载本组件，
+    // 故 `aboutToDisappear` 里注销即等价于「菜单已关」。
     const router = OverlayKeyRouter.getInstance();
     router.registerOverlay(OverlayId.SLASH_MENU, new OverlayKeyBinding((keyCode: number, event: KeyEvent) => {
       return this.applyNavKey(keyCode);
@@ -168,12 +176,16 @@ export struct SlashMenu {
   }
 
   /**
-   * 关闭菜单（`dismissed` 是本组件既有的「已消费」终态：渲染 0×0）。
-   * 必须同时把路由开合态置 false —— 否则菜单视觉上消失后仍会继续吞掉 ↑↓/↵/esc。
+   * 关闭菜单。
+   *
+   * U2.3 修法（此前是「关不干净」）：**开合态写回 AppStorage**，由宿主 BlockList
+   * 卸载本组件。旧实现只置内部 `dismissed = true` 把组件画成 0×0 —— 组件仍挂在树上，
+   * 于是「视觉已关」与「按键路由仍认为开着」可以分叉（本组件自己那次
+   * `setOverlayOpen(false)` 是唯一补救，任何一条绕过它的路径都会留下吞键的幽灵浮层）。
+   * 现在只有一份状态：组件在树上 ⇔ 菜单开着。
    */
   private dismissMenu(): void {
-    this.dismissed = true;
-    OverlayKeyRouter.getInstance().setOverlayOpen(OverlayId.SLASH_MENU, false);
+    AppState.closeSlashMenu();
   }
 
   /**
@@ -270,9 +282,22 @@ export struct SlashMenu {
   }
 
   build() {
-    if (this.dismissed) {
-      Column().width(0).height(0)
-    } else if (this.showTemplateList) {
+    // ⚠️ U2.3：菜单本体必须自持宽度 —— 旧实现用 `.width('100%')`，
+    // 而它的宿主是整页 Stack ⇒ 菜单会撑满整页宽（1440vp 的横条），
+    // 既不像弹层，也让「滚动/行 y 回填」这些回调满屏铺开。
+    // 320vp 与 CommandPalette / SearchPanel 的卡片宽度同一量级。
+    Stack() {
+      if (this.showTemplateList) {
+        this.TemplateListView()
+      } else {
+        this.CommandListView()
+      }
+    }
+    .width(SlashMenu.MENU_WIDTH)
+  }
+
+  @Builder
+  TemplateListView() {
       // ─── 模板选择子视图 ───
       Column() {
         Row({ space: 8 }) {
@@ -331,7 +356,10 @@ export struct SlashMenu {
       .backgroundColor($r('app.color.surface1'))
       .borderRadius(8)
       .shadow({ radius: 8, color: '#20000000' })
-    } else {
+  }
+
+  @Builder
+  CommandListView() {
       // ─── 命令列表主视图 ───
       Column() {
         TextInput({ placeholder: '搜索命令...', text: this.filterText })
@@ -339,6 +367,13 @@ export struct SlashMenu {
           .width('100%')
           .height(40)
           .padding({ left: 12, right: 12 })
+          // U2.3：菜单一打开就把焦点交给过滤框（与 CommandPalette「打开时主动 requestFocus」
+          // 同一取舍）。不给焦点时焦点留在内容区容器上：↑↓ 仍能被本组件的兜底落点接住
+          // （高亮照常移动 ✓），但**回车的归属会错** —— 真实键盘上回车该由持焦输入框的
+          // `onSubmit`（输入法处理完之后发出，见 OverlayKeyRouter 类头 §IME 守卫）交付；
+          // 焦点在容器上时它既进不了 onSubmit，也不再被全局快捷键抢（那条已由
+          // ShortcutService.isOverlayBlockedKey 堵住）⇒ 表现为「按回车没反应」。
+          .defaultFocus(true)
           .onChange((value: string, previewText?: PreviewText) => {
             this.filterText = value;
             // U2.2/W11：上报 IME 预览文本 —— 组词态下的回车属于输入法，不得被路由抢走
@@ -435,7 +470,6 @@ export struct SlashMenu {
           event.stopPropagation();
         }
       })
-    }
   }
 
   /**
@@ -533,6 +567,16 @@ export struct SlashMenu {
     }
     if (cmd.id === 'priority-c') {
       ws.executeOp({ type: 'set-priority', uuid: this.blockUuid, priority: 'C' });
+      this.dismissMenu();
+      return;
+    }
+    // U2.3：循环优先级（原 Ctrl+P 动作，迁到块级命令）。
+    // 必须按**本菜单持有的 blockUuid** 算下一步 —— 不能转调
+    // `EditorService.cyclePriority()`（它只认 focusedBlockUuid，而菜单的
+    // blockUuid 来自更可靠的「哪一行的入口被点」（见 BlockList.requestSlashMenu）；
+    // 焦点块可能不是本行，转调会改错块）。
+    if (cmd.id === 'priority-cycle') {
+      this.cyclePriorityForBlock();
       this.dismissMenu();
       return;
     }
@@ -645,6 +689,37 @@ export struct SlashMenu {
       editor.updateBlockContent(this.blockUuid, block.content + '\n' + expanded);
     }
     this.dismissMenu();
+  }
+
+  /**
+   * 循环切换本块的优先级：无 → A → B → C → 无。
+   *
+   * 判据与 `EditorService.cyclePriority()` **逐条一致**（同样的四段递进与兜底），
+   * 唯一差别是「作用在哪一块」：这里按本菜单的 `blockUuid` 取块，
+   * 而 EditorService 那个按 `focusedBlockUuid` 取。菜单必须用前者 ——
+   * 入口来自「哪一行的命令按钮被点」，与编辑器焦点无关。
+   */
+  cyclePriorityForBlock(): void {
+    const ws = WorkspaceService.getInstance();
+    const block = ws.getBlock(this.blockUuid);
+    if (!block) {
+      return;
+    }
+
+    let nextPriority = '';
+    if (block.priority === '') {
+      nextPriority = 'A';
+    } else if (block.priority === 'A') {
+      nextPriority = 'B';
+    } else if (block.priority === 'B') {
+      nextPriority = 'C';
+    } else if (block.priority === 'C') {
+      nextPriority = '';
+    } else {
+      nextPriority = 'A';
+    }
+
+    ws.executeOp({ type: 'set-priority', uuid: block.uuid, priority: nextPriority });
   }
 
   /**

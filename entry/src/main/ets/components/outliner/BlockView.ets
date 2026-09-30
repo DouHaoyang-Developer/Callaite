@@ -14,6 +14,7 @@ import {
   invalidateBlockRow,
   unregisterBlockRow
 } from './BlockDragLayer';
+import { requestSlashMenu } from './BlockListSlashSlot';
 
 interface EmbedItem {
   kind: string;   // 'block' | 'page'
@@ -131,6 +132,16 @@ export struct BlockView {
    * 缺省为空实现：嵌入式（日志流 feed）与其它复用场景不传该回调 → 长按不产生任何行为。
    */
   onRowGrab: (uuid: string, globalX: number, globalY: number) => void = () => {};
+  /**
+   * U2.3：宿主 BlockList 的 Slash 入口注册键（行内 `/` 命令按钮按它路由到宿主）。
+   *
+   * 为什么用「注册键 + 模块级注册表」而不是回调 @Prop：
+   *   本行会被 LazyForEach 复用，且结构性变更（缩进等）**不重跑 itemGenerator**
+   *   ⇒ 传参型 @Prop 可能停在旧值上（AGENTS §7 陷阱 15）。注册键是个恒定字符串，
+   *   陈旧与否都不影响正确性；真正的路由在 `requestSlashMenu` 里按当前注册表查。
+   *   缺省 '' ⇒ 按钮不渲染（嵌入式等未接线的宿主行为与接线前等价）。
+   */
+  @Prop slashMenuListId: string = '';
   private blockData: BlockData | undefined;
 
   aboutToAppear(): void {
@@ -494,6 +505,43 @@ export struct BlockView {
         } else {
           this.enterEdit();
         }
+      })
+
+      // U2.3：行内 Slash 命令入口
+      this.SlashEntryButton()
+    }
+  }
+
+  /**
+   * U2.3：行内 Slash 命令入口（`/`）。
+   *
+   * 为什么放在 bullet 组内、且**常显**：
+   *   · 常显是硬约束 —— 触屏不产生 onHover（AGENTS §7 陷阱 11），
+   *     而本仓原本唯一的「操作入口」是 hover 才出现的 `dots` 按钮 ⇒ 平板上点不到；
+   *   · 放在 bullet 之后（而不是行尾）：行尾会随内容长度漂移，且会把正文挤窄；
+   *     bullet 组是定宽的固定锚点，位置稳定、每行一致、能精确定位（验收要靠坐标）。
+   *   · 命中区 22×22vp（= 44×44px @ density 2）—— 高于 24vp 的可点下限，
+   *     与 bullet 自身 16vp 的命中区不重叠（`Row({space:2})` 已留 2vp 间隔）。
+   *
+   * 目标块 = 本行（`this.blockUuid`）—— 这正是 SlashMenu 里 cyclePriority 等
+   * 块级命令需要的语义：操作对象是「点了按钮的那一行」，不是「编辑器焦点在哪」。
+   */
+  @Builder
+  SlashEntryButton() {
+    if (this.slashMenuListId !== '') {
+      Row() {
+        TablerIcon('command', 13, $r('app.color.muted_text'))
+      }
+      .width(22).height(22)
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .borderRadius(4)
+      .margin({ top: 2 })
+      .id('callaite_slashEntry_' + this.blockUuid)
+      .onClick(() => {
+        // 只上报，不自己开菜单：开合态与菜单挂载点都在宿主 BlockList
+        // （见 BlockListSlashSlot 的模块注释）。
+        requestSlashMenu(this.slashMenuListId, this.blockUuid);
       })
     }
   }

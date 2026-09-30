@@ -307,20 +307,33 @@ export struct SettingsPage {
 
   /**
    * 格式化快捷键显示文本。
+   * U2.3：等价键（`def.aliases`）追加显示，三键等价的动作在设置页如实读作
+   * 「Ctrl+K / Ctrl+P / Ctrl+O」—— 不显示会让用户以为只有一根键生效。
    */
   private shortcutLabel(def: ShortcutDef): string {
-    let label = '';
+    let label = this.modifierPrefix(def) + def.key;
+    const aliases = def.aliases;
+    if (aliases !== undefined) {
+      for (let i = 0; i < aliases.length; i++) {
+        label = label + ' / ' + this.modifierPrefix(def) + aliases[i];
+      }
+    }
+    return label;
+  }
+
+  /** Ctrl/Shift/Alt 前缀（与既有写法一致：固定顺序、各带一个 '+'）。 */
+  private modifierPrefix(def: ShortcutDef): string {
+    let prefix = '';
     if (def.ctrl) {
-      label = label + 'Ctrl+';
+      prefix = prefix + 'Ctrl+';
     }
     if (def.shift) {
-      label = label + 'Shift+';
+      prefix = prefix + 'Shift+';
     }
     if (def.alt) {
-      label = label + 'Alt+';
+      prefix = prefix + 'Alt+';
     }
-    label = label + def.key;
-    return label;
+    return prefix;
   }
 
   build() {

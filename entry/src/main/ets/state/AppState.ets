@@ -30,6 +30,8 @@ interface StorageKeys {
   recentPages: string;
   commandPaletteOpen: string;
   searchPanelOpen: string;
+  slashMenuOpen: string;
+  slashMenuBlockUuid: string;
   exportDialogOpen: string;
   importDialogOpen: string;
   rightSidebarBlocks: string;
@@ -44,6 +46,8 @@ const STORAGE_KEYS: StorageKeys = {
   recentPages: 'callaite_recentPages',
   commandPaletteOpen: 'callaite_commandPaletteOpen',
   searchPanelOpen: 'callaite_searchPanelOpen',
+  slashMenuOpen: 'callaite_slashMenuOpen',
+  slashMenuBlockUuid: 'callaite_slashMenuBlockUuid',
   exportDialogOpen: 'callaite_exportDialogOpen',
   importDialogOpen: 'callaite_importDialogOpen',
   rightSidebarBlocks: 'callaite_rightSidebarBlocks'
@@ -223,6 +227,10 @@ export class AppState {
 
     AppStorage.setOrCreate(STORAGE_KEYS.commandPaletteOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.searchPanelOpen, false);
+    // U2.3：Slash 命令菜单的开合态 + 目标块。
+    // 初值必须在页面挂载前存在 —— BlockList 以 @StorageLink 读它们决定是否构造 SlashMenu。
+    AppStorage.setOrCreate(STORAGE_KEYS.slashMenuOpen, false);
+    AppStorage.setOrCreate(STORAGE_KEYS.slashMenuBlockUuid, '');
     AppStorage.setOrCreate(STORAGE_KEYS.exportDialogOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.importDialogOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.rightSidebarBlocks, JSON.stringify([]));
@@ -600,6 +608,40 @@ export class AppState {
     if (open) {
       AppStorage.setOrCreate(STORAGE_KEYS.commandPaletteOpen, false);
     }
+  }
+
+  // ─── Slash 命令菜单（U2.3 块级命令入口） ───
+
+  static isSlashMenuOpen(): boolean {
+    return AppStorage.get<boolean>(STORAGE_KEYS.slashMenuOpen) ?? false;
+  }
+
+  /**
+   * 打开 Slash 命令菜单（目标块 = `blockUuid`）。
+   *
+   * 为什么开合态与目标块放 AppStorage 而不是 BlockList 的 @State：
+   *   ① 入口有两处 —— 行内常显按钮（BlockView 内部）与页面级浮动入口（BlockList），
+   *      BlockView 够不到父组件的 @State（ArkTS 的 LazyForEach 复用还会让传参型 @Prop 陈旧），
+   *      AppStorage 是两侧都能读写的唯一通道（与 CommandPalette/SearchPanel 同一约定）；
+   *   ② 关闭动作发生在 SlashMenu 内部（执行完命令后），必须能让**宿主卸载**它 ——
+   *      内部 @State 宿主观察不到（本轮修掉的真缺陷：旧实现里 `dismissMenu()` 只把
+   *      组件自己画成 0×0，组件仍挂在树上，`OverlayKeyRouter` 的开合态与视觉状态因此分叉）。
+   *
+   * 互斥：与全局搜索 / 快速切换面板互斥（三块浮层同时开着会争键盘焦点，
+   * 与 AppState.setCommandPaletteOpen/setSearchPanelOpen 同一判据）。
+   */
+  static openSlashMenu(blockUuid: string): void {
+    if (blockUuid === '') {
+      return;
+    }
+    AppStorage.setOrCreate(STORAGE_KEYS.slashMenuBlockUuid, blockUuid);
+    AppStorage.setOrCreate(STORAGE_KEYS.slashMenuOpen, true);
+    AppStorage.setOrCreate(STORAGE_KEYS.commandPaletteOpen, false);
+    AppStorage.setOrCreate(STORAGE_KEYS.searchPanelOpen, false);
+  }
+
+  static closeSlashMenu(): void {
+    AppStorage.setOrCreate(STORAGE_KEYS.slashMenuOpen, false);
   }
 
   static isExportDialogOpen(): boolean {

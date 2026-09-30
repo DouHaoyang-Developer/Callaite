@@ -32,14 +32,32 @@ export struct FindInPage {
 
   aboutToAppear(): void {
     // 初始隐藏，等待 show() 调用。
-    // U2.2/W11：登记进按键路由器。开合态以**本组件自己的 isVisible 为准**（当前恒 false）——
+    // U2.2/W11：登记进按键路由器。开合态以**本组件自己的 isVisible 为准** ——
     // 不按「已挂载」登记为打开，否则会出现「浮层没显示却在吞按键」的静默失效。
     //
-    // ⚠️ 可达性（本轮实测结论，留给 U2.4 那一轮）：本组件有**两个互不相通的显隐标志** ——
-    //    宿主 `BlockList.findInPageVisible`（决定是否构造本组件）与本组件的 `isVisible`
-    //    （决定是否渲染内容，初始 false 且只有 `show()` 能置 true，而 `show()` 全仓 0 调用）。
-    //    因此当前**没有任何路径**能让这条搜索栏显示出来 ⇒ 下面这段键盘导航「代码就绪、不可达」。
-    //    本轮刻意不动显隐控制（显隐反转是 U2.4「FindInPage 重做」的第 1 项，避免同一模块两轮改造）。
+    // ─── ⚠️ 可达性（W12 重新核对后的准确结论，替换 W11 的旧描述）───
+    // 症结不是「两个互不相通的显隐标志」，而是**只有一半**：
+    //   · 宿主 `BlockList.findInPageVisible` 确实决定是否构造本组件，但**全仓 0 调用**
+    //     （`toggleFindInPage` / `showFindInPage` / `hideFindInPage` 三个方法也无调用点）
+    //     ⇒ 组件从未被构造 ⇒ 下面的 `isVisible`（初始 false，只有 `show()` 能置 true，
+    //     而 `show()` 同样 0 调用）**根本没机会参与**。
+    //   · 因此真正的缺口是「**没有触发源**」这一条，与 SlashMenu 本轮修掉的缺陷同型；
+    //     `isVisible` 只是第二道（且当前不可达的）闸门。
+    //
+    // ─── 本轮（U2.3/W12）为什么**不**一并修 ───
+    //   1. 计划把 FindInPage 的可达性放在 **U2.4「FindInPage 重做」**：显隐控制反转
+    //      （删内部 isVisible，改 `@StorageLink('callaite_findInPageOpen')`）、
+    //      渲染位置从 BlockList 内联移到 MainContainer 顶部 Stack、navigate 走
+    //      `AnchorRegistry` + 文本级高亮 —— 三项都在 U2.4 里，现在补触发源会在
+    //      下个窗口被整体改写（同一模块两轮 churn）。
+    //   2. 本轮验收面（快捷键重排 + cyclePriority→SlashMenu + SlashMenu 可达）
+    //      不依赖它；而给它接一个「只能开、搜不了、不会跳块」的入口属于
+    //      「把 0 调用换成 0 效果」，比现状更糟（会产生可点但无用的 UI）。
+    //   3. 键位也还没到：计划的 U2.3 只注册 `Ctrl+Shift+F`，而**打开后应显示的是
+    //      「编辑器重铸后可用」占位提示**（计划 §U2.4 原文）—— 本轮注册它会打开一条
+    //      什么都不做的搜索栏，不注册则与现状等价。⇒ **两者都不做，留空给 U2.4**。
+    //
+    // 已按 §待验收清单登记：`FindInPage` 全链路（显示/搜索/跳块/高亮/Esc）待 U2.4 验收。
     const router = OverlayKeyRouter.getInstance();
     router.registerOverlay(OverlayId.FIND_IN_PAGE, new OverlayKeyBinding((keyCode: number, event: KeyEvent) => {
       return this.applyNavKey(keyCode, event);

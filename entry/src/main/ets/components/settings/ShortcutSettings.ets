@@ -69,7 +69,7 @@ export struct ShortcutSettings {
 
     this.defaultsMap.clear();
     for (let i = 0; i < defs.length; i++) {
-      const dk = this.formatKeys(defs[i].key, defs[i].ctrl, defs[i].shift, defs[i].alt);
+      const dk = this.formatKeys(defs[i].key, defs[i].ctrl, defs[i].shift, defs[i].alt, defs[i].aliases);
       this.defaultsMap.set(defs[i].id, dk);
     }
 
@@ -146,12 +146,24 @@ export struct ShortcutSettings {
 
   // ─── 快捷键格式化 / 解析 ───
 
-  private formatKeys(key: string, ctrl: boolean, shift: boolean, alt: boolean): string {
-    let label = '';
-    if (ctrl) label = label + 'Ctrl+';
-    if (shift) label = label + 'Shift+';
-    if (alt) label = label + 'Alt+';
-    label = label + key;
+  /**
+   * 格式化快捷键显示文本。
+   * U2.3：等价键（`aliases`）用 ' / ' 连接 —— 三键等价的动作在设置页如实显示
+   * 「Ctrl+K / Ctrl+P / Ctrl+O」，并且 `parseKeys` 只取最后一段，
+   * 因此用户重新绑定时会得到一个单键绑定（旧等价键一并作废，见
+   * `ShortcutService.rebind` 的注释），语义自洽。
+   */
+  private formatKeys(key: string, ctrl: boolean, shift: boolean, alt: boolean, aliases?: string[]): string {
+    let prefix = '';
+    if (ctrl) prefix = prefix + 'Ctrl+';
+    if (shift) prefix = prefix + 'Shift+';
+    if (alt) prefix = prefix + 'Alt+';
+    let label = prefix + key;
+    if (aliases !== undefined) {
+      for (let i = 0; i < aliases.length; i++) {
+        label = label + ' / ' + prefix + aliases[i];
+      }
+    }
     return label;
   }
 

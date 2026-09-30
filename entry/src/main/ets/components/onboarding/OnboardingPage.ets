@@ -25,8 +25,12 @@ export struct OnboardingPage {
   @State currentStep: number = 0;
   private stepIndices: number[] = [0, 1, 2, 3];
   private shortcuts: ShortcutItem[] = [
-    { keys: 'Ctrl + F', desc: '全文搜索' },
-    { keys: 'Ctrl + P', desc: '命令面板' },
+    // U2.3 快捷键重排后的键位表（与 ShortcutService 注册表逐条对齐）：
+    //   · Ctrl+K/P/O 三键等价 = 快速切换（页面名过滤，无命中即建页）
+    //   · Ctrl+F = 全局搜索（页面名 + 块内容）
+    //   · Ctrl+P 不再是「命令面板」的独占键，故文案按「快速切换」写
+    { keys: 'Ctrl + K / P / O', desc: '快速切换' },
+    { keys: 'Ctrl + F', desc: '全局搜索' },
     { keys: 'Tab', desc: '缩进 Block' },
     { keys: 'Shift + Tab', desc: '反缩进 Block' },
     { keys: 'Enter', desc: '新建 Block' },

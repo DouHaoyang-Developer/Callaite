@@ -2,6 +2,8 @@ import { EditorService } from './EditorService';
 import { WorkspaceService } from './WorkspaceService';
 import { JournalService } from './JournalService';
 import { AppState } from '../state/AppState';
+import { OverlayKeyRouter } from '../utils/OverlayKeyRouter';
+import { KeyCode } from '@kit.InputKit';
 
 /**
  * ShortcutDef — 快捷键定义。
@@ -24,23 +26,45 @@ export interface ShortcutDef {
   description: string;
   /** 触发时执行的动作 */
   action: () => void;
+  /**
+   * 等价键（U2.3 快捷键重排）：与 `key` **共用同一组修饰键与同一个动作** 的其它键名。
+   *
+   * 为什么用「一个动作 + 多个等价键」而不是注册多条同 id 的 ShortcutDef：
+   *   `getAllShortcuts()` 按 id 去重（设置页以 id 为键／`rebind(id, …)` 也按 id 定位），
+   *   多条同 id 会让设置页只显示最后一条、且改键时只改一条、其余成为幽灵绑定。
+   *   等价键在本字段里表达，注册表 / 注销 / 改键 / 设置页四条路径自然都对。
+   *
+   * 依据（计划 §U2.3 目标键位表）：
+   *   · Ctrl+K = Ctrl+P = Ctrl+O ⇒ 同一个「快速切换」（VS Code 与 Obsidian 的双惯例位）
+   */
+  aliases?: string[];
 }
 
 /**
- * 按键名称 → HarmonyOS keyCode 映射表（真实值，见 @ohos.multimodalInput.keyCode）。
+ * 按键名称 → HarmonyOS keyCode 映射表（真实值，见 @ohos.multimodalInput.keyCode.d.ts）。
  *
- * 数字键 0-9：2000-2009
- * 方向键：Up=2012, Down=2013, Left=2014, Right=2015
- * 字母键 A-Z：2017-2042
- * 特殊键：Tab=2049, Enter=2054, Backspace(DEL)=2055, Esc=2082
+ * ⚠️ 键码**不是**「Tab/Enter/Backspace/Esc 连号」的猜法，必须逐个对 SDK 枚举核对
+ *    （W12 逐个核对结论，括号内是 `@ohos.multimodalInput.keyCode.d.ts` 的行号）：
+ *      数字 0-9   = 2000-2009 ✓（KEYCODE_0..KEYCODE_9，d.ts:586-640）
+ *      DPAD U/D/L/R = 2012/2013/2014/2015 ✓（同文件 :667-691）
+ *      字母 A-Z   = 2017-2042 ✓（KEYCODE_A=2017 … KEYCODE_Z=2042，:694-767；中间无洞）
+ *      Tab        = 2049 ✓（KEYCODE_TAB，:793）
+ *      Enter      = 2054 ✓（KEYCODE_ENTER，:818；小键盘回车另为 KEYCODE_NUMPAD_ENTER=2119）
+ *      Backspace  = 2055 ✓（SDK 里叫 KEYCODE_DEL，:826 —— 名字像 Delete，实为退格）
+ *      Esc        = **2070** ✓（KEYCODE_ESCAPE，:854）
+ *
+ * 本表在 W12 之前把 Esc 写成 2082，而 2082 是 **KEYCODE_MOVE_END**（移动光标到行尾，:888）
+ * ⇒ 全局 `editor.escape` 实际绑在 End 键上、真 Esc 永不触发（本次修正）。
  */
 const KEY_CODE_MAP: Map<string, number> = new Map<string, number>();
 
 // 特殊键
 KEY_CODE_MAP.set('Enter', 2054);
 KEY_CODE_MAP.set('Tab', 2049);
+// Backspace = KEYCODE_DEL(2055)（SDK 命名如此；KEYCODE_FORWARD_DEL=2071 才是「向后删除」）
 KEY_CODE_MAP.set('Backspace', 2055);
-KEY_CODE_MAP.set('Esc', 2082);
+// Esc = KEYCODE_ESCAPE(2070)。⚠️ 曾误写 2082 = KEYCODE_MOVE_END（W12 修正）
+KEY_CODE_MAP.set('Esc', 2070);
 
 // 方向键
 KEY_CODE_MAP.set('Up', 2012);
@@ -98,13 +122,15 @@ KEY_CODE_MAP.set('9', 2009);
  *   const consumed = ShortcutService.getInstance().handleKeyEvent(event);
  *   if (consumed) return;
  *
- * 默认快捷键列表：
+ * 默认快捷键列表（U2.3 快捷键重排后的键位表）：
  *   编辑器：Enter / Shift+Enter / Tab / Shift+Tab / Backspace / Alt+↑ / Alt+↓
  *   历史：Ctrl+Z / Ctrl+Shift+Z
- *   标记：Ctrl+M / Ctrl+P
- *   文件：Ctrl+F / Ctrl+S
+ *   标记：Ctrl+M（循环任务标记）
+ *   文件：Ctrl+K / Ctrl+P / Ctrl+O（快速切换，三键等价）/ Ctrl+F（全局搜索）/ Ctrl+S
  *   格式：Ctrl+B / Ctrl+I
- *   退出：Esc
+ *   退出：Esc（退出编辑 / 清除选择）
+ *
+ * ⚠️ 循环优先级（原 Ctrl+P）已按 U2.3 移入 SlashMenu 的块级命令，不在此表内。
  */
 export class ShortcutService {
   private static instance: ShortcutService | undefined;
@@ -130,10 +156,17 @@ export class ShortcutService {
 
   /**
    * 注册一个快捷键。如果 key+modifier 组合已存在，将覆盖原有定义。
+   * `def.aliases` 里的等价键**同时注册**到同一份定义（同一动作、同一修饰键组合）。
    */
   register(def: ShortcutDef): void {
     const compositeKey = this.makeKey(def.key, def.ctrl, def.shift, def.alt);
     this.shortcuts.set(compositeKey, def);
+    const aliases = def.aliases;
+    if (aliases !== undefined) {
+      for (let i = 0; i < aliases.length; i++) {
+        this.shortcuts.set(this.makeKey(aliases[i], def.ctrl, def.shift, def.alt), def);
+      }
+    }
   }
 
   /**
@@ -157,6 +190,9 @@ export class ShortcutService {
    * 处理按键事件。如果匹配到已注册的快捷键，执行对应动作并返回 true。
    * 仅处理 KeyType.Down 事件。
    *
+   * ⚠️ **浮层守卫**（U2.3 新增，设备实测驱动）：任何浮层打开时，
+   * 回车 / Tab **一律不进全局快捷键表**（理由见 isOverlayBlockedKey）。
+   *
    * @param event ArkUI KeyEvent
    * @returns 是否消费了该事件（true = 已处理，调用方应停止后续处理）
    */
@@ -165,6 +201,9 @@ export class ShortcutService {
       return false;
     }
     if (event.type !== KeyType.Down) {
+      return false;
+    }
+    if (ShortcutService.isOverlayBlockedKey(event.keyCode)) {
       return false;
     }
 
@@ -179,6 +218,46 @@ export class ShortcutService {
         defs[i].action();
         return true;
       }
+    }
+    return false;
+  }
+
+  /**
+   * 浮层打开时**必须让位**的键。
+   *
+   * ─── 为什么需要（W12 设备实测的真缺陷，非推测）───
+   * 缺陷：Slash 菜单打开、高亮停在「切换优先级」时注入回车（2054），
+   * 菜单**没有执行命令**，而是被本服务的 `editor.create-below` 接走，
+   * 在**浮层下面那一行**上插入了新块。
+   * 实测证据：`__S1_long.md` 由 4661 字节（首行 `- 测试块 2`）变成 4664 字节
+   * （首行变成 `- `、原内容被下移一行），而菜单里的优先级命令一次都没跑。
+   * ⇒ 根因不是浮层，而是**全局快捷键没有「浮层优先」的判据**：
+   *   `ContentArea` 的 `onKeyEvent`（post-IME）无条件把键转给本服务，
+   *   而回车不在 `OverlayKeyRouter.isNavKey` 里（W11 刻意排除）⇒
+   *   没有任何一层拦得住它。
+   *
+   * 因此判据放在**服务这一层**（而不是某个调用点）：本仓有多处落点会转发按键
+   * （`ContentArea` 的 `onKeyEvent` 与 `onKeyPreIme`），只堵一处会留下同一缺陷的副本。
+   *
+   * ─── 为什么只挡这几个键 ───
+   *   · 回车 / 小键盘回车：浮层里回车的归属是输入法（各浮层的动作挂在 `onSubmit` 上，
+   *     见 `OverlayKeyRouter` 类头 §IME 守卫）。真实键盘上这个回车被输入法先拿到，
+   *     注入键不过输入法 ⇒ 它漏到全局表 —— 挡掉它正是「让注入路径与真实路径同语义」。
+   *   · Tab：全局表里是「缩进当前块」，同样是**改浮层下面那块数据**的破坏性动作。
+   *   · ↑ ↓ Esc：**不需要列在这里** —— `OverlayKeyRouter.isNavKey` 已把它们限定在浮层内，
+   *     浮层消费后调用方会 `stopPropagation`，到不了本服务。
+   *   · 其余键（字母/退格/Ctrl 组合）一律放行：它们要么归浮层的输入框，要么是
+   *     与浮层无关的全局动作（Ctrl+S 保存等），挡掉反而制造新缺陷。
+   */
+  private static isOverlayBlockedKey(keyCode: number): boolean {
+    if (OverlayKeyRouter.getInstance().topOverlayId() === '') {
+      return false;
+    }
+    if (keyCode === KeyCode.KEYCODE_ENTER || keyCode === KeyCode.KEYCODE_NUMPAD_ENTER) {
+      return true;
+    }
+    if (keyCode === KeyCode.KEYCODE_TAB) {
+      return true;
     }
     return false;
   }
@@ -209,6 +288,8 @@ export class ShortcutService {
   /**
    * 重新绑定快捷键。保留原动作和描述，仅替换按键组合。
    *
+   * ⚠️ 等价键（`aliases`）在改键时**一并作废**：用户既已显式指定新键，
+   *    旧等价键若继续生效就成了「改不掉的幽灵绑定」。
    * @param id 要重新绑定的快捷键 ID
    * @param newKey 新的主键名称
    * @param ctrl 是否需要 Ctrl
@@ -217,12 +298,13 @@ export class ShortcutService {
    */
   rebind(id: string, newKey: string, ctrl: boolean, shift: boolean, alt: boolean): void {
     let foundDef: ShortcutDef | undefined;
-    let oldCompositeKey: string = '';
 
+    // 先收集该 id 的**全部**绑定（主键 + 等价键指向同一个 def 对象，故可能命中多条）
+    const oldCompositeKeys: string[] = [];
     this.shortcuts.forEach((def: ShortcutDef, k: string) => {
       if (def.id === id) {
         foundDef = def;
-        oldCompositeKey = k;
+        oldCompositeKeys.push(k);
       }
     });
 
@@ -230,8 +312,10 @@ export class ShortcutService {
       return;
     }
 
-    // 移除旧绑定
-    this.shortcuts.delete(oldCompositeKey);
+    // 移除全部旧绑定
+    for (let i = 0; i < oldCompositeKeys.length; i++) {
+      this.shortcuts.delete(oldCompositeKeys[i]);
+    }
 
     // 创建新绑定，保留原动作和描述
     const newDef: ShortcutDef = {
@@ -395,30 +479,34 @@ export class ShortcutService {
       }
     });
 
-    // Ctrl+P — 循环优先级（A → B → C → 无）
-    self.register({
-      id: 'editor.cycle-priority',
-      key: 'P',
-      ctrl: true,
-      shift: false,
-      alt: false,
-      description: '循环优先级',
-      action: () => {
-        EditorService.getInstance().cyclePriority();
-      }
-    });
+    // ⚠️ U2.3：此处原有 `Ctrl+P = 循环优先级`，**已按计划移除**（键位让给快速切换）。
+    // 循环优先级改由**块级上下文**承担：SlashMenu 的「切换优先级」命令
+    // （见 components/outliner/SlashMenu.ets 的 selectCyclePriorityCmd 分支）。
+    // 计划原文：「块级操作归块上下文；Ctrl+Shift+P 留给未来真命令面板」。
+    //
+    // 顺带修掉一个此前不可见的缺陷：`EditorService.cyclePriority()` 只认
+    // `focusedBlockUuid`，而**从 SlashMenu 执行时菜单本身持有明确的 blockUuid**
+    // ⇒ 菜单里的循环不能转调 EditorService（焦点可能不在目标块上），
+    // 必须按菜单自己那个 uuid 算下一步（见 SlashMenu.cyclePriorityForBlock）。
 
     // ─── 文件操作 ───
 
-    // Ctrl+K — 命令面板 / 快速切换（U1.6：与全局搜索拆成两根键）
+    // Ctrl+K / Ctrl+P / Ctrl+O — 快速切换（QuickSwitcher，原「命令面板」正名）
     // 语义：过滤**页面名**，回车打开；无命中时按输入内容创建页面。
+    //
+    // U2.3 键位裁决（PLAN-UI-Alignment §U2.3 目标键位表）：
+    //   · Ctrl+K = 原行为（现状保持，仅正名）
+    //   · Ctrl+P = 同 Ctrl+K（VS Code 惯例位）—— **cyclePriority 让位**（原绑定在此）
+    //   · Ctrl+O = 同 Ctrl+K（Obsidian 惯例位）
+    //   三键等价 ⇒ 用 `aliases` 表达，注册表/设置页/改键三条路径都只看到一条动作。
     self.register({
-      id: 'app.search-global',
+      id: 'app.quick-switcher',
       key: 'K',
       ctrl: true,
       shift: false,
       alt: false,
-      description: '命令面板 / 快速切换',
+      aliases: ['P', 'O'],
+      description: '快速切换',
       action: () => {
         AppState.setCommandPaletteOpen(true);
       }
