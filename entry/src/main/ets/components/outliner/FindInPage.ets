@@ -1,6 +1,8 @@
 import { BlockData } from '../../core/models/Block';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { TablerIcon } from '../common/Icons';
+import { OverlayKeyRouter, OverlayId, OverlayKeyBinding } from '../../utils/OverlayKeyRouter';
+import { KeyCode } from '@kit.InputKit';
 
 /**
  * FindInPage — 页内搜索浮动组件。
@@ -29,7 +31,48 @@ export struct FindInPage {
   @StorageLink('callaite_blocksVersion') @Watch('onRefresh') private blocksVersion: number = 0;
 
   aboutToAppear(): void {
-    // 初始隐藏，等待 show() 调用
+    // 初始隐藏，等待 show() 调用。
+    // U2.2/W11：登记进按键路由器。开合态以**本组件自己的 isVisible 为准**（当前恒 false）——
+    // 不按「已挂载」登记为打开，否则会出现「浮层没显示却在吞按键」的静默失效。
+    //
+    // ⚠️ 可达性（本轮实测结论，留给 U2.4 那一轮）：本组件有**两个互不相通的显隐标志** ——
+    //    宿主 `BlockList.findInPageVisible`（决定是否构造本组件）与本组件的 `isVisible`
+    //    （决定是否渲染内容，初始 false 且只有 `show()` 能置 true，而 `show()` 全仓 0 调用）。
+    //    因此当前**没有任何路径**能让这条搜索栏显示出来 ⇒ 下面这段键盘导航「代码就绪、不可达」。
+    //    本轮刻意不动显隐控制（显隐反转是 U2.4「FindInPage 重做」的第 1 项，避免同一模块两轮改造）。
+    const router = OverlayKeyRouter.getInstance();
+    router.registerOverlay(OverlayId.FIND_IN_PAGE, new OverlayKeyBinding((keyCode: number, event: KeyEvent) => {
+      return this.applyNavKey(keyCode, event);
+    }));
+    router.setOverlayOpen(OverlayId.FIND_IN_PAGE, this.isVisible);
+  }
+
+  aboutToDisappear(): void {
+    OverlayKeyRouter.getInstance().unregisterOverlay(OverlayId.FIND_IN_PAGE);
+  }
+
+  /**
+   * 按键 → 动作（U2.2/W11 新增；迁移前本组件**没有任何键盘处理**）。
+   * 语义按 U2.4 的目标定义：Enter=下一个 / Shift+Enter=上一个 / Esc=关闭
+   * （区别于命令面板类的 ↑↓ 选择 —— 本组件没有列表，只有「当前是第 M 个匹配」）。
+   */
+  private applyNavKey(keyCode: number, event: KeyEvent): boolean {
+    if (keyCode === KeyCode.KEYCODE_ESCAPE) {
+      this.hide();
+      return true;
+    }
+    if (keyCode === KeyCode.KEYCODE_ENTER || keyCode === KeyCode.KEYCODE_NUMPAD_ENTER) {
+      // 修饰键判据与 ShortcutService.matchShortcut 同一写法（KeyEvent 无 ctrlKey/shiftKey 属性，
+      // 走 getModifierKeyState，SDK common.d.ts:11143）。
+      const shift: boolean = event.getModifierKeyState!(['shift']);
+      if (shift) {
+        this.navigatePrev();
+      } else {
+        this.navigateNext();
+      }
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -47,6 +90,7 @@ export struct FindInPage {
    */
   show(): void {
     this.isVisible = true;
+    OverlayKeyRouter.getInstance().setOverlayOpen(OverlayId.FIND_IN_PAGE, true);
   }
 
   /**
@@ -54,6 +98,8 @@ export struct FindInPage {
    */
   hide(): void {
     this.isVisible = false;
+    // 路由开合态必须同步 —— 否则搜索栏消失后仍会继续吞掉 esc/enter。
+    OverlayKeyRouter.getInstance().setOverlayOpen(OverlayId.FIND_IN_PAGE, false);
     this.searchQuery = '';
     this.matchCount = 0;
     this.currentMatch = 0;
@@ -155,9 +201,26 @@ export struct FindInPage {
           .height(32)
           .backgroundColor(Color.Transparent)
           .borderRadius(0)
-          .onChange((value: string) => {
+          .onChange((value: string, previewText?: PreviewText) => {
             this.searchQuery = value;
+            // U2.2/W11：上报 IME 预览文本 —— 组词态下的回车归输入法（见 OverlayKeyRouter 类头 §SDK 依据）
+            OverlayKeyRouter.getInstance().reportImePreviewText(OverlayId.FIND_IN_PAGE, previewText);
             this.performSearch();
+          })
+          // ↵ 跳到下一个匹配 —— 走 onSubmit（输入法处理完合成之后才发出）；
+          // 组词态的回车归输入法上屏（理由与实测见 OverlayKeyRouter 类头 §IME 守卫）。
+          // 注：Shift+Enter=上一个 无法在 onSubmit 里判修饰键（其形参只有 EnterKeyType），
+          // 该键位留给 U2.4 重做时随显隐反转一并接（本轮本组件尚不可达）。
+          .onSubmit(() => {
+            this.navigateNext();
+          })
+          // 键盘导航落点（U2.2/W11）：与 CommandPalette/SearchPanel 同样挂在持焦输入框上，
+          // 但**不用 `onKeyPreIme`**（理由与实测证据见 OverlayKeyRouter 类头 §IME 守卫）：
+          // preIme 会抢走拼音组词的回车；post-IME 的 onKeyEvent 让输入法先拒绝。
+          .onKeyEvent((event: KeyEvent) => {
+            if (OverlayKeyRouter.getInstance().handle(event, OverlayId.FIND_IN_PAGE)) {
+              event.stopPropagation();
+            }
           })
 
         // 匹配计数 — 有匹配时使用 search_highlight 高亮色
@@ -210,6 +273,12 @@ export struct FindInPage {
       .padding({ left: 12, right: 8 })
       .backgroundColor($r('app.color.surface1'))
       .border({ width: { bottom: 1 }, color: $r('app.color.border') })
+      // 兜底落点：焦点不在搜索输入框时仍能接管 enter/esc（与输入框同走路由器一份去重标记）
+      .onKeyEvent((event: KeyEvent) => {
+        if (OverlayKeyRouter.getInstance().handle(event, OverlayId.FIND_IN_PAGE)) {
+          event.stopPropagation();
+        }
+      })
     }
   }
 }

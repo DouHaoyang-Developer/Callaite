@@ -4,6 +4,7 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData } from '../../core/models/Page';
 import { AppState } from '../../state/AppState';
 import { KeyCode } from '@kit.InputKit';
+import { OverlayKeyRouter, OverlayId, OverlayKeyBinding } from '../../utils/OverlayKeyRouter';
 
 /**
  * CommandPalette — Obsidian 风格快速切换 / 命令面板。
@@ -61,17 +62,25 @@ export struct CommandPalette {
   /** 打开时主动把焦点抢到输入框，消除与内容区 defaultFocus 的竞争 */
   private inputFocusRequested: boolean = false;
   /**
-   * 上一次已被本面板消费的按键码；-1 表示当前没有「已消费待复位」的按键。
+   * 去重标记（`lastHandledKeyCode`）**已上移到 `OverlayKeyRouter`**（U2.2/W11）：
+   * 语义逐条保持（同一按键码连续到达只认第一次；收到不同按键码即复位 ⇒ 连按不被阻塞），
+   * 只是由「每个浮层各一份」收敛为「路由器一份」（浮层之间互斥，见 AppState.ets:583-603）。
    *
-   * 去重目的：输入框与根节点都挂了导航回调，同一个物理按键可能被两处各收到一次。
-   * 不用 KeyEvent.timestamp 作为第二个判据 —— 该字段在本机 SDK 的 KeyEvent（手机/平板/2in1 形态）
-   * 上会被编译期判为不可用（ArkTS 告警 "This API is unavailable to phone, tablet, 2in1"），
-   * 因此改为「按键码单调标记」：同一按键码连续到达时只认第一次，
-   * 收到**不同**按键码即复位标记，从而不会阻塞用户连按同一个键（长按连发）。
+   * ⚠️ 保留一条**不要重蹈**的结论：第二判据**不能**用 `KeyEvent.timestamp` ——
+   * 该字段在本机 SDK 的 KeyEvent（手机/平板/2in1 形态）上会被编译期判为不可用
+   * （ArkTS 告警 "This API is unavailable to phone, tablet, 2in1"）。
    */
-  private lastHandledKeyCode: number = -1;
 
   aboutToAppear(): void {
+    // U2.2/W11：把本面板登记进按键路由器，并声明「已打开」。
+    // 「只在 overlayOpen 态路由」的全部数据来源就是这两行 —— 不登记/不开，
+    // 路由器 `handle()` 恒返回 false，按键一个都不会被本面板碰。
+    const router = OverlayKeyRouter.getInstance();
+    router.registerOverlay(OverlayId.COMMAND_PALETTE, new OverlayKeyBinding((keyCode: number, event: KeyEvent) => {
+      return this.applyNavKey(keyCode);
+    }));
+    router.setOverlayOpen(OverlayId.COMMAND_PALETTE, true);
+
     const ws = WorkspaceService.getInstance();
     this.results = ws.getAllPages();
     this.selectedIndex = 0;
@@ -80,11 +89,13 @@ export struct CommandPalette {
   }
 
   /**
-   * 关闭时归还焦点。
+   * 关闭时归还焦点 + 注销路由登记。
    * 宿主内容区在 aboutToAppear 里 requestFocus 过自己，但面板打开期间焦点被输入框拿走，
    * 关闭后若不显式归还，内容区的 onKeyEvent（全局快捷键）就不会再触发。
+   * 注销路由登记同样必要：`openStates` 里残留 true 会让「无浮层时不得拦截任何键」失效。
    */
   aboutToDisappear(): void {
+    OverlayKeyRouter.getInstance().unregisterOverlay(OverlayId.COMMAND_PALETTE);
     focusControl.requestFocus(this.restoreFocusId);
   }
 
@@ -101,19 +112,32 @@ export struct CommandPalette {
           .backgroundColor(Color.Transparent)
           .borderRadius(0)
           .caretColor($r('app.color.primary'))
-          .onChange((value: string) => {
+          .onChange((value: string, previewText?: PreviewText) => {
             this.queryText = value;
+            // U2.2/W11：把 IME 预览文本上报给路由器 —— 这是「组词态不抢回车」的唯一应用侧信号
+            // （依据：text_common.d.ts:481 / 625-646 + text_input.d.ts:2028-2043，见路由器类头）。
+            OverlayKeyRouter.getInstance().reportImePreviewText(OverlayId.COMMAND_PALETTE, previewText);
             this.doSearch(value);
+          })
+          // ↵ 打开当前高亮行 —— **走 onSubmit，不走任何 onKey* 回调**（W11 实测结论）：
+          // onSubmit 由输入法在**处理完合成之后**发出（`text_input.d.ts:1076-1091`），
+          // 组词时回车被输入法用于上屏、不会触发它 ⇒ 「组词回车上屏」天然不受影响
+          // （对照实测：把回车放进 preIme/onKeyEvent 会让候选条在屏时回车被面板吃掉、
+          //  候选被丢弃；细节与探针日志见 OverlayKeyRouter 类头 §IME 守卫）。
+          .onSubmit(() => {
+            this.activateSelected();
           })
           // ↓↓ 键盘导航的落点：输入框是面板打开后的持焦节点，
           //    挂在这里保证按键一定送到（不依赖祖先节点的按键冒泡是否可达）。
-          // onKeyPreIme 先于 IME 拿到按键 —— 这是「TextInput 吞掉 ↑↓」的常见坑：
-          // 有 IME 时方向键会被输入法当作候选词选择键消费，onKeyEvent 可能收不到。
-          .onKeyPreIme((event: KeyEvent) => {
-            return this.handleNavKey(event);
-          })
+          // ⚠️ W11 实测（MatePad Pro 13，中文输入法**真实组词态**：候选条「你好」在屏）后
+          //    **刻意不再用 `onKeyPreIme`**：preIme 早于输入法，会把 Enter 抢在 IME 之前吃掉
+          //    ⇒ 拼音组词回车上屏被破坏（实测：回车后候选被丢弃、面板直接打开了高亮项）。
+          //    且组词期间应用**收不到任何可用信号**（`onChange` 根本不触发、预览文本不投递
+          //    —— 见 OverlayKeyRouter 类头 §IME 守卫的探针日志），preIme 里无从判断该不该让键。
+          //    改挂 **post-IME 的 `onKeyEvent`**：IME 先拒绝（IME 消费掉的键不会到达 onKeyEvent
+          //    —— 同一次实测里拼音字母键 0 次进入 handle），IME 不要的键才轮到本面板。
           .onKeyEvent((event: KeyEvent) => {
-            const handled: boolean = this.handleNavKey(event);
+            const handled: boolean = OverlayKeyRouter.getInstance().handle(event, OverlayId.COMMAND_PALETTE);
             if (handled) {
               event.stopPropagation();
             }
@@ -218,9 +242,9 @@ export struct CommandPalette {
     .height('100%')
     .backgroundColor(Color.Transparent)
     // 兜底落点：若焦点因故落到列表区域（而非输入框），这里仍能接管 ↑↓ / ↵ / esc。
-    // 与输入框上的回调靠 lastHandledKeyCode 去重，不会出现一次按键走两格。
+    // 与输入框上的回调同走 OverlayKeyRouter 一份去重标记，不会出现一次按键走两格。
     .onKeyEvent((event: KeyEvent) => {
-      if (this.handleNavKey(event)) {
+      if (OverlayKeyRouter.getInstance().handle(event, OverlayId.COMMAND_PALETTE)) {
         event.stopPropagation();
       }
     })
@@ -269,36 +293,17 @@ export struct CommandPalette {
   // ─── 键盘导航 ───
 
   /**
-   * 统一的导航按键处理。
+   * 按键 → 动作映射（本面板对路由器的唯一实现）。
    *
-   * 去重：同一个物理事件可能同时被输入框与根节点收到（见 lastHandledKeyCode 说明），
-   * 同一按键码连续到达时只处理第一次，保证一次按压只产生一步状态变化。
+   * U2.2/W11 迁移说明：迁移前本文件里还有一层 `handleNavKey(event)`，
+   * 负责「只认 Down / 去重 / 未消费复位」三项前置判定；这三项**已上移到
+   * `OverlayKeyRouter.handle()`**（逐条保持语义），本方法只剩「按键 → 动作」。
+   * 因此本方法的入参从 `KeyEvent` 变成已判定过的 `keyCode`，返回值语义由
+   * 「是否消费」保持为「是否消费」—— 对外行为（↑↓ 移动 / ↵ 打开 / esc 关闭）
+   * 逐条不变。
    *
-   * @param event ArkUI KeyEvent
-   * @returns true 表示已消费（调用方应停止传播）
-   */
-  private handleNavKey(event: KeyEvent): boolean {
-    // 只处理按下（Down）；Up 事件直接放行，避免同一次按压被处理两次。
-    if (event.type !== KeyType.Down) {
-      return false;
-    }
-    if (this.lastHandledKeyCode === event.keyCode) {
-      return false;
-    }
-    if (this.applyNavKey(event.keyCode)) {
-      this.lastHandledKeyCode = event.keyCode;
-      return true;
-    }
-    // 未消费的按键（普通字符、Tab、Shift 等）复位标记，
-    // 这样用户「↓ ↓ ↓」连按时每一步都会被接受。
-    this.lastHandledKeyCode = -1;
-    return false;
-  }
-
-  /**
-   * 按键 → 动作映射。
-   * @param keyCode 按键码
-   * @returns 是否被本面板消费
+   * @param keyCode 按键码（路由器已保证 ∈ {↑,↓,↵,小键盘↵,esc}）
+   * @returns true 表示已消费
    */
   private applyNavKey(keyCode: number): boolean {
     if (keyCode === KeyCode.KEYCODE_DPAD_UP) {

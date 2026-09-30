@@ -5,6 +5,7 @@ import { ExportDialog } from '../common/ExportDialog';
 import { ImportDialog } from '../common/ImportDialog';
 import { Toolbar } from '../outliner/Toolbar';
 import { ShortcutService } from '../../services/ShortcutService';
+import { OverlayKeyRouter } from '../../utils/OverlayKeyRouter';
 import { AppState } from '../../state/AppState';
 import { Breakpoints } from '../../state/Breakpoints';
 
@@ -229,6 +230,21 @@ export struct ContentArea {
     }
     .width('100%')
     .height('100%')
+    // ─── U2.2/W11：浮层键盘导航的**宿主兜底入口（post-IME）** ───
+    // 为什么需要：浮层自己的落点挂在持焦输入框上；若焦点因故落在浮层的列表/遮罩等
+    // 非输入框区域，那个落点不会触发，键会一路上浮到这里 —— 此处按「当前顶层浮层」
+    // 再投递一次（见 handleFromHost）。与浮层自身落点共用同一份去重标记与顶层判定
+    // ⇒ 一次按压只走一步，不会双触发。
+    // ⚠️ **刻意不挂在 `.onKeyPreIme` 上**：preIme 早于输入法，会把拼音组词的回车抢走
+    //    （W11 设备实测：候选条在屏时回车被面板吃掉、组词被丢弃），而合成期间应用
+    //    收不到任何「正在合成」的信号 ⇒ 只能靠「让输入法先拒绝」这一条路：
+    //    IME 消费掉的键不会到达 `onKeyEvent`（实测拼音字母键 0 次进入路由器）。
+    // ⚠️ 无浮层打开时本行恒 false（`topOverlayId() === ''`）⇒ **一个键都不拦**。
+    .onKeyEvent((event: KeyEvent) => {
+      if (OverlayKeyRouter.getInstance().handleFromHost(event)) {
+        event.stopPropagation();
+      }
+    })
     // 修饰键组合（Ctrl+K/Ctrl+Z/Alt+↑↓ 等）在 IME/子组件处理前拦截，
     // 保证 WebEditor 持焦时全局快捷键依然可用；无修饰键的按键放行给编辑器。
     .onKeyPreIme((event: KeyEvent) => {

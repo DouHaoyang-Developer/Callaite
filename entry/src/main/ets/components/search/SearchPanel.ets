@@ -6,6 +6,7 @@ import { PageData } from '../../core/models/Page';
 import { BlockData } from '../../core/models/Block';
 import { AnchorRegistry, AnchorSource } from '../../services/AnchorRegistry';
 import { KeyCode } from '@kit.InputKit';
+import { OverlayKeyRouter, OverlayId, OverlayKeyBinding } from '../../utils/OverlayKeyRouter';
 
 /**
  * 搜索结果项。
@@ -79,15 +80,21 @@ export struct SearchPanel {
   /** 结果列表滚动控制器（List 宿主，用于把高亮行滚入视口） */
   private listScroller: Scroller = new Scroller();
   /**
-   * 上一次已被本面板消费的按键码；-1 表示当前没有「已消费待复位」的按键。
-   * 去重理由同 CommandPalette：输入框与根节点都挂了导航回调，同一物理按键可能被两处各收到一次；
-   * 同一按键码连续到达只认第一次，收到**不同**按键码即复位（长按连发不被阻塞）。
+   * 去重标记（`lastHandledKeyCode`）**已上移到 `OverlayKeyRouter`**（U2.2/W11）：
+   * 语义逐条保持（同一按键码连续到达只认第一次；收到不同按键码即复位 ⇒ 连按不被阻塞），
+   * 只是由「每个浮层各一份」收敛为「路由器一份」（浮层之间互斥，见 AppState.ets:583-603）。
    */
-  private lastHandledKeyCode: number = -1;
   /** 输入防抖定时器句柄；-1 表示当前无待触发任务 */
   private debounceTimer: number = -1;
 
   aboutToAppear(): void {
+    // U2.2/W11：登记进按键路由器并声明「已打开」（「只在 overlayOpen 态路由」的数据来源）。
+    const router = OverlayKeyRouter.getInstance();
+    router.registerOverlay(OverlayId.SEARCH_PANEL, new OverlayKeyBinding((keyCode: number, event: KeyEvent) => {
+      return this.applyNavKey(keyCode);
+    }));
+    router.setOverlayOpen(OverlayId.SEARCH_PANEL, this.isOpen);
+
     // U1.6：本组件改由 ContentArea 按 callaite_searchPanelOpen **挂载**（打开才创建实例）。
     // @Watch 只在「挂载期间键值变化」时触发、不在初始化时触发，
     // 因此打开时的初始化（最近访问 / 标签过滤 / 抢焦点）必须放在这里，不能只靠 onPanelVisibilityChanged。
@@ -96,6 +103,8 @@ export struct SearchPanel {
   }
 
   aboutToDisappear(): void {
+    // 注销路由登记：`openStates` 里残留 true 会让「无浮层时不得拦截任何键」失效。
+    OverlayKeyRouter.getInstance().unregisterOverlay(OverlayId.SEARCH_PANEL);
     // 面板关闭（被卸载）时清掉未触发的防抖任务，避免对已销毁组件的回调。
     if (this.debounceTimer !== -1) {
       clearTimeout(this.debounceTimer);
@@ -109,6 +118,9 @@ export struct SearchPanel {
    * 面板显隐变化时的处理（打开分支与 aboutToAppear 共用 initializeOnOpen）。
    */
   onPanelVisibilityChanged(): void {
+    // 开合态同步给路由器：本组件的 isOpen 与 ContentArea 的挂载键是同一把
+    // （callaite_searchPanelOpen），关闭时它可能先于卸载到达 ⇒ 立即停止路由。
+    OverlayKeyRouter.getInstance().setOverlayOpen(OverlayId.SEARCH_PANEL, this.isOpen);
     if (this.isOpen) {
       this.recentPages = AppState.getRecentPages();
       this.initializeOnOpen();
@@ -350,30 +362,11 @@ export struct SearchPanel {
   }
 
   /**
-   * 统一的导航按键处理（与 CommandPalette.handleNavKey 逐条对齐）。
+   * 统一的导航按键处理（U2.2/W11：去重/只认 Down/未消费复位已上移到 OverlayKeyRouter，
+   * 与 CommandPalette 逐条对齐）。
    *
    * 去重：同一个物理事件可能同时被输入框与根节点收到，同一按键码连续到达只处理第一次；
    * 收到**不同**按键码即复位标记，从而不会阻塞用户连按同一个键（长按连发）。
-   */
-  private handleNavKey(event: KeyEvent): boolean {
-    // 只处理按下（Down）；Up 事件直接放行，避免同一次按压被处理两次。
-    if (event.type !== KeyType.Down) {
-      return false;
-    }
-    if (this.lastHandledKeyCode === event.keyCode) {
-      return false;
-    }
-    if (this.applyNavKey(event.keyCode)) {
-      this.lastHandledKeyCode = event.keyCode;
-      return true;
-    }
-    // 未消费的按键（普通字符、Tab、Shift 等）复位标记，这样「↓ ↓ ↓」连按时每一步都会被接受。
-    this.lastHandledKeyCode = -1;
-    return false;
-  }
-
-  /**
-   * 按键 → 动作映射：↑↓ 选择 / ↵ 打开 / esc 关闭。
    */
   private applyNavKey(keyCode: number): boolean {
     if (keyCode === KeyCode.KEYCODE_DPAD_UP) {
@@ -494,8 +487,11 @@ export struct SearchPanel {
               .height(40)
               .backgroundColor(Color.Transparent)
               .caretColor($r('app.color.primary'))
-              .onChange((value: string) => {
+              .onChange((value: string, previewText?: PreviewText) => {
                 this.searchQuery = value;
+                // U2.2/W11：把 IME 预览文本上报给路由器 —— 这是「组词态不抢回车」的唯一应用侧信号
+                // （依据：text_common.d.ts:481 / 625-646 + text_input.d.ts:2028-2043，见路由器类头）。
+                OverlayKeyRouter.getInstance().reportImePreviewText(OverlayId.SEARCH_PANEL, previewText);
                 // 输入即搜，但走 200ms 防抖（阈值理由见 SEARCH_DEBOUNCE_MS）
                 this.scheduleSearch(value);
               })
@@ -504,13 +500,13 @@ export struct SearchPanel {
                 this.activateSelected();
               })
               // ↓↓ 键盘导航的落点：输入框是面板打开后的持焦节点，挂在这里保证按键一定送到。
-              // onKeyPreIme 先于 IME 拿到按键 —— 这是「TextInput 吞掉 ↑↓」的坑：
-              // 有 IME 时方向键会被输入法当作候选词选择键消费，onKeyEvent 可能收不到。
-              .onKeyPreIme((event: KeyEvent) => {
-                return this.handleNavKey(event);
-              })
+              // ⚠️ W11 实测后**刻意不用 `onKeyPreIme`**（理由与逐条证据见
+              //    CommandPalette 同位置注释与 OverlayKeyRouter 类头 §IME 守卫）：
+              //    preIme 早于输入法 ⇒ 会把拼音组词的回车抢走，而组词期间应用收不到任何
+              //    「正在合成」的信号，preIme 里无从判断 ⇒ 改用 post-IME 的 `onKeyEvent`，
+              //    让输入法先拒绝（IME 消费掉的键不会到达 onKeyEvent）。
               .onKeyEvent((event: KeyEvent) => {
-                const handled: boolean = this.handleNavKey(event);
+                const handled: boolean = OverlayKeyRouter.getInstance().handle(event, OverlayId.SEARCH_PANEL);
                 if (handled) {
                   event.stopPropagation();
                 }
@@ -583,9 +579,9 @@ export struct SearchPanel {
         .border({ width: 1, color: $r('app.color.border') })
         .shadow({ radius: 20, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 8 })
         // 兜底落点：焦点若因故落到列表区域（而非输入框），这里仍能接管 ↑↓ / ↵ / esc；
-        // 与输入框上的回调靠 lastHandledKeyCode 去重，不会出现一次按键走两格。
+        // 与输入框上的回调同走 OverlayKeyRouter 一份去重标记，不会出现一次按键走两格。
         .onKeyEvent((event: KeyEvent) => {
-          if (this.handleNavKey(event)) {
+          if (OverlayKeyRouter.getInstance().handle(event, OverlayId.SEARCH_PANEL)) {
             event.stopPropagation();
           }
         })

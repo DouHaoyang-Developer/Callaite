@@ -3,6 +3,8 @@ import { EditorService } from '../../services/EditorService';
 import { TemplateService, TemplateInfo } from '../../services/TemplateService';
 import { AppState } from '../../state/AppState';
 import { TablerIcon } from '../common/Icons';
+import { OverlayKeyRouter, OverlayId, OverlayKeyBinding } from '../../utils/OverlayKeyRouter';
+import { KeyCode } from '@kit.InputKit';
 
 /**
  * SlashCommand — 斜杠菜单命令定义。
@@ -127,9 +129,144 @@ export struct SlashMenu {
   @State dismissed: boolean = false;
   @State showTemplateList: boolean = false;
   @State templates: TemplateInfo[] = [];
+  /**
+   * 扁平命令序列（`filteredGroups` 展开，**只含命令行、不含分类标题行**）。
+   * 键盘导航的下标空间就是它 —— 分类标题不可选中，故不进下标空间；
+   * 跨分类移动即「分类间跳转」（分类边界由命令顺序自然决定）。
+   */
+  @State flatCommands: SlashCommand[] = [];
+  /** 当前高亮的命令在 `flatCommands` 中的下标（clamp 之后，任何时刻指向真实存在的行） */
+  @State selectedIndex: number = 0;
+  /** 命令列表滚动控制器（把高亮行滚入视口） */
+  private listScroller: Scroller = new Scroller();
+  /**
+   * 行 id → 该行相对**滚动内容顶部**的 y（由各行的 onAreaChange 回填，单位 vp）。
+   *
+   * 为什么需要它：宿主是 `Scroll`，而 `Scroller.scrollToIndex` 的 NOTE 只对
+   * ArcList/Grid/List/WaterFlow 生效、**不含 Scroll**（SDK scroll.d.ts:488）⇒
+   * 「高亮行滚入视口」只能自己按行 y 调 `scrollTo({yOffset})`。
+   * 行 y 取自布局实测（onAreaChange 的 area.position.y，相对父容器 = 滚动内容），
+   * 不靠「行高 × 下标」估算 —— 分类标题行高度与命令行(48vp)不同，估算必然偏。
+   */
+  private rowTops: Map<string, number> = new Map<string, number>();
 
   aboutToAppear(): void {
+    // U2.2/W11：登记进按键路由器并声明「已打开」。
+    // ⚠️ 可达性说明：本组件的**触发源尚未接线**（`BlockList.openSlashMenu` 全仓 0 调用），
+    //    因此这段键盘导航目前不可达（代码就绪、待触发源接线那一轮验收）——
+    //    登记/开合态本身是准确的：本组件只在 BlockList.slashMenuVisible 为 true 时才被构造。
+    const router = OverlayKeyRouter.getInstance();
+    router.registerOverlay(OverlayId.SLASH_MENU, new OverlayKeyBinding((keyCode: number, event: KeyEvent) => {
+      return this.applyNavKey(keyCode);
+    }));
+    router.setOverlayOpen(OverlayId.SLASH_MENU, true);
     this.filterCommands('');
+  }
+
+  aboutToDisappear(): void {
+    OverlayKeyRouter.getInstance().unregisterOverlay(OverlayId.SLASH_MENU);
+  }
+
+  /**
+   * 关闭菜单（`dismissed` 是本组件既有的「已消费」终态：渲染 0×0）。
+   * 必须同时把路由开合态置 false —— 否则菜单视觉上消失后仍会继续吞掉 ↑↓/↵/esc。
+   */
+  private dismissMenu(): void {
+    this.dismissed = true;
+    OverlayKeyRouter.getInstance().setOverlayOpen(OverlayId.SLASH_MENU, false);
+  }
+
+  /**
+   * 按键 → 动作（U2.2/W11 新增；迁移前本组件**没有任何键盘处理**）。
+   * 语义与 CommandPalette/SearchPanel 对齐：↑↓ 移动 / ↵ 执行 / esc 关闭。
+   * 模板子视图只接 esc（返回命令列表）—— 子视图内的列表导航留给触发源接线那一轮。
+   */
+  private applyNavKey(keyCode: number): boolean {
+    if (this.showTemplateList) {
+      if (keyCode === KeyCode.KEYCODE_ESCAPE) {
+        this.showTemplateList = false;
+        return true;
+      }
+      return false;
+    }
+    if (keyCode === KeyCode.KEYCODE_DPAD_UP) {
+      this.moveSelection(-1);
+      return true;
+    }
+    if (keyCode === KeyCode.KEYCODE_DPAD_DOWN) {
+      this.moveSelection(1);
+      return true;
+    }
+    if (keyCode === KeyCode.KEYCODE_ENTER || keyCode === KeyCode.KEYCODE_NUMPAD_ENTER) {
+      this.executeSelected();
+      return true;
+    }
+    if (keyCode === KeyCode.KEYCODE_ESCAPE) {
+      this.dismissMenu();
+      return true;
+    }
+    return false;
+  }
+
+  /** 移动高亮。到底/到顶后停在边界（不做环绕，避免误触回到底部）。 */
+  private moveSelection(delta: number): void {
+    const count: number = this.flatCommands.length;
+    if (count === 0) {
+      return;
+    }
+    let next: number = this.selectedIndex + delta;
+    if (next < 0) {
+      next = 0;
+    }
+    if (next > count - 1) {
+      next = count - 1;
+    }
+    if (next === this.selectedIndex) {
+      return;
+    }
+    this.selectedIndex = next;
+    this.scrollSelectionIntoView();
+  }
+
+  /** 执行当前高亮的命令（越界时无动作 —— 空结果只有「无匹配命令」提示行，不可选）。 */
+  private executeSelected(): void {
+    if (this.selectedIndex < 0 || this.selectedIndex >= this.flatCommands.length) {
+      return;
+    }
+    this.executeCommand(this.flatCommands[this.selectedIndex]);
+  }
+
+  /**
+   * 把高亮行滚入视口（含 48vp 余量，让选中项不贴边）。
+   * 行 y 由 onAreaChange 实测回填；未实测到（尚未布局）时不动 —— 不猜。
+   */
+  private scrollSelectionIntoView(): void {
+    if (this.selectedIndex < 0 || this.selectedIndex >= this.flatCommands.length) {
+      return;
+    }
+    const top = this.rowTops.get(this.flatCommands[this.selectedIndex].id);
+    if (top === undefined) {
+      return;
+    }
+    let yOffset: number = top - 48;
+    if (yOffset < 0) {
+      yOffset = 0;
+    }
+    // ScrollOptions 的 xOffset 是必填项（SDK scroll.d.ts:648-689），横向不动传 0。
+    this.listScroller.scrollTo({ xOffset: 0, yOffset: yOffset });
+  }
+
+  /** 命令行的扁平下标（用于高亮判定）；不在当前过滤结果中时返回 -1。 */
+  private flatIndexOf(cmd: SlashCommand): number {
+    return this.flatCommands.indexOf(cmd);
+  }
+
+  /** 命令行的背景色：键盘选中 > 透明（本组件无 hover 态，触屏不产生 onHover）。 */
+  private commandRowBackground(cmd: SlashCommand): ResourceColor {
+    if (this.flatIndexOf(cmd) === this.selectedIndex) {
+      return $r('app.color.accent_soft');
+    }
+    return Color.Transparent;
   }
 
   build() {
@@ -202,15 +339,31 @@ export struct SlashMenu {
           .width('100%')
           .height(40)
           .padding({ left: 12, right: 12 })
-          .onChange((value: string) => {
+          .onChange((value: string, previewText?: PreviewText) => {
             this.filterText = value;
+            // U2.2/W11：上报 IME 预览文本 —— 组词态下的回车属于输入法，不得被路由抢走
+            // （依据：text_common.d.ts:481 / 625-646，见 OverlayKeyRouter 类头 §SDK 依据）。
+            OverlayKeyRouter.getInstance().reportImePreviewText(OverlayId.SLASH_MENU, previewText);
             this.filterCommands(value);
+          })
+          // ↵ 执行当前高亮命令 —— 走 onSubmit（输入法处理完合成之后才发出），
+          // 组词态的回车归输入法上屏（理由与实测见 OverlayKeyRouter 类头 §IME 守卫）。
+          .onSubmit(() => {
+            this.executeSelected();
+          })
+          // ⚠️ W11 实测后**不用 `onKeyPreIme`**（理由见 OverlayKeyRouter 类头 §IME 守卫）：
+          //    preIme 早于输入法会抢走拼音组词的回车，而组词期间应用收不到合成态信号。
+          //    改用 post-IME 的 `onKeyEvent`：输入法先拒绝，它不要的键才轮到本菜单。
+          .onKeyEvent((event: KeyEvent) => {
+            if (OverlayKeyRouter.getInstance().handle(event, OverlayId.SLASH_MENU)) {
+              event.stopPropagation();
+            }
           })
 
         Divider()
           .color($r('app.color.border'))
 
-        Scroll() {
+        Scroll(this.listScroller) {
           Column({ space: 0 }) {
             if (this.filteredGroups.length === 0) {
               Text('无匹配命令')
@@ -221,12 +374,17 @@ export struct SlashMenu {
                 .padding({ top: 24, bottom: 24 })
             }
             ForEach(this.filteredGroups, (group: CommandGroup) => {
+              // 分类标题行：不可选中（不进 flatCommands 下标空间），但它的 y 要登记 ——
+              // 「高亮行滚入视口」用的是行 y 实测值，标题行高度与 48vp 命令行不同。
               Text(group.label)
                 .fontSize(11)
                 .fontWeight(FontWeight.Medium)
                 .fontColor($r('app.color.muted_text'))
                 .width('100%')
                 .padding({ left: 12, top: 8, bottom: 4 })
+                .onAreaChange((_oldArea: Area, newArea: Area) => {
+                  this.rowTops.set('header_' + group.category, SlashMenu.areaVp(newArea.position.y));
+                })
 
               ForEach(group.commands, (cmd: SlashCommand) => {
                 Row({ space: 10 }) {
@@ -247,6 +405,12 @@ export struct SlashMenu {
                 .height(48)
                 .padding({ left: 12, right: 12 })
                 .borderRadius(6)
+                // 键盘选中行：与 CommandPalette/SearchPanel 同一视觉语言
+                // （accent_soft = 选中；本组件无 hover 态 —— 触屏不产生 onHover）。
+                .backgroundColor(this.commandRowBackground(cmd))
+                .onAreaChange((_oldArea: Area, newArea: Area) => {
+                  this.rowTops.set(cmd.id, SlashMenu.areaVp(newArea.position.y));
+                })
                 .onClick(() => {
                   this.executeCommand(cmd);
                 })
@@ -264,7 +428,30 @@ export struct SlashMenu {
       .backgroundColor($r('app.color.surface1'))
       .borderRadius(8)
       .shadow({ radius: 8, color: '#20000000' })
+      // 兜底落点：焦点不在过滤输入框（如落在列表上）时仍能接管 ↑↓ / ↵ / esc。
+      // 与输入框上的回调同走路由器一份去重标记，不会一次按键走两格。
+      .onKeyEvent((event: KeyEvent) => {
+        if (OverlayKeyRouter.getInstance().handle(event, OverlayId.SLASH_MENU)) {
+          event.stopPropagation();
+        }
+      })
     }
+  }
+
+  /**
+   * 把 Area 的 Length（string | number | Resource）取成 vp 数值。
+   * onAreaChange 在布局回调中给出的 position/height 为 number（vp），
+   * 但类型上仍是 Length 联合体，ArkTS 禁用 any，故必须显式收窄
+   * （与 BlockDragLayer.toVpNumber / BlockView.areaVp 同一处理）。
+   */
+  private static areaVp(value: Length | undefined): number {
+    if (value === undefined) {
+      return 0;
+    }
+    if (typeof value === 'number') {
+      return value;
+    }
+    return 0;
   }
 
   /**
@@ -311,6 +498,12 @@ export struct SlashMenu {
     }
 
     this.filteredGroups = groups;
+    // 扁平序列 = 键盘导航的下标空间（只含命令行；顺序与渲染顺序一致 ⇒
+    // 「分类间跳转」天然成立：跨过分类边界只是下标 +1）。
+    // 过滤后高亮必须归零：否则旧下标可能越界或指向另一条命令
+    // （与 CommandPalette.doSearch「输入后回车打开了意料之外的页面」同一处理）。
+    this.flatCommands = commands;
+    this.selectedIndex = 0;
   }
 
   /**
@@ -323,24 +516,24 @@ export struct SlashMenu {
     if (cmd.id === 'todo' || cmd.id === 'doing' || cmd.id === 'done' ||
         cmd.id === 'cancelled' || cmd.id === 'later' || cmd.id === 'now') {
       ws.executeOp({ type: 'set-marker', uuid: this.blockUuid, marker: cmd.name });
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
 
     // ─── 优先级 ───
     if (cmd.id === 'priority-a') {
       ws.executeOp({ type: 'set-priority', uuid: this.blockUuid, priority: 'A' });
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
     if (cmd.id === 'priority-b') {
       ws.executeOp({ type: 'set-priority', uuid: this.blockUuid, priority: 'B' });
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
     if (cmd.id === 'priority-c') {
       ws.executeOp({ type: 'set-priority', uuid: this.blockUuid, priority: 'C' });
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
 
@@ -348,13 +541,13 @@ export struct SlashMenu {
     if (cmd.id === 'scheduled') {
       const today = this.getTodayString();
       ws.executeOp({ type: 'set-scheduled', uuid: this.blockUuid, date: today });
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
     if (cmd.id === 'deadline') {
       const today = this.getTodayString();
       ws.executeOp({ type: 'set-deadline', uuid: this.blockUuid, date: today });
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
 
@@ -368,36 +561,36 @@ export struct SlashMenu {
     // ─── 引用 ───
     if (cmd.id === 'page-ref') {
       this.insertText('[[');
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
     if (cmd.id === 'block-ref') {
       this.insertText('((');
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
 
     // ─── 媒体 ───
     if (cmd.id === 'image') {
       this.insertText('![]()');
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
     if (cmd.id === 'code-block') {
       this.insertText('\n```\n```\n');
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
     if (cmd.id === 'embed') {
       this.insertText('{{embed ');
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
 
     // ─── 查询 ───
     if (cmd.id === 'query') {
       this.insertText('{{query: }}');
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
 
@@ -409,7 +602,7 @@ export struct SlashMenu {
         name: 'key',
         value: 'value'
       });
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
 
@@ -422,11 +615,11 @@ export struct SlashMenu {
         originalName: pageName
       });
       AppState.setCurrentPage(pageName);
-      this.dismissed = true;
+      this.dismissMenu();
       return;
     }
 
-    this.dismissed = true;
+    this.dismissMenu();
   }
 
   /**
@@ -451,7 +644,7 @@ export struct SlashMenu {
     if (block) {
       editor.updateBlockContent(this.blockUuid, block.content + '\n' + expanded);
     }
-    this.dismissed = true;
+    this.dismissMenu();
   }
 
   /**
