@@ -108,6 +108,16 @@ export struct BlockEditor {
   private keyRouted: number = 0;
   /** W5：组件是否已销毁（焦点重试的守卫） */
   private destroyed: boolean = false;
+  /**
+   * ★ W9 新增 ★ 「刚收到过一个**应用能看见的**字母键」—— 组词态守卫的判据（仅 Enter 用）。
+   *
+   * 推导见 `routeKeyPreIme()` 头：本机上**输入法会先于应用消费按键**，因此
+   *   · 组词中：字母被输入法吞掉 ⇒ `onKeyPreIme` **收不到**它 ⇒ 本标记保持 false
+   *   · 非组词：字母到达 `onKeyPreIme` ⇒ 本标记置 true
+   * 于是「Enter 到达 preIme 时本标记是否为 true」就把两种态分开了。
+   * ⚠️ 只在焦点离开本块时复位（`handleBlur`），**刻意不在提交时复位**，理由见 `routeKeyPreIme()` 头。
+   */
+  private sawLetterKey: boolean = false;
   /** W5：焦点重试的间隔与次数上限（实测 `requestFocus`→`onFocus` ≈620ms，见方法头） */
   private static readonly FOCUS_RETRY_MS: number = 320;
   private static readonly FOCUS_MAX_ATTEMPTS: number = 4;
@@ -119,6 +129,14 @@ export struct BlockEditor {
   private static readonly K_DEL: number = 2055;
   private static readonly K_DPAD_UP: number = 2012;
   private static readonly K_DPAD_DOWN: number = 2013;
+
+  /**
+   * ★ W9 新增 ★ `keyCode` 是否为**字母键**（`KEYCODE_A`…`KEYCODE_Z` = 2017…2042）。
+   * 用于组词态守卫的「用户刚打过字吗」判据 —— 见 `routeKeyPreIme()` 头。
+   */
+  private static isLetterKeyCode(code: number): boolean {
+    return code >= 2017 && code <= 2042;
+  }
 
   private static readonly TAG = 'BlockEditor';
   private static readonly DOMAIN = 0x0002;
@@ -373,7 +391,7 @@ export struct BlockEditor {
    *       **没有 `OnKeyEventInteral Node process self: Node RichEditor`**，
    *       键被 `List/Column/Stack/page` 直接接走（`insertLen` 再也没出现）。
    *   ⇒ **保持同步重建**（W2/W4 的既有形态），本窗口**不在这里做时序改造** ✗。
-   *   真正让 Enter 可用的办法是**不让 native 去插那个换行**（见 `routeKeyDispatch`），
+   *   真正让 Enter 可用的办法是**不让 native 去插那个换行**（见 `routeKeyEnter`），
    *   而不是跟 native 抢时序。
    */
   private onSelectionChange(): void {
@@ -446,20 +464,20 @@ export struct BlockEditor {
   //        onKeyEventDispatch → onKeyEvent），**输入法消费掉的键不会到达 onKeyEvent**
   //      （W11 已实测「拼音字母键 0 次进入路由器」就是这条机制的旁证）
   //      ⇒ 「让输入法先拒绝」这条 W11 用代价换来的纪律在这里**被完整保留** ✓。
-  //   ③ `Enter` ⇒ **落在 `onKeyEventDispatch`**，这是唯一同时满足两件事的窗口。
-  //      它**晚于输入法事件**（SDK 同段原文的顺序：preIme → keyboardShortcut →
-  //      **input method events** → onKeyEventDispatch → onKeyEvent）、**早于 native 编辑器**
-  //      （W5 实测顺序：`preIme → dispatch → native PerformAction`）。
-  //      ⇒ 组词态：输入法把回车用于上屏、**消费掉的键不会到达本回调**
-  //        （与 W11 实测「拼音字母键 0 次进入路由器」是同一条机制）⇒
-  //        **W11 的组词守卫被结构性地保住**（不是靠猜合成态，而是根本没有竞争）✓
-  //      ⇒ 非组词：我们在 native 之前接管，**不让 native 去插那个换行** ——
-  //        这是必须的，实测 native 自己插换行时
-  //        `AddTextSpan(opts={index=-1, len=1, themeFC=1})` **必然报 `spanIndex error`**
-  //        （纯 native 路径同样失败），换行永远进不了 span 树。
-  //      ⇒ 顺便回答「RichEditor 自己先吃掉 Enter 是否天然满足 IME 优先」：
-  //        **不成立** ✗ —— 实测 Enter 的 Down 也能到 ContentArea 的 `onKeyPreIme`，
-  //        并不是「RichEditor 独吞」；真正满足 IME 优先的是**落点选在 post-IME 的 dispatch**。
+  //   ③ `Enter` ⇒ **落在 `onKeyPreIme`，并带一个组词态守卫**（★ W9 定稿 ★）。
+  //      ⚠️ 本条经历了三次结论变化，务必读全，否则会重复走弯路：
+  //      · W5 写：「Enter 放 preIme」+ 用「输入法消费掉的键不会到达应用回调」排除组词风险
+  //      · W8 实测**证伪**：preIme 消费 ⇒ 输入法永远拿不到回车 ⇒ 判据④判负 ✗
+  //      · W9 先按「把 Enter 整段搬到 post-IME 的 `onKeyEventDispatch`」实现，实测发现
+  //        **本机上输入法会把 Enter 的 Down 在 post-IME 之前吃掉**（`W9PROBE dispatch code=2054
+  //        type=1` —— 只到抬起；同会话里 ↑↓ 两相都到、Tab 的 Up 也到 ⇒ 不是回调没挂上）
+  //        ⇒ **非组词态的 Enter 整个失效** ✗ ⇒ 该方案不可行，回到 preIme。
+  //      · W9 定稿：**留在 preIme**，但用「**应用是否看得见字母键**」判组词态
+  //        （推导与实测见 `routeKeyPreIme()` 头）⇒ 两种态各自正确 ✓
+  //      ⚠️ 与 ②的区别：`onKeyEvent` **晚于 native** ⇒ 不能放 Enter（W5 实测「太晚」，
+  //        native 的换行插入已经发生、且必然 `spanIndex error`）。
+  //      ⇒ 顺便回答「RichEditor 自己先吃掉 Enter 是否天然满足 IME 优先」：**不成立** ✗
+  //        —— 实测 Enter 的 Down 也能到 ContentArea 的 `onKeyPreIme`，并不是「RichEditor 独吞」。
   //
   // ─── 与 WebEditor 时代的语义对齐（`WebEditor.ets` 的 HTML `keydown`）───
   //   | 键            | WebEditor（HTML 侧）        | 本实现（B 形态）              |
@@ -481,6 +499,42 @@ export struct BlockEditor {
       return false;
     }
     return true;
+  }
+
+  /**
+   * ★ W9 新增 ★ 本组件此刻是否处于 **IME 合成态**（预编辑缓冲区里有未上屏的字）。
+   *
+   * ⚠️ 定位说明：**这不是主要判据**（主要判据是 `sawLetterKey`，见 `routeKeyPreIme()` 头），
+   * 而是「万一某个输入法**确实**走 previewText 协议」时的另一条独立信号 —— 两条都判「非合成」
+   * 才由应用接管回车。本机上它**恒为 false**（实测见下），所以它不改变任何行为。
+   *
+   * W9 逐条核查了 `rich_editor.d.ts` 的全部 IME 通道，结论是**没有一条能在合成期间报出状态**：
+   *   | 通道 | 时机 | 本机实测（W9，2in1） |
+   *   |---|---|---|
+   *   | `getPreviewText()`（`rich_editor.d.ts:2295-2307`，返回 `PreviewText{offset,value}`，`text_common.d.ts:625+`）| 任意时刻可读 | 控制器可用（不抛异常），但组词态 **value 恒为空（len=0）** ⇒ 拿不到合成文本 |
+   *   | `aboutToIMEInput`（`:2786-2807`，入参含 `previewText?`）| IME **提交**之前 | 组词期间 **0 次**；只在上屏那一次触发 |
+   *   | `onIMEInputComplete` / `onDidIMEInput`（`:2808-2853`）| IME **提交完成**之后 | 属于「已上屏」信号，无法用于「上屏前」判断 |
+   *   | `onWillChange` / `onDidChange` | 内容**将要/已经**变化 | 组词不改变内容 ⇒ 不触发 |
+   *   | `KeyEvent` 字段（`common.d.ts:11038-11182`：type/keyCode/keyText/keySource/deviceId/metaKey/timestamp/unicode/…）| — | **没有**任何合成态字段 ✗ |
+   *   | `@ohos.inputMethod` 公开面（`getInputMethodState()` 只回 `EnabledState`；`on('setPreviewText')`/`on('finishTextPreview')` 是**输入法应用**侧，`getInputMethodState` 对普通应用直接报 `12800004 - not an input method application`）| — | 普通应用查不到「是否正在合成」✗ |
+   * W9 实测日志（组词 `ni'hao` + Enter，探针 `W9PROBE`）：
+   *   `preIme code=2054 … prev=ok len=0 off=0 comp=0`
+   *   → `aboutToIMEInput off=8 val=n prevText=` → `onIMEInputComplete val=…` → `onDidIMEInput start=8 end=9`
+   * ⇒ **合成期间应用侧一个信号都收不到**（W8/W11 的登记被 W9 用「轮询式接口 + 提交回调」
+   *   两个方向同时证实 ✓）。
+   *
+   * ⚠️ 出错/不可用一律**判为「非合成」**：宁可退回 W5 行为，也不能让守卫把回车永久吃掉 ✗。
+   */
+  private isComposingNow(): boolean {
+    try {
+      const pt: PreviewText = this.controller.getPreviewText();
+      if (pt === undefined || pt === null) {
+        return false;
+      }
+      return pt.value !== undefined && pt.value !== null && pt.value.length > 0;
+    } catch (e) {
+      return false;
+    }
   }
 
   /** 编辑器当前文本（spans 求和）；空提取时退回「最近一次渲染文本」 */
@@ -574,7 +628,12 @@ export struct BlockEditor {
   }
 
   /**
-   * pre-IME 键路由（**只放 Tab / Shift+Tab**，见本节头 ①②③ 的分工说明）。
+   * pre-IME 键路由（**Tab / Shift+Tab / Enter**，见本节头 ①②③ 的分工说明）。
+   *
+   * ★ W9 定稿（对症，判据④）★：Enter **留在本函数**，但加一个**组词态守卫**
+   *   （`sawLetterKey` / `isComposingNow()`）——
+   *   理由与三组 A/B 实测见函数体内的长注释，结论是「Enter 整段搬到 post-IME」在本环境
+   *   **不可行**（输入法会把 Enter 的 Down 在 post-IME 之前吃掉）。
    *
    * @returns true = 已消费（调用方 `return true` ⇒ 键不再交给输入法与 native 编辑器）
    */
@@ -586,9 +645,50 @@ export struct BlockEditor {
       return false;
     }
     const code = event.keyCode;
-    // ─── Enter / 小键盘 Enter ⇒ 见 routeKeyEnter（本窗口实测：pre-IME 是唯一能拦住
-    //     native 插换行的落点；组词态由「输入法消费掉的键到不了这里」保证不抢）───
+    // ─── ★ W9（判据④，对症）★ 组词态守卫 + Enter 归属 ───
+    // 背景（W9 在 MateBook Pro / 2in1 上的实测，三组对照）：
+    //   ① **preIme 消费 Enter**（W5 形态）⇒ 组词 `ni'hao` + Enter ⇒ `enter->create-below`、
+    //      磁盘 3196→3199（+3，只建块）、**拼音原文未上屏** ✗ —— 判据④判负
+    //   ② **preIme 放行 Enter**（W9 首版，改由 post-IME 的 `onKeyEventDispatch` 接）⇒
+    //      组词态 ✓ 通过（IME 拿到回车并上屏：`aboutToIMEInput val=…` →
+    //      `onIMEInputComplete`，磁盘 3278→3283 = +5 字节的 `nihao`，`od -c` 无 `\n` ✓）
+    //      但**非组词态 Enter 整个失效** ✗：`W9PROBE dispatch code=2054 **type=1**` —— 只到
+    //      **抬起**、Down 从未到达 post-IME。同一次会话里 `↓/↑` 两相都到（`type=0/1`）、
+    //      `Tab` 的 Down 被 preIme 自己消费而 Up 到达 ⇒ **不是回调没挂上，是 Enter 的 Down
+    //      被输入法在 post-IME 之前就拿走了** ✗
+    //   ⇒ 两条硬事实的夹缝：**应用只能在 preIme 看到 Enter 的 Down；而只要放行，输入法就会
+    //     把它吃掉（不分是否组词）** ⇒「把 Enter 整段搬到 post-IME」在本环境**不可行**，
+    //     必须留在 preIme，并在 preIme 里区分组词态。
+    //
+    // ─── 区分组词态的判据：`sawLetterKey`（不是猜，是同一台设备上的对照事实）───
+    //   · 逐条核查过 `RichEditor` 的全部合成态通道，**没有一个能用**（证据见 `isComposingNow()` 头）：
+    //     `getPreviewText()` 组词中恒为 `len=0`；`aboutToIMEInput`/`onIMEInputComplete`/
+    //     `onDidIMEInput` 都只在**上屏之后**才来；`KeyEvent` 无合成态字段。
+    //   · 但有一条**结构性**事实可用：**输入法先把键吃掉，应用才看得到剩下的**。
+    //     组词期间拼音字母由输入法消费 ⇒ 应用在 preIme **收不到字母**；
+    //     非组词时字母直达 preIme ⇒ 应用**收得到**（W9 实测：注入 5 个字母全部命中 preIme ✓）。
+    //   · 于是：Enter 到达 preIme 时，若**刚见过字母键** ⇒ 输入法手里很可能有未上屏的拼音 ⇒ 放行；
+    //     若**没见过** ⇒ 光标处没有待上屏内容 ⇒ 应用接管（W5/W6/W7 的 Enter 语义全部保住）。
+    //     ⚠️ 刻意**不在「输入法提交文本」时复位**（例如挂在 `onDidChange` 上）：
+    //        本机的组词**提交发生在回车的那一刻**（实测：preIme 收到 2054 → 紧接着
+    //        `aboutToIMEInput val=n`/`onIMEInputComplete`）⇒ 若在提交时复位，会得到一个
+    //        **复位后紧跟着回车**的序列，而「放行之后输入法会把回车吃掉」这条事实
+    //        （见上 ②）意味着那个回车会**凭空消失** ✗ —— 恰好又制造出「回车没反应」的 bug。
+    //        复位点因此只有**焦点离开本块**（见 `handleBlur`），与实测装置一一对应。
+    //        （副作用：块内打字后回车也会先让给输入法一次 —— 见交付文档「未验证项/保守项」。）
+    if (BlockEditor.isLetterKeyCode(code)) {
+      this.sawLetterKey = true;
+    }
     if (code === BlockEditor.K_ENTER || code === BlockEditor.K_NUMPAD_ENTER) {
+      // 两条独立判据，**任一**判为「合成中」就放行（纵深防护，见 `isComposingNow()` 头）：
+      //   ① `sawLetterKey` —— 本机唯一有效的判据（结构性事实，见上）
+      //   ② `isComposingNow()` —— 走 previewText 协议的输入法的兜底（本机恒 false）
+      if (this.sawLetterKey || this.isComposingNow()) {
+        hilog.info(BlockEditor.DOMAIN, BlockEditor.TAG,
+          'W9KEY enter->let-ime letter=%{public}s prev=%{public}s block=%{public}s',
+          this.sawLetterKey ? '1' : '0', this.isComposingNow() ? '1' : '0', this.blockUuid);
+        return false;
+      }
       return this.routeKeyEnter(event);
     }
     if (code !== BlockEditor.K_TAB) {
@@ -714,35 +814,24 @@ export struct BlockEditor {
   }
 
   /**
-   * Enter / 小键盘 Enter 的接管（落点 = `onKeyPreIme`，理由见下方 ★）。
+   * Enter / 小键盘 Enter 的接管（落点 = `onKeyPreIme`，**门外有一道组词态守卫**）。
    *
-   * ─── ★ 为什么最终落在 pre-IME ───
-   *  本窗口把三个候选落点都实测了一遍，结论是**只有 pre-IME 能用**：
-   *   | 落点                    | 实测结果 |
-   *   |-------------------------|----------|
-   *   | `onKeyEvent`（post-IME）| ✗ **太晚**：日志顺序是 `PerformAction(action=8)` → `insertLen=1` → `caret:6->7`，native 的换行插入**已经发生**；而那条插入必然报
-   *   |                         |   `AddTextSpan(opts={index=-1,len=1,themeFC=1}) → spanIndex error, return`（纯 native 路径同样失败）⇒ 换行进不了 span 树， |
-   *   |                         |   内容模型与编辑器从此错位（后续每个字符都 `spanIndex error` 而丢失） |
-   *   | `onKeyEventDispatch`    | ✗ **键送不到编辑器**：实测挂上它之后 `AceFocus` 里连 `OnKeyEventInteral Node process self: Node RichEditor` 都不再出现 |
-   *   |                         |   （只剩 `List/Column/Stack/page` 接手），**普通字母输入整个失效**（磁盘逐字节不变） |
-   *   | **`onKeyPreIme`**       | ✓ 能拦住 native（返回 true ⇒ 后续回调与输入法事件都不再触发）；且 `Tab` 本来就必须挂这里 |
+   * ─── ★★ W9：为什么最终留在 pre-IME（而不是搬到 post-IME）★★ ───
+   * W5 把 Enter 放在 pre-IME 的**理由**（「只有 pre-IME 能拦住 native 插换行」）依然成立 ✓，
+   * 但 W5 用来**排除组词态风险**的那条旁证不成立 ✗ —— 它写的是
+   * 「输入法消费掉的键不会到达应用的按键回调（W11 实测拼音字母键 0 次进入路由器）」，
+   * 而这条机制**只对 post-IME 回调成立**（同一文件 `:442-448` 正是为此把 ↑↓/Backspace 放 post-IME）。
+   * W8 在 2in1 上实测证伪：preIme 里 `return true` ⇒ **IME 从来没拿到过回车** ✗。
    *
-   * ─── 对输入法（中文组词）的影响 —— 必须说清 ✗ ───
-   *  · **风险**：`onKeyPreIme` 早于输入法，返回 true 会连 input method events 一起拦
-   *    （SDK `common.d.ts:18672-18687` 原文）。若在**组词态**拦下回车，输入法的
-   *    「上屏」指令就收不到 —— 这正是 W11 用设备实测换来的教训（候选条在屏时回车被吃掉）。
-   *  · **本实现的底气来自两条 W11 已实测的机制，而不是猜测**：
-   *    ① **输入法消费掉的键不会到达应用的按键回调**（W11 实测：拼音字母键
-   *       「0 次进入路由器」，而它们确实被输入法用掉了）⇒ 组词期间的回车**根本不会
-   *       走到本函数**，我们无从抢起；
-   *    ② 组词上屏只改变**编辑器文本**、不产生换行 ⇒ 即便某个输入法把回车放行下来，
-   *       我们的动作也只是「在光标处插入换行 / 建兄弟块」，不会丢弃已上屏内容。
-   *  · **但必须如实登记一条不可自证项** ✗：本窗口在**平板**上做验证，而
-   *    AGENTS 陷阱 21 的定论是「平板：`uitest uiInput keyEvent` 注入键**不过 IME**」
-   *    ⇒ **本窗口拿不到「真实中文组词 + 回车」的现场**。该场景需在 2in1（`MateBook Pro`）
-   *    上按 §7c 的阳性对照复跑，见交付文档「未验证项」。
-   *  · 反面选项（不接管 Enter）的代价已实测：Enter 会留下「模型里有 `\n`、编辑器看不到、
-   *    后续输入继续报 `spanIndex error`」的坏状态（见上表）⇒ 两害相权，接管 Enter。
+   * W9 先按「**换落点**」实现（Enter 搬到 post-IME 的 `onKeyEventDispatch`），
+   * 组词态确实修好了 ✓，但**非组词态 Enter 整个失效** ✗ —— 实测本机上
+   * 输入法会把 Enter 的 **Down** 在 post-IME 之前吃掉（`W9PROBE dispatch code=2054 type=1`：
+   * 只到**抬起**；同一会话里 `↑/↓` 两相都到、`Tab` 的 Up 也到 ⇒ 不是回调没挂上）。
+   * ⇒ **「换落点」在本环境不可行**，只能留在 preIme + 在 preIme 里判组词态
+   *   （判据与实测见 `routeKeyPreIme()` 头）。
+   * ⇒ 本函数体**一行未改**：语义（行中/Shift ⇒ 块内换行；末尾 ⇒ 建兄弟块）逐字保持 W5 形态 ✓。
+   *
+   * @returns true = 已消费
    */
   private routeKeyEnter(event: KeyEvent): boolean {
     let shift = false;
@@ -828,6 +917,9 @@ export struct BlockEditor {
 
   private handleBlur(): void {
     this.focusedOnce = false;
+    // ★ W9 ★ 焦点离开本块 ⇒ 组词守卫复位（下一次聚焦后「没见过字母」是全新的判断）。
+    //   这是**唯一**的复位点，理由见 `routeKeyPreIme()` 头（提交时复位会让 bug 复现）。
+    this.sawLetterKey = false;
   }
 
   // ─── MarkdownToolbar 命令通道（与 WebEditor 同一把 AppStorage 键 / 同一套命令名）───
@@ -969,9 +1061,8 @@ export struct BlockEditor {
       .onBlur(() => {
         this.handleBlur();
       })
-      // ⚠️ 临时探针（W5）：键路由归属观测，用完即还原
       .onKeyPreIme((event: KeyEvent): boolean => {
-        // W5：只放 Tab / Shift+Tab（见「W5 · B 形态按键归属」小节的头 ①②③）
+        // W9：Tab / Shift+Tab + Enter（Enter 带组词态守卫，见 routeKeyPreIme 头）
         return this.routeKeyPreIme(event);
       })
       .onKeyEvent((event: KeyEvent) => {
