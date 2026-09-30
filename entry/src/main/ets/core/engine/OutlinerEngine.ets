@@ -106,7 +106,21 @@ export class OutlinerEngine {
       return { success: false, message: 'Nothing to undo', affectedUuids: [] };
     }
     this.redoStack.push(op);
+
+    // ⚠️ 与 execute() 同一条红线（W10 实测修复）：撤销删除时块**不在树里**
+    // （dispatch 时被移进了 recycleBin），`findPageForOp` → `getPageUuidForBlock`
+    // 必然解析为空 ⇒ 事后解析的 persistForOp 不落盘 ⇒ 撤销只改内存与 UI，
+    // 冷启动后「被撤销的删除」重新生效。
+    //
+    // 与 execute() 的差别在于**解析时机无法简单前移到 dispatch 之前**：
+    // 撤销删除发生在「删除已经落盘」之后，那一刻 block→page 索引早已被
+    // `doDeleteBlock` → `IndexStore.removeBlock()` 清掉，事前解析同样为空。
+    // 因此本处的正确时机是 **undoOp() 之后、persistForOp() 之前** ——
+    // `restoreFromRecycleBin` 已把块放回树中，而 `restoreBlockIndex` 把索引一并补回
+    // （见其注释：删除→撤销会让索引永久缺失，属另一个真实不一致）。
+    // 其余 op 的 undo 不改变块的存在性，前后解析结果相同，语义零漂移。
     const result = this.undoOp(op);
+    this.restoreBlockIndex(op, result.affectedUuids);
     this.persistForOp(op);
     return result;
   }
@@ -123,12 +137,19 @@ export class OutlinerEngine {
       return { success: false, message: 'Nothing to redo', affectedUuids: [] };
     }
     this.undoStack.push(op);
+
+    // ⚠️ 与 execute() 完全相同的问题与修法：redo 一个删除时，块此刻**仍在树里**
+    // （undo 已把它从 recycleBin 恢复），但 `dispatch(op)` 内部又会
+    // `IndexStore.removeBlock()` 清掉 block→page 索引 ⇒ 事后解析为空 ⇒ 不落盘。
+    // 故与 execute() 一致，在 dispatch **之前**解析并把结果作为 override 传下去。
+    const pageIdBeforeOp = this.findPageForOp(op);
+
     const result = this.dispatch(op);
     // 修复：redo 后记录结果，保证再次 undo 能正确还原
     if (result.success) {
       this.lastOpResults.set(op, result.affectedUuids);
     }
-    this.persistForOp(op);
+    this.persistForOp(op, pageIdBeforeOp);
     return result;
   }
 
@@ -333,10 +354,27 @@ export class OutlinerEngine {
       return { success: false, message: 'Cannot undo insert: no UUID recorded', affectedUuids: [] };
     }
     if (op.type === 'delete-block') {
-      // undo delete = restore from recycle bin
+      // undo delete = restore from recycle bin（单块及其子树一起回来）
       this.blockTree.restoreFromRecycleBin(op.uuid);
       this.lastOpResults.delete(op);
       return { success: true, message: 'Block restored', affectedUuids: [op.uuid] };
+    }
+    if (op.type === 'delete-blocks') {
+      // 多选批量删除的 undo 此前**完全缺失**（落到末尾「暂不支持」分支）：
+      // EditorService.deleteSelected 现已改发单个 delete-blocks，
+      // 缺这一条会让「批量删除后撤销」静默无效。此处补齐，与单块语义一致。
+      //
+      // ⚠️ 恢复顺序由 `collectRestoreRoots` 决定（删除序号**逆序**，后删的先回），
+      // 不能按 affectedUuids 的顺序逐个 restore —— 位置会错位，理由见该方法注释。
+      const restored: string[] = [];
+      const roots = this.blockTree.collectRestoreRoots(affectedUuids ? affectedUuids : []);
+      for (let i = 0; i < roots.length; i++) {
+        if (this.blockTree.restoreFromRecycleBin(roots[i])) {
+          restored.push(roots[i]);
+        }
+      }
+      this.lastOpResults.delete(op);
+      return { success: true, message: 'Blocks restored', affectedUuids: restored };
     }
     if (op.type === 'update-block') {
       // undo update: 需要旧内容 — 此前未保存，标记不支持
@@ -365,6 +403,34 @@ export class OutlinerEngine {
   }
 
   // ─── 辅助 ───
+
+  /**
+   * 撤销/重做删除后，把恢复回树里的块重新写回 block→page 索引。
+   *
+   * 为什么必须补这一步（两件事同时被它解决）：
+   *  1. **落盘**：删除时 `doDeleteBlock`/`doDeleteBlocks` 调用了
+   *     `IndexStore.removeBlock()`，而 `BlockTree.restoreFromRecycleBin()` 只恢复
+   *     blockMap/childrenMap，**不碰索引** ⇒ 撤销之后 `findPageForOp` 对该块永远返回空
+   *     ⇒ persistForOp 不落盘（撤销不落盘的真根因）。
+   *  2. **索引一致性**：不补的话，「删除 → 撤销 → 再删除」时
+   *     `doDeleteBlock` 里的 removeBlock 是空操作、索引里始终缺这一条，
+   *     其后任何依赖 `getPageUuidForBlock` 的路径（反链/定位/落盘解析）对该块都失明。
+   *
+   * 只对删除类 op 生效，且只索引**当前确实在树里**的块（撤销失败留下的悬空 uuid
+   * 不应被写进索引）。索引的 pageId 直接取自块自身（BlockData.pageId 不可变）。
+   */
+  private restoreBlockIndex(op: OutlinerOp, affectedUuids: string[]): void {
+    if (op.type !== 'delete-block' && op.type !== 'delete-blocks') {
+      return;
+    }
+    const indexStore = this.dataStore.getIndexStore();
+    for (let i = 0; i < affectedUuids.length; i++) {
+      const block = this.blockTree.getBlock(affectedUuids[i]);
+      if (block) {
+        indexStore.indexBlock(block.uuid, block.pageId);
+      }
+    }
+  }
 
   private extractUuids(blocks: BlockData[]): string[] {
     const result: string[] = [];

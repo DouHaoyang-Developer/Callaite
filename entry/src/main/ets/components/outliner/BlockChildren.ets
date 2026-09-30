@@ -65,9 +65,9 @@ export struct BlockChildren {
         ForEach(this.children, (child: BlockData) => {
           Column() {
             // 渲染当前子 Block（S1-H：透传行级长按上报，使子块同样可被拖拽）
+            // ⚠️ 不再传 `depth`：层级已由 BlockView 从块数据自读（见 BlockView.depth 注释）。
             BlockView({
               blockUuid: child.uuid,
-              depth: child.level,
               onRowGrab: (uuid: string, gx: number, gy: number) => {
                 this.onRowGrab(uuid, gx, gy);
               }

@@ -242,7 +242,7 @@ export struct BlockList {
             // 不会出现「父行把整棵子树包在一个容器里」导致的高度传播。
             LazyForEach(this.dataSource, (row: BlockData) => {
               Column() {
-                BlockView({ blockUuid: row.uuid, depth: row.level })
+                BlockView({ blockUuid: row.uuid })
               }
               .width('100%')
             }, (row: BlockData) => row.uuid)
@@ -294,9 +294,12 @@ export struct BlockList {
                     // S1-H：onRowGrab 指向**同一个**拖拽层实例（见 handleRowGrab），
                     // 行内不挂任何拖拽/Pan 手势，位移跟踪全部由该单实例承担。
                     // 展平后每行 uuid 唯一且明确，长按上报 / 命中表 / 落库三者的 uuid 一一对应。
+                    //
+                    // ⚠️ 不再传 `depth: row.level`：键未变的行不会重跑本 itemGenerator，
+                    //    传参型 @Prop 因此在缩进/反缩进后收不到新值（缺陷 2）。
+                    //    层级改为 BlockView 从块数据自读（见 BlockView.depth / onBlocksVersionChanged）。
                     BlockView({
                       blockUuid: row.uuid,
-                      depth: row.level,
                       onRowGrab: (uuid: string, gx: number, gy: number) => {
                         this.handleRowGrab(uuid, gx, gy);
                       }

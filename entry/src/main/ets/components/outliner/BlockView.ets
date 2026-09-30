@@ -36,7 +36,23 @@ interface EmbedItem {
 @Component
 export struct BlockView {
   @Prop blockUuid: string = '';
-  @Prop depth: number = 0;
+  /**
+   * 本行缩进层级（= 缩进引导线格数）。
+   *
+   * ⚠️ 这里**曾经是 `@Prop depth`**（由 BlockList/BlockChildren 传 `row.level`）。
+   * 它在「结构性变更」后不刷新（W9 实测、W10 修复）：
+   *   `BlockList.refreshBlocks()` → `dataSource.setBlocks()` → `onDataReloaded()`，
+   *   而 LazyForEach 的 keyGenerator 是 `row.uuid`。缩进/反缩进只改 `level`/`parentId`，
+   *   **不改 uuid** ⇒ 键未变 ⇒ LazyForEach 不为该 item 重跑 itemGenerator ⇒
+   *   传参对象不再生成 ⇒ `@Prop depth` 收不到新值，引导线/层级留在旧值。
+   *   （同一路径下**被删除的行会正确消失**，因为它的键消失了 ⇒ 可证刷新通道本身没坏，
+   *     坏的只是「键未变的项」这一格。）
+   *
+   * 现改为行内自读：`refreshBlock()` 从 `blockData.level` 取（`BlockTree.moveBlock`
+   * 连子孙一起搬 level，见 BlockTree.ets:324-329），并由下面的 blocksVersion @Watch
+   * 驱动重算。这样「层级的唯一真相」回到块数据本身，而不是靠父组件传参。
+   */
+  @State depth: number = 0;
   @State isEditing: boolean = false;
   @State showActions: boolean = false;
   @State displaySegments: ContentSegment[] = [];
@@ -65,6 +81,24 @@ export struct BlockView {
    * 各可见行据此重算 `isSelected`（只影响边框与底色，不触碰块数据）。
    */
   @StorageLink('callaite_selectionVersion') @Watch('onSelectionVersionChanged') selectionVersion: number = 0;
+  /**
+   * 数据版本号 —— 结构性变更（缩进/反缩进/删除/移动/折叠/属性）后的**行内自刷新**通道。
+   *
+   * ⚠️ 为什么 BlockView 必须自己监听（W10 修复，缺陷 2 的正面）：
+   *   本组件由 `LazyForEach(this.dataSource, itemGenerator, keyGenerator)` 创建，
+   *   键是 `row.uuid`。缩进/反缩进这类**只改结构位、不改 uuid** 的操作里，
+   *   键未变 ⇒ LazyForEach 不会重跑 itemGenerator ⇒
+   *   ① `@Prop`（如原 `depth`）拿不到新值；
+   *   ② 行内派生状态（`hasChildrenFlag` 的折箭头等）也不会被重算 ——
+   *      它们只在 `aboutToAppear`/`refreshBlock` 里算过。
+   *   表现为「数据与磁盘都变了、画面逐字节不变，离开该页再回来才对」。
+   *
+   * 本监听把刷新责任从「父组件传参」下移到「行自读自己的块数据」：
+   *   bump 只发生在**结构性**操作（`AppState.bumpBlocksVersion`），
+   *   文本输入走 `update-block` → DirtyPageTracker，**不** bump ⇒
+   *   不存在「每次按键重算所有可见行」的开销。
+   */
+  @StorageLink('callaite_blocksVersion') @Watch('onBlocksVersionChanged') private blocksVersion: number = 0;
   // 内联查询文本（{{query ...}} 或 #+BEGIN_QUERY）
   @State inlineQuery: string = '';
   // Markdown 表格原始行（按行保留，支持单元格编辑）
@@ -182,6 +216,8 @@ export struct BlockView {
     // isSelected 残留；@Watch 只在版本号**变化**时触发，创建晚于 bump 的实例收不到回调。
     this.isSelected = EditorService.getInstance().isSelected(this.blockUuid);
     if (this.blockData) {
+      // 层级从块数据现读（不再依赖父组件传参，见 depth 字段注释）
+      this.depth = this.blockData.level;
       this.displaySegments = ContentRenderer.parse(this.blockData.content);
       this.isCollapsed = this.blockData.collapsed;
       this.hasChildrenFlag = ws.getChildrenOfBlock(this.blockUuid).length > 0;
@@ -801,6 +837,23 @@ export struct BlockView {
   }
 
   // ─── U1.4 块多选 ───
+
+  /**
+   * 数据版本号变化 → 本行重读自己的块数据（缺陷 2 的修复入口）。
+   *
+   * 与「把结构位并入 keyGenerator」的候选修法相比，本方案**不改变行的身份**
+   * （LazyForEach 的键仍是 `row.uuid`），因此：
+   *   · 行内局部状态（`isEditing` 编辑态、`showActions` 展开的操作栏、`isHovered`、
+   *     表格单元格编辑态 `editingCellLine/Col/Text`）**保持存活**，不会被结构变更打断；
+   *   · `BlockDragLayer` 的命中表是按 **BlockView 实例**注册/反注册的
+   *     （aboutToAppear→register、aboutToDisappear→unregister、onAreaChange→回填矩形），
+   *     实例不重建 ⇒ 命中表不会在结构变更时被成批清空重建，S1-H 拖拽风险面最小。
+   * 代价：结构变更时对**可见行**各跑一次 `refreshBlock()`（含 ContentRenderer.parse）。
+   * 该开销只发生在结构性操作上（文本输入不 bump，见字段注释），可接受。
+   */
+  onBlocksVersionChanged(): void {
+    this.refreshBlock();
+  }
 
   /**
    * 选中态版本号变化 → 重算本行选中态。

@@ -23,6 +23,24 @@ export class BlockTree {
   /** 临时存储已从 tree 中移除但会在短时间内引用的 blocks（用于 undo） */
   private recycleBin: Map<string, BlockData> = new Map<string, BlockData>();
 
+  /**
+   * uuid → 删除时的**全局序号**（单调递增，跨删除操作连续）。
+   *
+   * 为什么必须有它，而不能靠下标/leftId 推（W10 四次实测的结论）：
+   *   撤销的正确顺序是「删除顺序的**严格逆序**」：
+   *     一次 delete-block 删的是「块 + 整棵子树」，删除时是父→子，
+   *     恢复必须子→父之外还要**后删的先回**，否则先回来的块找不到左邻居锚点
+   *     （`addToChildrenList` 会把找不到锚点的块追加到末尾 / 或全部落到最前）。
+   *   实测反例：删 2、3 后按下标排序恢复（两块下标都退化成 0）会得到
+   *     [3, 2, 4, 5, …]，导出首行成了「测试块 3」；按删除序号的逆序恢复才得到
+   *     [2, 3, 4, 5, …]。
+   *   下标做不到这一点：删除会把右侧元素左移，后删的块下标与前一个**重叠**，
+   *   信息已被破坏；序号是删除那一刻唯一没有歧义的顺序证据。
+   */
+  private deleteSeq: Map<string, number> = new Map<string, number>();
+  /** deleteSeq 的发号器 */
+  private deleteSeqCounter: number = 0;
+
   // ─── 初始化 ───
 
   /**
@@ -291,6 +309,9 @@ export class BlockTree {
     // 从 blockMap 中移除并存入 recycleBin
     for (let i = 0; i < toDelete.length; i++) {
       const b = toDelete[i];
+      // 记下全局删除序号 —— 撤销时按它的**逆序**恢复即可整段无损还原
+      this.deleteSeqCounter = this.deleteSeqCounter + 1;
+      this.deleteSeq.set(b.uuid, this.deleteSeqCounter);
       this.blockMap.delete(b.uuid);
       this.childrenMap.delete(b.uuid);
       this.recycleBin.set(b.uuid, b);
@@ -514,11 +535,86 @@ export class BlockTree {
     if (block) {
       this.recycleBin.delete(uuid);
       this.blockMap.set(uuid, block);
-      this.addToChildrenList(block.parentId, uuid, block.leftId);
+      this.addToChildrenList(block.parentId, uuid, this.restoreAnchor(block));
       // 恢复整棵子树（删除时子孙也进入了 recycleBin）
       this.restoreDescendantsFromRecycleBin(uuid);
+      // 全部插回之后再修 leftId 链（顺序见 relinkLeftIds 注释）
+      this.relinkLeftIds(block.parentId);
     }
     return block;
+  }
+
+  /**
+   * 计算「块回到 children 列表时应插在谁后面」—— 恢复路径的插入锚点。
+   *
+   * 为什么不能用 `block.leftId` 直接当锚点（W10 实测）：
+   *   `addToChildrenList` 找不到锚点时**退化为追加到末尾**。撤销「删除 2 与 3」时
+   *   块 2 的 leftId 指向 `__S1_long` 里根本不存在的块 1（解析阶段首个块 leftId=''）
+   *   ⇒ 块 2 被追加到末尾，children 变成 [3, 4, …, 2]，导出首行成了「测试块 3」。
+   *
+   * 算法：沿 leftId 链**向左回溯**，取第一个「当前在树上」或「已被本次撤销恢复」的块
+   *   （两者都已在 blockMap 中，故判据统一为 blockMap.has）。
+   *   · 左侧邻居没被删过 ⇒ 直接命中（最常见情形）。
+   *   · 左侧邻居属于同一批被删区间但**已先被恢复** ⇒ 命中它（这正是顺序要求，
+   *     见 `collectRestoreRoots`：按删除序号**逆序**恢复，故左邻居总是先回来）。
+   *   · 一路回溯到链头都没有 ⇒ 返回 ''，即插到列表最前（删的是整页前若干个块）。
+   */
+  private restoreAnchor(block: BlockData): string {
+    let cursor = block.leftId;
+    while (cursor !== '') {
+      if (this.blockMap.has(cursor)) {
+        return cursor;
+      }
+      const vanished = this.recycleBin.get(cursor);
+      if (!vanished) {
+        // 链上出现既不在树、也不在回收站的 uuid（悬空）——停止回溯，退回最前
+        break;
+      }
+      cursor = vanished.leftId;
+    }
+    return '';
+  }
+
+  /**
+   * 从回收站里挑出「本次撤销应当直接恢复的根块」，并给出**正确的恢复顺序**。
+   *
+   * 顺序 = 删除序号的**严格逆序**（后删的先回），理由（W10 多次实测的结论）：
+   *   `restoreFromRecycleBin` 把块插回它左侧邻居之后（锚点见 `restoreAnchor`），
+   *   而**左邻居必须先回到树上**才能当锚点。删除是从左往右做的，故逆序恢复
+   *   （右 → 左）时每个块的左邻居要么从未被删、要么已经回来 —— 顺序因此自洽。
+   *   实测反例：删 2、3 后若按别的顺序恢复，会得到 [3, 2, 4, 5, …] 或
+   *   [4, …, 2, 3]（导出首行变成「测试块 3」）。
+   *
+   * 只返回根块：子孙由 `restoreFromRecycleBin` → `restoreDescendantsFromRecycleBin` 递归带回。
+   * 判据用「父块是否也在这批待恢复里」——一次删除会把整棵子树一起放进回收站，
+   *   故父块不在待恢复集合 ⇒ 本块是该被删单元的根。
+   */
+  collectRestoreRoots(uuids: string[]): string[] {
+    const want = new Set<string>();
+    for (let i = 0; i < uuids.length; i++) {
+      if (this.recycleBin.has(uuids[i])) {
+        want.add(uuids[i]);
+      }
+    }
+    const ordered: string[] = [];
+    want.forEach((uuid: string) => {
+      ordered.push(uuid);
+    });
+    // 删除序号降序 = 后删的先恢复
+    ordered.sort((a: string, b: string) => {
+      return this.restoreSeqOf(b) - this.restoreSeqOf(a);
+    });
+    const roots: string[] = [];
+    for (let i = 0; i < ordered.length; i++) {
+      const block = this.recycleBin.get(ordered[i]);
+      if (!block) {
+        continue;
+      }
+      if (!want.has(block.parentId)) {
+        roots.push(ordered[i]);
+      }
+    }
+    return roots;
   }
 
   /**
@@ -532,12 +628,61 @@ export class BlockTree {
         descendants.push(candidate);
       }
     });
+    // 与 collectRestoreRoots 同一理由：删除序号**降序**（后删的先回），左邻居才能当锚点
+    descendants.sort((a: BlockData, b: BlockData) => {
+      return this.restoreSeqOf(b.uuid) - this.restoreSeqOf(a.uuid);
+    });
     for (let i = 0; i < descendants.length; i++) {
       const child = descendants[i];
       this.recycleBin.delete(child.uuid);
       this.blockMap.set(child.uuid, child);
-      this.addToChildrenList(parentUuid, child.uuid, child.leftId);
+      this.addToChildrenList(parentUuid, child.uuid, this.restoreAnchor(child));
       this.restoreDescendantsFromRecycleBin(child.uuid);
+    }
+    // 本层全部插回之后再修链
+    if (descendants.length > 0) {
+      this.relinkLeftIds(parentUuid);
+    }
+  }
+
+  /** 读删除序号，缺省时用 0（排序比较器用）。 */
+  private restoreSeqOf(uuid: string): number {
+    const seq = this.deleteSeq.get(uuid);
+    return seq === undefined ? 0 : seq;
+  }
+
+  /**
+   * 按 children 列表顺序把同层兄弟的 leftId 链整体重接为 `前一个兄弟`。
+   *
+   * 为什么需要「整体重接」而不是只接被恢复的那一块（W10 实测的两次失败教训）：
+   *   删除时 `deleteBlock` 会 `fixLeftIdOnRemoval()` 把右侧兄弟的 leftId 改写为
+   *   「被删块的左侧兄弟」，而恢复侧此前没有任何对应处理 ⇒ 链上跨过了被恢复的块
+   *   ⇒ `sortByLeftChain`（MarkdownExporter.ets:123，getChildren 同源）走链时跳不到它，
+   *   被落进「链破损兜底」分支**追加到文件末尾**。
+   *   只补「右侧兄弟指回自己」也不够：`addToChildrenList` 是按**块自己那份陈旧的
+   *   leftId** 找插入位的，当左侧兄弟不在列表里时就退化成「追加到末尾」——
+   *   实测「撤销两次删除」后 children 列表变成 [3, (余下全部), 2]，
+   *   于是导出顺序正确反而成了巧合级的结果（实测首行变成 测试块 3）。
+   *
+   * 事实标准（本仓既有实现给出的）：`BlockTree.sortChildrenList` 与
+   *   `MarkdownExporter.sortByLeftChain` 都假设 **children 列表顺序 ≡ leftId 链顺序**
+   *   （前者专门靠 leftId 链给 children 排序、后者靠链导出文件）。
+   *   因此这里以**列表顺序为准**重接 leftId：`children[i].leftId = children[i-1].uuid`
+   *   （首个为 ''）。这是幂等的，且只在恢复路径上调用。
+   *
+   * 不变量：一次删除会把「被删块及其子孙」整段从列表移除，恢复时整段插回，
+   *   故列表本身仍是删除前的相对顺序 —— 重接 leftId 后链与列表一致，撤销即为无损还原。
+   */
+  private relinkLeftIds(parentId: string): void {
+    const siblings = this.childrenMap.get(parentId);
+    if (!siblings) {
+      return;
+    }
+    for (let i = 0; i < siblings.length; i++) {
+      const block = this.blockMap.get(siblings[i]);
+      if (block) {
+        block.leftId = i === 0 ? '' : siblings[i - 1];
+      }
     }
   }
 }

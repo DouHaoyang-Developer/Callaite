@@ -100,9 +100,20 @@ export class EditorService {
 
   deleteSelected(): void {
     const ws = WorkspaceService.getInstance();
-    for (let i = 0; i < this.selectedUuids.length; i++) {
-      ws.executeOp({ type: 'delete-block', uuid: this.selectedUuids[i] });
+    if (this.selectedUuids.length === 0) {
+      return;
     }
+    // 发**单个** delete-blocks，而不是逐块 N 次 delete-block。理由：
+    //  · 每个 delete-block 都是一次「flush 全部脏页 + savePage」全量落盘，
+    //    批量删 10 块就是 10 次整页写；delete-blocks 只需要一次。
+    //  · 每个 delete-block 各占一个 undo 栈条目 ⇒ Ctrl+Z 一次只回来一块，
+    //    「批量删除」这一动作无法整体撤销。合并成一条后一次撤销恢复全部。
+    // 引擎侧的 doDeleteBlocks / findPageForOp / STRUCTURAL_OPS / undoOp 均已支持该 op。
+    const uuids: string[] = [];
+    for (let i = 0; i < this.selectedUuids.length; i++) {
+      uuids.push(this.selectedUuids[i]);
+    }
+    ws.executeOp({ type: 'delete-blocks', uuids: uuids });
     this.selectedUuids = [];
   }
 
