@@ -6,6 +6,7 @@ import { BlockData } from '../../core/models/Block';
 import { BacklinkInfo } from '../../core/db/DataStore';
 import { JournalService } from '../../services/JournalService';
 import { BlockAnchorService, BlockRevealResult, BlockRevealStatus } from '../../services/BlockAnchorService';
+import { BacklinkFilters } from './BacklinkFilters';
 
 /**
  * RightSidebar — 按 logseq right_sidebar.cljs 多块堆叠结构复刻
@@ -39,6 +40,32 @@ export struct RightSidebar {
   @State backlinksCache: BacklinkInfo[] = [];
   @State headingsCache: BlockData[] = [];
   @State propsCache: string[][] = [];
+  /**
+   * W8-U1.3：反链筛选面板模式。
+   *
+   *  · ''       —— 关闭
+   *  · 'tag'    —— filter 图标：按标签收窄（只渲染标签下拉）
+   *  · 'query'  —— search 图标：按关键词收窄（只渲染文本输入）
+   *
+   * 为什么两个图标不共用一个开关：右侧栏内容区只有 ~248vp，把
+   * 「文本输入 + 标签下拉 + 排序」三件套平铺会把输入框压到 8px 宽（实测），
+   * 且两个图标做同一件事等于只激活了一个（另一个仍是装饰）。
+   */
+  @State filterPanelMode: string = '';
+  /**
+   * W8-U1.3：+ 图标的页面选择列表开关 —— 用于把**别的页面**的反链块加进右侧栏。
+   */
+  @State addPanelOpen: boolean = false;
+  /**
+   * W8-U1.3：反链数据版本号，自增即让挂载中的 BacklinkFilters 重新拉取。
+   * 触发点：切页（onCurrentPageChanged）、聚焦块变化、增删反链块。
+   */
+  @State backlinkDataVersion: number = 0;
+  /**
+   * W8-U1.3：聚焦块。挂它只为**驱动反链刷新** —— 编辑正文会产生新的 [[引用]]，
+   * 反链面板必须跟着变，否则用户看到的是「改完了但反链没加」的假象。
+   */
+  @StorageLink('callaite_focusedBlock') @Watch('onFocusedBlockChanged') focusedBlock: string = '';
 
   aboutToAppear(): void {
     this.ensureDefaultBlocks();
@@ -50,6 +77,13 @@ export struct RightSidebar {
    */
   onCurrentPageChanged(): void {
     this.refreshCaches();
+  }
+
+  /** 聚焦块变化 ⇒ 只刷新反链（大纲/属性与聚焦块无关，不做无谓重算） */
+  onFocusedBlockChanged(): void {
+    this.backlinksCache = WorkspaceService.getInstance()
+      .getDataStore().getBacklinks(this.getCurrentDisplayPage());
+    this.backlinkDataVersion = this.backlinkDataVersion + 1;
   }
 
   /**
@@ -86,6 +120,10 @@ export struct RightSidebar {
 
   /**
    * 顶部工具栏 — 全部折叠 / 全部展开 / 全部关闭。
+   *
+   * 注：这三个图标**原本就是可点且有实义**的（各自 onClick 分别调 collapseAll /
+   * expandAll / closeAll）。本仓的「三装饰图标」指的是**反链面板头部**那三个
+   * （filter / search / plus），它们在 U1.3 之前没有任何 onClick，见 BacklinksHeader。
    */
   @Builder
   Toolbar() {
@@ -154,6 +192,17 @@ export struct RightSidebar {
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+        // W8-U1.3：反链块显示它**实际取数**的页面名。
+        // 图谱菜单塞进来的反链块 pageName 与 currentPage 不同，不标出来会让人
+        // 误以为面板显示的是当前页的反链（观感与数据对不上的静默误导）。
+        if (this.isForeignBacklinkBlock(block)) {
+          Text(this.blockPageName(block))
+            .fontSize(10)
+            .fontColor($r('app.color.muted_text'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .constraintSize({ maxWidth: 90 })
+        }
         Row() {
           TablerIcon('x', 16, $r('app.color.muted_text'))
         }
@@ -200,83 +249,238 @@ export struct RightSidebar {
     }
   }
 
+  /**
+   * W8-U1.3：反链块 —— 头部（标题 + 三个可点图标）+ 筛选工具行 + 反链列表。
+   *
+   * 与 `GraphActions.openBacklinksView()` 的关系（先弄清再接线，勿凭印象）：
+   *  · `GraphActions`（图谱节点长按菜单 →「查看反链」）**不自己渲染反链面板**，
+   *    它只是 `AppState.addRightSidebarBlock({type:'backlinks', pageName: 图谱节点名})`
+   *    然后把右侧栏打开 ⇒ 反链面板的**唯一渲染点就是本文件**。
+   *  · 所以「把 BacklinkFilters 挂到 `openBacklinksView` 里」在结构上不成立：
+   *    那里没有可挂的 UI。真正的挂载点只能是这里 —— 挂进来之后，
+   *    图谱菜单那条路径**自动**也享受到了筛选能力（同一份渲染代码）。
+   *  · 这也解释了为什么本组件必须按 `block.pageName` 取数：图谱路径塞进来的块，
+   *    其 `pageName` 是**图谱节点页**而非当前页，只认 currentPage 会让那条路径拿错数据。
+   */
   @Builder
   BacklinksContent(block: RightSidebarBlock) {
-    // ─── 标题 + 筛选工具行（对齐 Obsidian 图 10）───
-    Row({ space: 8 }) {
-      Text('反向链接 · ' + this.backlinksCache.length + ' 个结果')
+    // ─── 头部：标题 + 反链数 + 三个图标（filter / search / plus）───
+    Row({ space: 4 }) {
+      Text('反向链接 · ' + this.backlinksCache.length.toString() + ' 个结果')
         .fontSize(12)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text'))
         .layoutWeight(1)
-      TablerIcon('filter', 13, $r('app.color.muted_text'))
-      TablerIcon('search', 13, $r('app.color.muted_text'))
-      TablerIcon('plus', 13, $r('app.color.primary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      // ① filter：按**标签**收窄反链（常显热区，不挂 onHover —— 触屏无 hover，陷阱 11）
+      this.HeaderIcon('filter', this.filterPanelMode === 'tag', (): void => {
+        this.toggleFilterPanel('tag');
+      })
+      // ② search：按**关键词**收窄反链
+      this.HeaderIcon('search', this.filterPanelMode === 'query', (): void => {
+        this.toggleFilterPanel('query');
+      })
+      // ③ plus：把**另一个页面**的反链视图加进右侧栏（对齐 Obsidian「在右侧栏打开反链」）
+      this.HeaderIcon('plus', this.addPanelOpen, (): void => {
+        this.addPanelOpen = !this.addPanelOpen;
+        this.filterPanelMode = '';
+      })
     }
     .width('100%')
-    .padding({ top: 2, bottom: 6 })
+    .padding({ top: 2, bottom: 2 })
 
-    if (this.backlinksCache.length === 0) {
-      Text(t('no_backlinks'))
-        .fontSize(12)
+    // ─── 筛选/搜索面板（由 ① ② 两个图标驱动；实现由挂载的 BacklinkFilters 提供）───
+    // 这一份**只取工具栏**（showList/showCount = false）：计数行由下方列表那份提供，
+    // 两份都画计数会出现两行一模一样的「共 N 条反链」。
+    if (this.filterPanelMode !== '') {
+      Column() {
+        BacklinkFilters({
+          pageName: this.blockPageName(block),
+          dataVersion: this.backlinkDataVersion,
+          showToolbar: true,
+          showCount: false,
+          showList: false,
+          showTagOnly: this.filterPanelMode === 'tag',
+          showQueryOnly: this.filterPanelMode === 'query'
+        })
+      }
+      .width('100%')
+      .padding({ top: 4, bottom: 2 })
+    }
+
+    // ─── + 图标的页面选择（把别的页面的反链加进来）───
+    if (this.addPanelOpen) {
+      this.AddBacklinksPicker()
+    }
+
+    // ─── 反链列表（计数行 + 列表；与上面那份共用同一份 BacklinkFilters 实现）───
+    Column() {
+      BacklinkFilters({
+        pageName: this.blockPageName(block),
+        dataVersion: this.backlinkDataVersion,
+        showToolbar: false,
+        showCount: true,
+        showList: true
+      })
+    }
+    .width('100%')
+  }
+
+  /**
+   * W8-U1.3：反链块头部的图标热区（28×28，常显可点）。
+   *
+   * 不挂 `onHover`：触屏不产生 hover（AGENTS §7 陷阱 11），只挂 hover 的入口
+   * 在平板上等于不存在。激活态用 primary 色 + 淡底表示，保证「点了有没有反应」可见。
+   */
+  @Builder
+  HeaderIcon(name: string, active: boolean, onTap: () => void) {
+    Row() {
+      TablerIcon(name, 13, active ? $r('app.color.primary') : $r('app.color.muted_text'))
+    }
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .width(28)
+    .height(24)
+    .borderRadius(4)
+    .backgroundColor(active ? $r('app.color.surface2') : Color.Transparent)
+    .onClick(() => {
+      onTap();
+    })
+  }
+
+  /**
+   * 切换筛选/搜索面板（再点同一个图标即关闭）。
+   *
+   * 关掉 + 页面选择面板，避免「筛选关着但 + 的列表还挂着」的错位观感。
+   */
+  private toggleFilterPanel(mode: string): void {
+    if (this.filterPanelMode === mode) {
+      this.filterPanelMode = '';
+    } else {
+      this.filterPanelMode = mode;
+    }
+    this.addPanelOpen = false;
+  }
+
+  /**
+   * W8-U1.3：+ 图标的页面选择列表。
+   *
+   * 为什么做成**内联列表**而不是 bindMenu / bindSheet：
+   *  · bindMenu / bindContextMenu 弹在**独立子窗口**，`uitest` 注入到不了（陷阱 12）
+   *    ⇒ 做出来就是「无法验收」的交互；
+   *  · 内联列表长在侧栏里，可被 dumpLayout 看见、可被 uiInput 点到 ⇒ 可验收。
+   *
+   * 列表内容 = 自身 + 工作区里已有页面名的前 8 个（去重、去空）。
+   * 点一项即 `AppState.addRightSidebarBlock`，选中项会置顶展开（AppState 去重逻辑）。
+   */
+  @Builder
+  AddBacklinksPicker() {
+    Column({ space: 2 }) {
+      Text('在右侧栏打开哪个页面的反链？')
+        .fontSize(11)
         .fontColor($r('app.color.muted_text'))
         .width('100%')
-    } else {
-      // 按来源页分组（时间线分组，对齐 Obsidian 图 10）
-      ForEach(this.backlinkGroups(), (pageName: string) => {
-        Column({ space: 4 }) {
-          Text(pageName)
-            .fontSize(11)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.muted_text'))
-            .width('100%')
-            .padding({ top: 4 })
-          ForEach(this.groupItems(pageName), (info: BacklinkInfo) => {
-            Row({ space: 8 }) {
-              TablerIcon('arrow-right', 12, $r('app.color.muted_text'))
-              Column({ space: 2 }) {
-                Text(info.sourceContent)
-                  .fontSize(12)
-                  .fontColor($r('app.color.text'))
-                  .maxLines(2)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                if (info.isBlockRef) {
-                  Text('块引用')
-                    .fontSize(9)
-                    .fontColor($r('app.color.muted_text'))
-                }
-              }
-              .layoutWeight(1)
-              .alignItems(HorizontalAlign.Start)
-            }
-            .width('100%')
-            .padding({ top: 4, bottom: 4 })
-          }, (info: BacklinkInfo) => info.sourceBlockId)
+        .padding({ bottom: 2 })
+
+      ForEach(this.addBacklinkCandidates(), (name: string) => {
+        Row({ space: 6 }) {
+          TablerIcon('link', 12, $r('app.color.muted_text'))
+          Text(name)
+            .fontSize(12)
+            .fontColor($r('app.color.text'))
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
         .width('100%')
-      }, (pageName: string) => pageName)
+        .height(28)
+        .padding({ left: 6, right: 6 })
+        .borderRadius(4)
+        .backgroundColor($r('app.color.surface1'))
+        .onClick(() => {
+          this.openBacklinksForPage(name);
+        })
+      }, (name: string) => name)
     }
+    .width('100%')
+    .padding({ top: 4, bottom: 6 })
   }
 
-  /** 反链来源页名（按出现顺序去重） */
-  private backlinkGroups(): string[] {
-    const order: string[] = [];
-    this.backlinksCache.forEach((info: BacklinkInfo) => {
-      if (order.indexOf(info.sourcePageName) < 0) {
-        order.push(info.sourcePageName);
+  /**
+   * + 面板的候选页面：当前页 + 工作区已有页面（去重、去空、上限 8 条）。
+   *
+   * 上限是刻意的：这是侧栏里的一块内联列表，不是页面选择器对话框；
+   * 无限长会把反链列表整体挤出视口。
+   */
+  private addBacklinkCandidates(): string[] {
+    const result: string[] = [];
+    const self = this.getCurrentDisplayPage();
+    result.push(self);
+    const pages = WorkspaceService.getInstance().getAllPages();
+    for (let i = 0; i < pages.length && result.length < 8; i++) {
+      const name = pages[i].originalName;
+      if (name !== '' && result.indexOf(name) < 0) {
+        result.push(name);
       }
-    });
-    return order;
+    }
+    return result;
   }
 
-  private groupItems(pageName: string): BacklinkInfo[] {
-    const items: BacklinkInfo[] = [];
-    this.backlinksCache.forEach((info: BacklinkInfo) => {
-      if (info.sourcePageName === pageName) {
-        items.push(info);
-      }
-    });
-    return items;
+  /**
+   * 把指定页面的反链块加进右侧栏（+ 图标选项的落点）。
+   */
+  private openBacklinksForPage(name: string): void {
+    const block: RightSidebarBlock = {
+      id: 'sidebar-backlinks-' + name + '-' + Date.now(),
+      type: 'backlinks',
+      title: '反链: ' + name,
+      pageName: name,
+      collapsed: false
+    };
+    AppState.addRightSidebarBlock(block);
+    this.addPanelOpen = false;
+    this.backlinksCache = WorkspaceService.getInstance()
+      .getDataStore().getBacklinks(this.getCurrentDisplayPage());
+    this.backlinkDataVersion = this.backlinkDataVersion + 1;
+  }
+
+  /**
+   * 反链块的目标页面名（U1.3 实测修正，勿回退）。
+   *
+   * ⚠️ 这里踩过一次真坑：最初写成「无条件用 `block.pageName`」，结果右侧栏反链恒为 0。
+   * 原因是 `ensureDefaultBlocks()` 只在**首次**初始化时建块，把当时的 currentPage
+   * 永久写进了 `block.pageName`，而 `refreshCaches()` 是跟随 currentPage 的 ——
+   * 于是「自动块」的数据源被冻在了启动那一页（实测：块里写着 `Home`，
+   * 当前页却是 `__BKL_target` ⇒ 面板显示 `共 0 条反链`，而同一屏头部
+   * 「反向链接 · 2 个结果」用的是 currentPage ⇒ 两处口径打架）。
+   *
+   * 判据用块 id 前缀而不是「pageName 是否为空」：
+   *  · `backlinks-*`（AppState 自动块）：id 由 `'backlinks-' + pageName` 生成，
+   *    页面变了它也不会变，所以**必须**跟随 currentPage；
+   *  · 其余（`graph-backlinks-*` / `sidebar-backlinks-*`，由图谱菜单或 + 图标创建）：
+   *    `pageName` 是**用户显式指定**的「要看哪一页的反链」，必须尊重它。
+   */
+  blockPageName(block: RightSidebarBlock): string {
+    if (block.id.startsWith('backlinks-')) {
+      return this.getCurrentDisplayPage();
+    }
+    if (block.pageName !== undefined && block.pageName !== '') {
+      return block.pageName;
+    }
+    return this.getCurrentDisplayPage();
+  }
+
+  /**
+   * 该反链块是否显式指向「非当前页」的页面。
+   *
+   * 只有这种块才需要在块头部标出页面名 —— 否则用户会以为面板显示的是当前页的反链。
+   */
+  private isForeignBacklinkBlock(block: RightSidebarBlock): boolean {
+    return block.type === 'backlinks'
+      && !block.id.startsWith('backlinks-')
+      && this.blockPageName(block) !== this.getCurrentDisplayPage();
   }
 
   @Builder
@@ -463,6 +667,8 @@ export struct RightSidebar {
     this.backlinksCache = ws.getDataStore().getBacklinks(this.getCurrentDisplayPage());
     this.headingsCache = this.collectHeadings(ws);
     this.propsCache = this.collectProps(ws);
+    // W8-U1.3：通知挂载中的 BacklinkFilters 重新拉取（切页后它必须换数据）
+    this.backlinkDataVersion = this.backlinkDataVersion + 1;
   }
 
   collectHeadings(ws: WorkspaceService): BlockData[] {

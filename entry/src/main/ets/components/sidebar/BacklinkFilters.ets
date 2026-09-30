@@ -8,7 +8,7 @@ import { BacklinkInfo } from '../../core/db/DataStore';
  * BacklinkInfo 仅包含 sourceBlockId/sourceContent/sourcePageName/isBlockRef，
  * 筛选和排序所需的 tags/createdAt/updatedAt 通过 sourceBlockId 查询 Block 获取。
  */
-interface BacklinkDisplay {
+export interface BacklinkDisplay {
   sourceBlockId: string;
   sourceContent: string;
   sourcePageName: string;
@@ -29,12 +29,65 @@ interface BacklinkDisplay {
  *  - 排序（更新时间 / 创建时间 / 内容字母序）
  *
  * 用法：
- *   BacklinkFilters({ pageName: 'MyPage' })
+ *   BacklinkFilters({ pageName: 'MyPage' })                       // 自带工具栏（独占面板）
+ *   BacklinkFilters({ pageName: 'MyPage', showToolbar: false })   // 仅列表，工具栏由宿主渲染
+ *
+ * ⚠️ W8-U1.3：本文件此前**全仓零引用**，因此从未进入 ArkTS 编译图 ——
+ * 接线时实测它内藏一处真编译错误（`Select(...).fontSize(13)`：
+ * `Property 'fontSize' does not exist on type 'SelectAttribute'`）。
+ * 是「先接线再修错」而不是「先修错再接线」才把它暴露出来的（AGENTS §7 陷阱 1）。
+ * 详见右下角 showToolbar 注释与 RightSidebar 的挂载说明。
  */
 @Component
 export struct BacklinkFilters {
   /** 目标页面名（反链指向的页面） */
-  @Prop pageName: string;
+  @Prop @Watch('onPageNameChanged') pageName: string;
+  /**
+   * 外部数据版本号 —— 宿主在反链数据可能变化时自增它即可触发重新拉取。
+   *
+   * 为什么需要：本组件只在 aboutToAppear 里 loadBacklinks()，而宿主（右侧栏）会在
+   * 切页 / 聚焦块变化 / 增删块后刷新反链。没有这个入口时，面板会一直显示
+   * **首次挂载那一刻**的陈旧数据（且因为数据没变，界面上看不出任何异常）。
+   */
+  @Prop @Watch('onDataVersionChanged') dataVersion: number = 0;
+  /**
+   * 是否渲染本组件自带的筛选工具栏与计数行。
+   *
+   * - true （默认）：自成一体，适合把本组件当作**独占的反链面板**整体挂载。
+   * - false：只渲染反链列表；工具栏与计数由宿主负责（RightSidebar 就是这样用的 ——
+   *   它把「筛选/搜索/+」三个图标做成了**常显热区**，因为触屏不产生 onHover
+   *   （AGENTS §7 陷阱 11），把入口藏在 hover 里等于在平板上不存在）。
+   */
+  @Prop showToolbar: boolean = true;
+  /**
+   * 是否渲染「共 N 条反链」计数行。
+   *
+   * 与 showToolbar 分开是因为宿主可能**分别**挂两次本组件（RightSidebar 就是这样）：
+   * 一次只取筛选工具栏、一次只取列表。若把计数绑死在 showToolbar 上，
+   * 筛选面板与列表会各画一行相同的计数（重复 UI）。
+   */
+  @Prop showCount: boolean = true;
+  /**
+   * 是否渲染反链列表本体。
+   *
+   * 同样与上面两个开关分开：RightSidebar 挂**两次**本组件 ——
+   * 筛选面板那次只取工具栏（`showList: false`），列表那次只取计数 + 列表。
+   * 两次都带上列表就会把同一批反链画两遍。
+   */
+  @Prop showList: boolean = true;
+  /**
+   * 只渲染标签下拉（RightSidebar 的「筛选」面板）。
+   *
+   * W8-U1.3：右侧栏只有 ~248vp 宽，把「文本输入 + 标签下拉 + 排序按钮」全平铺时
+   * 每个控件都被压到不可用（实测输入框只剩 8px）。因此**按筛选维度拆开渲染**：
+   *  · showTagOnly  —— filter 图标：按标签收窄
+   *  · showQueryOnly—— search 图标：按关键词收窄
+   *  · 排序按钮两者都带（排序是视角切换，不是筛选维度）
+   * 这样既避开了宽度预算问题，也让两个图标各自有**互不相同**的实义。
+   */
+  @Prop showTagOnly: boolean = false;
+  /** 只渲染文本输入框（RightSidebar 的「搜索」面板） */
+  @Prop showQueryOnly: boolean = false;
   /** 文本筛选词 */
   @State filterText: string = '';
   /** 标签筛选（空字符串表示不筛选） */
@@ -47,12 +100,32 @@ export struct BacklinkFilters {
   @State allTags: string[] = [];
 
   aboutToAppear(): void {
+    this.reloadFromSource();
+  }
+
+  /** pageName 变化（宿主换了目标页）⇒ 重新拉取 */
+  onPageNameChanged(): void {
+    this.reloadFromSource();
+  }
+
+  /** 宿主自增 dataVersion ⇒ 重新拉取 */
+  onDataVersionChanged(): void {
+    this.reloadFromSource();
+  }
+
+  /**
+   * 重新拉取反链数据与标签表。
+   */
+  reloadFromSource(): void {
     this.loadBacklinks();
     this.allTags = WorkspaceService.getInstance().getAllTags();
   }
 
   /**
    * 加载反链数据。
+   *
+   * 口径与 `RightSidebar.refreshCaches()` / `BacklinkWarning.countBacklinks()` 完全一致：
+   * 都走 `WorkspaceService.getDataStore().getBacklinks(pageName)`（单一数据源，不另开口径）。
    */
   loadBacklinks(): void {
     const ws = WorkspaceService.getInstance();
@@ -97,6 +170,13 @@ export struct BacklinkFilters {
     } else {
       this.sortBy = 'updated';
     }
+  }
+
+  /**
+   * 当前是否有任何筛选生效（决定空态文案）。
+   */
+  hasActiveFilter(): boolean {
+    return this.filterText !== '' || this.filterTag !== '';
   }
 
   /**
@@ -189,11 +269,17 @@ export struct BacklinkFilters {
     return filtered;
   }
 
-  build() {
-    Column({ space: 12 }) {
-      // ─── 筛选工具栏 ───
-      Row({ space: 8 }) {
-        // 文本筛选输入框
+  /**
+   * 筛选工具栏（文本 / 标签 / 排序）。
+   *
+   * ⚠️ 原实现把 `Select(...).fontSize(13)` 写在这里 —— SelectAttribute 没有 fontSize，
+   * 是接线时暴露出的编译错误。字号改由 Select 自身默认样式承担（与同仓其余 Select 一致）。
+   */
+  @Builder
+  FilterToolbar() {
+    Row({ space: 6 }) {
+      // 文本筛选输入框（showTagOnly 时隐藏 —— 见 showTagOnly 注释的宽度预算说明）
+      if (!this.showTagOnly) {
         TextInput({ text: this.filterText, placeholder: '筛选反链...' })
           .fontSize(13)
           .layoutWeight(1)
@@ -203,12 +289,13 @@ export struct BacklinkFilters {
           .onChange((value: string) => {
             this.filterText = value;
           })
+      }
 
-        // 标签下拉
+      // 标签下拉（showQueryOnly 时隐藏）
+      if (!this.showQueryOnly) {
         Select(this.getTagOptions())
           .selected(0)
           .value(this.filterTag === '' ? '全部标签' : this.filterTag)
-          .fontSize(13)
           .height(32)
           .width(120)
           .backgroundColor($r('app.color.surface2'))
@@ -220,38 +307,71 @@ export struct BacklinkFilters {
               this.filterTag = text;
             }
           })
-
-        // 排序按钮
-        Row({ space: 4 }) {
-          TablerIcon('arrows-sort', 14, $r('app.color.muted_text'))
-          Text(this.getSortLabel())
-            .fontSize(12)
-            .fontColor($r('app.color.muted_text'))
-        }
-        .height(32)
-        .padding({ left: 10, right: 10 })
-        .backgroundColor($r('app.color.surface2'))
-        .borderRadius(6)
-        .onClick(() => {
-          this.cycleSort();
-        })
       }
-      .width('100%')
 
-      // ─── 反链计数 ───
-      Row({ space: 6 }) {
-        TablerIcon('link', 14, $r('app.color.muted_text'))
-        Text('共 ' + this.getFilteredBacklinks().length.toString() + ' 条反链')
+      // 排序按钮（两种面板都带）
+      Row({ space: 3 }) {
+        TablerIcon('arrows-sort', 13, $r('app.color.muted_text'))
+        Text(this.getSortLabel())
           .fontSize(11)
           .fontColor($r('app.color.muted_text'))
+          .maxLines(1)
       }
-      .width('100%')
-
-      // ─── 反链列表 ───
-      this.BacklinkList(this.getFilteredBacklinks())
+      .height(32)
+      .padding({ left: 8, right: 8 })
+      .backgroundColor($r('app.color.surface2'))
+      .borderRadius(6)
+      .onClick(() => {
+        this.cycleSort();
+      })
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+  }
+
+  build() {
+    // 纯工具栏模式（宿主只取筛选工具栏）：不套外层 padding，让宿主控制缩进。
+    //
+    // ⚠️ W8-U1.3 踩坑记录：这里原先还有一个 `showCountOnly()` 的早返回分支，
+    // 结果是「计数行画出来了、反链列表整块不渲染」—— 因为那个分支只输出 CountRow，
+    // 而列表是在下方 else 的 Column 里调的。设备实测表现为
+    // 「共 2 条反链」下面一片空白（列表宿主节点 0 高度），极易被误判成数据为空。
+    // 教训：分支化的 build() 里，任何「只输出一部分」的早返回都必须重新核对
+    // 它漏掉了哪些本该输出的部分。
+    if (this.showToolbarOnly()) {
+      this.FilterToolbar()
+    } else {
+      Column({ space: 12 }) {
+        if (this.showToolbar) {
+          this.FilterToolbar()
+        }
+        if (this.showCount) {
+          this.CountRow()
+        }
+        // ─── 反链列表 ───
+        if (this.showList) {
+          this.BacklinkList(this.getFilteredBacklinks())
+        }
+      }
+      .width('100%')
+      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+    }
+  }
+
+  /** 宿主只想取筛选工具栏（RightSidebar 的「筛选」/「搜索」面板） */
+  private showToolbarOnly(): boolean {
+    return this.showToolbar && !this.showCount && !this.showList;
+  }
+
+  /** 计数行 */
+  @Builder
+  CountRow() {
+    Row({ space: 6 }) {
+      TablerIcon('link', 14, $r('app.color.muted_text'))
+      Text('共 ' + this.getFilteredBacklinks().length.toString() + ' 条反链')
+        .fontSize(11)
+        .fontColor($r('app.color.muted_text'))
+    }
+    .width('100%')
   }
 
   /**
@@ -262,7 +382,9 @@ export struct BacklinkFilters {
     if (filtered.length === 0) {
       Column({ space: 8 }) {
         TablerIcon('link-off', 28, $r('app.color.muted_text'))
-        Text('暂无反链')
+        // 空态分两种：本来就没有反链 vs 有反链但被筛掉了 —— 后者要给出可操作提示，
+        // 否则用户看到「暂无反链」会以为数据没了（筛选态下的静默误导）。
+        Text(this.hasActiveFilter() ? '没有匹配的反链（请调整筛选条件）' : '暂无反链')
           .fontSize(13)
           .fontColor($r('app.color.muted_text'))
       }
@@ -283,8 +405,7 @@ export struct BacklinkFilters {
    * 单条反链渲染。
    */
   @Builder
-  BacklinkItem(item: BacklinkDisplay) {
-    Column({ space: 4 }) {
+  BacklinkItem(item: BacklinkDisplay) {    Column({ space: 4 }) {
       // 来源页面名 + 引用类型
       Row({ space: 6 }) {
         TablerIcon(item.isBlockRef ? 'hash' : 'file', 12, $r('app.color.primary'))
