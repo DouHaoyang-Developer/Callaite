@@ -276,7 +276,8 @@ export struct SearchPanel {
     return items;
   }
 
-  // ─── 键盘导航（沿用 CommandPalette 的 onKeyPreIme 主路径 + onKeyEvent + 去重标记） ───
+  // ─── 键盘导航（W11 起：↑↓/esc 走 post-IME 的 onKeyEvent + 路由器去重标记；
+  //     ↵ 走 TextInput.onSubmit —— 三者都不再挂 onKeyPreIme，理由见 OverlayKeyRouter 类头 §IME 守卫） ───
 
   /** 显示行总数（键盘导航与高亮 clamp 都以本方法为准）。 */
   private displayCount(): number {
@@ -401,7 +402,7 @@ export struct SearchPanel {
    * 定位之前调用 onDismiss，时序与迁移前一致）。
    */
   navigateToResult(result: SearchResultItem): void {
-    // 防重入：↵ 已在 onKeyPreIme 里被消费一次，IME 仍可能再抛一次 onSubmit；
+    // 防重入：同一行可能被两条路径触发（↵ 的 onSubmit 与结果行 onClick）；
     // 面板已进入关闭流程时第二次调用会重复切页 / 重复触发块定位闪烁。
     if (!this.isOpen) {
       return;
@@ -496,7 +497,9 @@ export struct SearchPanel {
                 this.scheduleSearch(value);
               })
               .onSubmit(() => {
-                // ↵ 打开当前高亮行（与 onKeyPreIme 的 ENTER 分支同一动作，由 navigateToResult 防重入）
+                // ↵ 打开当前高亮行 —— 回车**只**走 onSubmit（输入法处理完合成之后才发出），
+                // 既不在 preIme、也不在 onKeyEvent 里接回车（理由见 OverlayKeyRouter 类头 §IME 守卫）。
+                // 与结果行 onClick 是同一动作，由 navigateToResult 的 isOpen 判据防重入。
                 this.activateSelected();
               })
               // ↓↓ 键盘导航的落点：输入框是面板打开后的持焦节点，挂在这里保证按键一定送到。

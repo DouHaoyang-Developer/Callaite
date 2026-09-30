@@ -384,12 +384,14 @@ export class OverlayKeyRouter {
   }
 
   /**
-   * 宿主兜底入口：由 ContentArea 根部 `onKeyPreIme` 调用，目标 = 当前顶层浮层。
+   * 宿主兜底入口：由 ContentArea 根部的 `onKeyEvent`（post-IME 落点）调用，目标 = 当前顶层浮层。
    *
    * 为什么需要它：浮层自己的拦截点挂在**持焦节点**（输入框）上，若焦点因故
-   * 落在浮层其它区域（列表、遮罩）或事件根本没到达输入框，preIme 就不会触发。
+   * 落在浮层其它区域（列表、遮罩）或事件根本没到达输入框，那个落点就不会触发。
    * 兜底入口让「浮层开着但焦点漂移」时按键仍然可达顶层浮层。
    * 与浮层自身落点共用同一份去重标记 ⇒ 一次按压不会走两步。
+   * ⚠️ 宿主侧**不挂 `onKeyPreIme`**（见类头 §IME 守卫）：preIme 早于输入法，
+   *    会把组词的回车抢走；宿主那一处 `onKeyPreIme` 只保留 Ctrl/Alt 全局快捷键分支。
    */
   handleFromHost(event: KeyEvent): boolean {
     const top: string = this.topOverlayId();
