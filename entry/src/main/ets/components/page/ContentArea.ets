@@ -126,7 +126,7 @@ export struct ContentArea {
         //
         // 原本挂在外层 Scroll 上、现已迁移到本 Column 的能力见下方各修饰符注释。
         Column() {
-          PageView({ pageOverride: this.pageOverride, blockScroller: this.blockScroller })
+          PageView({ pageOverride: this.pageOverride, blockScroller: this.blockScroller, paneId: this.paneId })
         }
         .width('100%')
         .layoutWeight(1)          // ← 原 Scroll.layoutWeight(1)：撑满工具栏以下区域

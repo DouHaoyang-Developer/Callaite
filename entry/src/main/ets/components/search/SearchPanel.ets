@@ -4,7 +4,7 @@ import { AppState } from '../../state/AppState';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { PageData } from '../../core/models/Page';
 import { BlockData } from '../../core/models/Block';
-import { BlockAnchorService, BlockRevealResult } from '../../services/BlockAnchorService';
+import { AnchorRegistry, AnchorSource } from '../../services/AnchorRegistry';
 import { KeyCode } from '@kit.InputKit';
 
 /**
@@ -401,10 +401,11 @@ export struct SearchPanel {
    * U2.1a：块结果（type='block' 且带 blockUuid）此前只切页、不定位，用户落到页面顶部后
    * 仍需自己找那一行。现在切页后追加一次块定位（滚到该块并闪烁高亮）。
    *
-   * 时序：setCurrentPage 只改 AppStorage，PageView/BlockList 的 List 与 LazyForEach 数据源
-   * 在下一帧才重建完成，而 SDK 明确要求 scrollToIndex 必须在数据刷新完成后调用
-   * （scroll.d.ts:489-490），故用 revealBlockDeferred 等一帧。
-   * 若目标页恰好已经是当前页，则直接同步定位，不等帧。
+   * U2.1b：定位这件事**不再在本组件里编排** —— 「关面板 → 判同页/跨页 → 跨页等一帧 →
+   * 6 种降级分派」全部收敛到 `AnchorRegistry.jump()`（搜索/大纲/反链三处共用同一入口）。
+   * 本方法只负责：① 防重入；② 页面类结果仍走原路由切换；③ 声明「我是搜索来源」+ 交出
+   * 关闭面板的动作（面板是带遮罩的模态，不关就看不见刚跳到的位置 —— 由 Registry 统一在
+   * 定位之前调用 onDismiss，时序与迁移前一致）。
    */
   navigateToResult(result: SearchResultItem): void {
     // 防重入：↵ 已在 onKeyPreIme 里被消费一次，IME 仍可能再抛一次 onSubmit；
@@ -419,21 +420,15 @@ export struct SearchPanel {
       return;
     }
 
-    const anchor = BlockAnchorService.getInstance();
-    const alreadyOnPage = anchor.getActivePageName() === result.pageName;
-    AppState.setCurrentPage(result.pageName);
-    // 先关面板再定位：面板遮罩会盖住内容区，不关用户就看不到刚跳到的位置。
-    // 本字段与 ContentArea 的挂载键是同一把（callaite_searchPanelOpen），置 false 后随即被卸载。
-    this.isOpen = false;
-
-    if (alreadyOnPage) {
-      // 同页内跳转：数据源未变，可以立即定位
-      const samePageResult: BlockRevealResult = anchor.revealBlockByUuid(result.blockUuid);
-      anchor.notifyIfFailed(samePageResult);
-      return;
-    }
-    // 跨页跳转：等 List 重建完成后再定位（失败会自行 toast，不静默）
-    anchor.revealBlockDeferredByUuid(result.blockUuid);
+    AnchorRegistry.getInstance().jump({
+      blockUuid: result.blockUuid,
+      source: AnchorSource.SEARCH,
+      pageNameHint: result.pageName,
+      onDismiss: (): void => {
+        // 本字段与 ContentArea 的挂载键是同一把（callaite_searchPanelOpen），置 false 后随即被卸载。
+        this.isOpen = false;
+      }
+    });
   }
 
   closePanel(): void {

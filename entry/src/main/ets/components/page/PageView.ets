@@ -38,6 +38,11 @@ export struct PageView {
    * 普通成员变量在父组件构造时同步赋值，build() 首次执行前已就绪。
    */
   blockScroller?: Scroller;
+  /**
+   * U2.1b：本窗格标识（主窗格 'primary' / 分屏副窗格 'secondary'），由 ContentArea 透传给
+   * BlockList —— BlockList 据此把它真正绑定的 Scroller 登记到锚点服务的对应窗格上。
+   */
+  paneId: string = 'primary';
   @State displayName: string = '';
   /**
    * Properties 属性区折叠开关。
@@ -246,7 +251,7 @@ export struct PageView {
         // layoutWeight(1) 取代原 Scroll.layoutWeight(1)：BlockList 自身 height('100%')，
         // 由本容器给出确定高度，其内部 List 才有确定视口（虚拟化计算视口的前提）。
         Column() {
-          BlockList({ pageName: this.displayName, scroller: this.blockScroller })
+          BlockList({ pageName: this.displayName, scroller: this.blockScroller, paneId: this.paneId })
         }
         .width('100%')
         .layoutWeight(1)

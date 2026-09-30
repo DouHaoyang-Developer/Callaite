@@ -1,6 +1,7 @@
 import { TablerIcon } from '../common/Icons';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { BacklinkInfo } from '../../core/db/DataStore';
+import { AnchorRegistry, AnchorSource } from '../../services/AnchorRegistry';
 
 /**
  * BacklinkDisplay — 反链展示信息（含从 Block 中提取的 tags 和时间戳）。
@@ -375,6 +376,31 @@ export struct BacklinkFilters {
   }
 
   /**
+   * U2.1b：点击反链条目 → 跳到**来源块**（这是第三处锚点来源）。
+   *
+   * 迁移前的实况：本列表项**没有任何 onClick** —— 反链面板只能看、不能跳
+   * （`BacklinkItem` 的 @Builder 根节点上没有任何手势；全文件唯一的 onClick 是排序按钮）。
+   * 于是 c7fbff7 提交说明里的「三处来源（搜索/大纲/反链）」实际只有两处接线，
+   * 反链这条路径缺失。这里把它接到**同一个入口** `AnchorRegistry`。
+   *
+   * 语义：反链的 `sourceBlockId` 是**引用发生的那个块**，它属于**别的页面**
+   * （`DataStore.getBacklinks` 用 `getPageUuidForBlock(sourceBlockId)` 反查页），
+   * 因此这条路径天然是「跨页 + 等一帧」那一支 —— 由 Registry 统一判定与处理。
+   * 若来源块是子块且其祖先处于折叠态，服务会先展开祖先再等一帧滚动（DEFERRED），
+   * 这也是「等一帧」那条路径的真实用武之地。
+   *
+   * 不传 onDismiss：右侧栏不是模态，跳转后应保持打开（Obsidian 同款行为），
+   * 与搜索面板「必须先关面板」正好相反 —— 这个差异由调用方声明、由 Registry 执行。
+   */
+  private jumpToSource(item: BacklinkDisplay): void {
+    AnchorRegistry.getInstance().jump({
+      blockUuid: item.sourceBlockId,
+      source: AnchorSource.BACKLINK,
+      pageNameHint: item.sourcePageName
+    });
+  }
+
+  /**
    * 反链列表渲染。
    */
   @Builder
@@ -448,5 +474,9 @@ export struct BacklinkFilters {
     .borderRadius(6)
     .backgroundColor($r('app.color.surface1'))
     .border({ width: 1, color: $r('app.color.border') })
+    // U2.1b：整卡可点 ⇒ 跳到来源块（第三处锚点来源；此前本列表项完全不可点）
+    .onClick(() => {
+      this.jumpToSource(item);
+    })
   }
 }

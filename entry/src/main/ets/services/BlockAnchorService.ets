@@ -31,6 +31,11 @@ import { t } from '../utils/i18n';
  *
  * 本服务不做任何渲染，只做下标计算 + 调用 Scroller.scrollToIndex + 触发高亮 + 失败降级提示。
  * 折叠展开通过既有 `collapse` op（OutlinerEngine.ets:136 → BlockTree.setCollapsed）复用现有写通路。
+ *
+ * ─── U2.1b 分层：本类是**算法层**，`AnchorRegistry` 是**入口层** ───
+ * 「同页/跨页判定、跨页等一帧、关闭来源面板、选哪个窗格、6 种降级怎么分派」属入口策略，
+ * 一律放在 `services/AnchorRegistry.ets`；组件（搜索面板/右侧栏大纲/反链）只调 Registry，
+ * 不再各自直调本类。本类保持「无 UI 副作用」的契约，便于单独调用与验证。
  */
 
 /** 定位结果状态（tagged union，替代 ArkTS 不支持的字符串联合 + 便于调用方分派） */
@@ -70,8 +75,28 @@ export interface BlockRevealResult {
 /** ContentArea 发布 Scroller 的键前缀（ContentArea.ets:70-72）*/
 const SCROLLER_KEY_PREFIX = 'callaite_blockScroller_';
 
+/** 主窗格 paneId（ContentArea 默认值，见 ContentArea.ets:48）*/
+const PANE_PRIMARY = 'primary';
+/** 副窗格 paneId（MainContainer 分屏时注入，见 MainContainer.ets:223）*/
+const PANE_SECONDARY = 'secondary';
+
 /** 折叠展开 + 数据源刷新后，等一帧再滚动（避免在 LazyForEach 重建中途发起定位）*/
 const SCROLL_DEFER_MS = 80;
+
+/**
+ * 跨页定位的**第二次**尝试延迟。
+ *
+ * 为什么要重试（U2.1b 设备实测）：切页后 `BlockList` 要重算可见行序列、替换 LazyForEach
+ * 数据源并重新布局，而 SDK 明确要求 `scrollToIndex` 必须在**数据刷新完成后**调用
+ * （scroll.d.ts:489-490）；在那之前调用会被**静默忽略**（不抛错、不滚动）。
+ * 实测：只等 80ms（≈2 帧，模拟器 ~20-30fps）时，`__BKL_source` → `2026-09-27` 的跨页
+ * 大纲/搜索跳转**没有滚动**（列表停在顶部）；同一目标在页面已就绪后再点（同页路径）则正常滚动。
+ * ⇒ 首帧之后再补一次（幂等：index 已重算，重复调用只会滚到同一位置）。
+ */
+const SCROLL_RETRY_MS = 240;
+
+/** 跨页定位的最大尝试次数（首帧 + 1 次重试；不做无限重试，失败仍走统一降级提示）*/
+const SCROLL_MAX_ATTEMPTS = 2;
 
 /**
  * 单个块的可定位信息（下标计算结果）。
@@ -90,6 +115,18 @@ export interface BlockAnchorInfo {
 export class BlockAnchorService {
   private static instance: BlockAnchorService | undefined;
 
+  /**
+   * 窗格 → Scroller 的**直接引用**登记表。
+   * 不走 AppStorage 中转（AppStorage 里的那个副本与 List 的绑定不是同一个对象，
+   * 见 getScroller 的实测注释）。由 BlockList 在 aboutToAppear 自报。
+   */
+  private paneScrollers: Map<string, Scroller> = new Map<string, Scroller>();
+
+  /** 主窗格 paneId（对外常量，避免各处硬编码字符串）*/
+  static readonly PRIMARY_PANE: string = PANE_PRIMARY;
+  /** 分屏副窗格 paneId */
+  static readonly SECONDARY_PANE: string = PANE_SECONDARY;
+
   static getInstance(): BlockAnchorService {
     if (!BlockAnchorService.instance) {
       BlockAnchorService.instance = new BlockAnchorService();
@@ -99,22 +136,53 @@ export class BlockAnchorService {
 
   // ─── Scroller 取用 ───
 
-  /** 取某一窗格的 Block 列表滚动控制器（由 ContentArea 发布）。 */
+  /** 取某一窗格的 Block 列表滚动控制器。 */
   getScroller(paneId: string): Scroller | undefined {
+    // ⚠️ U2.1b 实测（设备硬证据）：**不能只信 AppStorage**。
+    // `ContentArea.publishScroller()` 把 Scroller 写进 AppStorage，但读回来的那个对象
+    // **与 List 实际绑定的是两个东西** —— 对它调用 `currentOffset()` 直接抛异常
+    // （探针：`PROBE idx=1 pre=THROW post=THROW`，hilog A02110/U21B），
+    // 于是 `scrollToIndex()` 静默无效（不抛错、不滚动）⇒「点搜索结果/大纲条目不跳块」。
+    // 修法：以**组件自报的直接引用**为准（BlockList 在 aboutToAppear 里 registerScroller），
+    // AppStorage 只留作兜底与外部可测性入口。
+    const direct = this.paneScrollers.get(paneId);
+    if (direct !== undefined) {
+      return direct;
+    }
     return AppStorage.get<Scroller>(SCROLLER_KEY_PREFIX + paneId);
   }
 
   /** 主窗格（paneId='primary'）的滚动控制器。 */
   getPrimaryScroller(): Scroller | undefined {
-    return this.getScroller('primary');
+    return this.getScroller(PANE_PRIMARY);
   }
 
   /**
    * 注册/覆盖某窗格的 Scroller。
-   * 正常链路由 ContentArea.publishScroller 完成；此处仅作兜底与可测性入口。
+   * 正常链路由 BlockList 在构造期自报（它才是真正把它交给 `List` 的那一方）；
+   * 外部也可调用，但**外部注册的实例未必与 List 绑定的是同一个** —— 优先信组件自报。
    */
   registerScroller(paneId: string, scroller: Scroller): void {
+    this.paneScrollers.set(paneId, scroller);
     AppStorage.setOrCreate(SCROLLER_KEY_PREFIX + paneId, scroller);
+  }
+
+  /**
+   * 某窗格此刻是否真的挂载着。
+   *
+   * ⚠️ 不能只看 `getScroller(paneId) !== undefined`：ContentArea 的 `publishScroller()`
+   * 只在 `aboutToAppear` 写一次，**关闭分屏时不会撤销**该键 ⇒ 关掉分屏后副窗格的
+   * Scroller 仍留在 AppStorage 里（一个已经不在渲染树上的死 Scroller）。
+   * 因此副窗格必须叠加「分屏开关当前为 true」这一个条件。
+   */
+  isPaneMounted(paneId: string): boolean {
+    if (this.getScroller(paneId) === undefined) {
+      return false;
+    }
+    if (paneId === PANE_PRIMARY) {
+      return true;
+    }
+    return AppStorage.get<boolean>('callaite_splitEnabled') === true;
   }
 
   // ─── 当前显示页判定 ───
@@ -130,6 +198,28 @@ export class BlockAnchorService {
       return JournalService.getTodayDateString();
     }
     return route;
+  }
+
+  /**
+   * 指定窗格当前实际渲染的页面名（分屏语义）。
+   *
+   * · 主窗格：跟随全局路由（`getActivePageName`）。
+   * · 副窗格：跟随 `callaite_splitPage`（MainContainer.ets:223 把它作为 pageOverride 注入），
+   *   其 'Journal' → 当天日期串的映射与 `PageView.resolvePage()`（PageView.ets:131-136）一致。
+   * · 窗格未挂载（分屏关着）⇒ 返回空串，调用方据此判定「这一页不在该窗格」。
+   */
+  getPanePageName(paneId: string): string {
+    if (paneId === PANE_PRIMARY) {
+      return this.getActivePageName();
+    }
+    if (!this.isPaneMounted(paneId)) {
+      return '';
+    }
+    const splitPage = AppStorage.get<string>('callaite_splitPage') ?? '';
+    if (splitPage === 'Journal') {
+      return JournalService.getTodayDateString();
+    }
+    return splitPage;
   }
 
   /** 主窗格是否有承载整页大纲的滚动容器（没有则说明当前路由不渲染 BlockList 的 List）。 */
@@ -245,8 +335,12 @@ export class BlockAnchorService {
    * @param pageId   目标块所属页面 uuid
    * @param pageName 目标块所属页面名（用于「不在当前页」判定与提示文案）
    * @param blockUuid 目标块 uuid
+   * @param paneId   目标窗格（分屏语义；缺省 = 主窗格）。窗格只影响
+   *                 「用哪个 Scroller」与「拿哪个窗格的当前页做同页判定」，
+   *                 下标算法与可见行序列是窗格无关的（`getVisibleBlocks(pageId)` 按页取）。
    */
-  revealBlock(pageId: string, pageName: string, blockUuid: string): BlockRevealResult {
+  revealBlock(pageId: string, pageName: string, blockUuid: string,
+    paneId: string = PANE_PRIMARY): BlockRevealResult {
     const ws = WorkspaceService.getInstance();
 
     // 1. 目标块是否存在
@@ -257,14 +351,15 @@ export class BlockAnchorService {
     }
 
     // 2. 是否当前显示页 —— 不在就交给调用方先切页（不静默失败）
-    const activePage = this.getActivePageName();
+    //    判定口径按窗格取：主窗格 = 全局路由；副窗格 = 分屏页（见 getPanePageName）。
+    const activePage = this.getPanePageName(paneId);
     if (activePage !== pageName) {
       return this.failure(BlockRevealStatus.DIFFERENT_PAGE,
         this.msg('anchor_other_page', '目标块在页面「{page}」，请先打开该页面').replace('{page}', pageName));
     }
 
     // 3. 滚动容器
-    const scroller = this.getPrimaryScroller();
+    const scroller = this.getScroller(paneId);
     if (scroller === undefined) {
       return this.failure(BlockRevealStatus.NO_SCROLLER,
         this.msg('anchor_no_scroller', '当前视图不支持块定位（请切回大纲视图）'));
@@ -300,6 +395,8 @@ export class BlockAnchorService {
     // 7. 滚动 + 高亮
     const runScroll = (): void => {
       // SDK scroll.d.ts:533；NOTE 明确 scrollToIndex 仅对 ArcList/Grid/List/WaterFlow 生效
+      // 注意：该调用是**异步**生效的（实测 currentOffset 在调用返回时仍为旧值，
+      // 下一轮布局后才变）—— 因此不要用「调用后立刻读 offset」来判断是否跳成功。
       scroller.scrollToIndex(index, false, ScrollAlign.START);
       this.flash(blockUuid);
     };
@@ -333,12 +430,34 @@ export class BlockAnchorService {
    * 用途：调用方刚切换页面（或是搜索面板关闭引起重排）时，BlockList 的 List 与
    * LazyForEach 数据源尚未重建完成 —— SDK scroll.d.ts:489-490 明确要求
    * 「数据刷新完成后」再调用 scrollToIndex。此处用 setTimeout 等一帧。
+   *
+   * U2.1b：切页后的重建要**若干帧**（不止一帧），首帧调用可能被 SDK 静默忽略，
+   * 故在 SCROLL_RETRY_MS 后再幂等补一次（见 SCROLL_RETRY_MS 注释里的实测）。
+   *
+   * @param paneId 目标窗格（分屏语义；缺省 = 主窗格）
    */
-  revealBlockDeferred(pageId: string, pageName: string, blockUuid: string): void {
+  revealBlockDeferred(pageId: string, pageName: string, blockUuid: string,
+    paneId: string = PANE_PRIMARY): void {
+    this.revealDeferredAttempt(pageId, pageName, blockUuid, paneId, 1);
+  }
+
+  /** `revealBlockDeferred` 的分步实现（attempt 从 1 开始）*/
+  private revealDeferredAttempt(pageId: string, pageName: string, blockUuid: string,
+    paneId: string, attempt: number): void {
+    const delay = attempt <= 1 ? SCROLL_DEFER_MS : SCROLL_RETRY_MS;
     setTimeout(() => {
-      const result = this.revealBlock(pageId, pageName, blockUuid);
-      this.notifyIfFailed(result);
-    }, SCROLL_DEFER_MS);
+      const result = this.revealBlock(pageId, pageName, blockUuid, paneId);
+      if (!result.scrolled) {
+        // 真正的失败、或 DEFERRED（展开折叠祖先后的正常中间态，内部已自行排帧）：
+        // 都不再重试，交给统一降级分派（DEFERRED 不会被弹提示）。
+        this.notifyIfFailed(result);
+        return;
+      }
+      if (attempt < SCROLL_MAX_ATTEMPTS) {
+        // 列表可能还没就绪（跨页）：幂等地再试一次；同页场景第二次只是滚到同一位置。
+        this.revealDeferredAttempt(pageId, pageName, blockUuid, paneId, attempt + 1);
+      }
+    }, delay);
   }
 
   /**

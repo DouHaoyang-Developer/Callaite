@@ -5,7 +5,7 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { BlockData } from '../../core/models/Block';
 import { BacklinkInfo } from '../../core/db/DataStore';
 import { JournalService } from '../../services/JournalService';
-import { BlockAnchorService, BlockRevealResult, BlockRevealStatus } from '../../services/BlockAnchorService';
+import { AnchorRegistry, AnchorSource } from '../../services/AnchorRegistry';
 import { BacklinkFilters } from './BacklinkFilters';
 
 /**
@@ -521,27 +521,18 @@ export struct RightSidebar {
    * `headingsCache` 来自 `collectHeadings()`，而后者用 `ws.getPageBlocks(page.uuid)`
    * ——注意该方法名其实返回的是 DataStore 的**顶层块**（WorkspaceService.ets:88-90
    * → getTopLevelBlocks），所以标题若在子块上，它本来就不会出现在大纲里。
-   * 这里仍按通用规则走 BlockAnchorService（子块会自动归到其根块那一行）。
+   *
+   * U2.1b：本方法不再自己判状态、自己切页、自己弹提示 —— 一律交给 `AnchorRegistry`
+   * （与搜索面板、反链面板同一个入口）。迁移前这里有一段「DIFFERENT_PAGE ⇒ 只切页、
+   * 不定位」的兜底（大纲缓存可能停留在上一页）：现在 Registry 会**先**把目标块解析成
+   * 它真正所属的页面并切过去，再等一帧定位 ⇒ 那个「切了页却没跳到那一行」的中间态
+   * 不再出现，跨页大纲点击也能真正落到标题行。
    */
   private jumpToBlock(b: BlockData): void {
-    const anchor = BlockAnchorService.getInstance();
-    const ws = WorkspaceService.getInstance();
-    const result: BlockRevealResult = anchor.revealBlockByUuid(b.uuid);
-    if (result.scrolled || result.status === BlockRevealStatus.DEFERRED) {
-      // DEFERRED = 已排入下一帧滚动（展开了折叠祖先），属正常成功路径
-      return;
-    }
-    if (result.status === BlockRevealStatus.DIFFERENT_PAGE) {
-      // 大纲可能缓存着上一页的标题（refreshCaches 依赖 currentPage 变更时机）——
-      // 只切页不定位，避免给出「跳到了但不是这一行」的假成功。
-      const page = ws.getDataStore().getIndexStore().getPage(b.pageId);
-      if (page) {
-        AppState.setCurrentPage(page.originalName);
-      }
-      return;
-    }
-    // 其余失败一律给出可读提示（不静默失败）
-    anchor.notify(result);
+    AnchorRegistry.getInstance().jump({
+      blockUuid: b.uuid,
+      source: AnchorSource.OUTLINE
+    });
   }
 
   @Builder

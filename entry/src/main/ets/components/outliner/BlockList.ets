@@ -4,6 +4,7 @@ import { BlockSelection } from './BlockSelection';
 import { FindInPage } from './FindInPage';
 import { BlockDragLayer, forwardRowGrab } from './BlockDragLayer';
 import { WorkspaceService } from '../../services/WorkspaceService';
+import { BlockAnchorService } from '../../services/BlockAnchorService';
 import { EditorService } from '../../services/EditorService';
 import { SlashMenu } from './SlashMenu';
 import { TablerIcon } from '../common/Icons';
@@ -101,6 +102,11 @@ export struct BlockList {
    */
   scroller?: Scroller;
   /**
+   * U2.1b：本列表所属窗格（分屏语义）。由 ContentArea → PageView 逐层透传，
+   * 仅用于把「本组件真正交给 List 的那个 Scroller」登记到 BlockAnchorService 的对应窗格上。
+   */
+  paneId: string = 'primary';
+  /**
    * 顶层块（`getPageBlocks`）。**不是** List 的数据源，只用于两件事：
    *   · 空态判定（顶层为空 ⇔ 无可见行）；
    *   · 尾部新增块时取 leftId —— 必须取顶层块的最后一个，取错层级会把新块挂到别人孩子下面。
@@ -181,6 +187,14 @@ export struct BlockList {
 
   aboutToAppear(): void {
     this.refreshBlocks();
+    // U2.1b 关键修复：把**本组件真正交给 List 的那个 Scroller** 直接登记给锚点服务。
+    //
+    // 为什么必须由本组件自报、而不是让 ContentArea 发布到 AppStorage：
+    // 实测（hilog A02110/U21B 探针）`AppStorage.get<Scroller>('callaite_blockScroller_primary')`
+    // 取回来的对象 `currentOffset()` **直接抛异常** —— 它没有被任何滚动组件绑定，
+    // 于是 `scrollToIndex()` 静默无效（「搜索/大纲/反链点结果不跳块」的根因）。
+    // 本组件手里的 `activeScroller()` 才是真正绑定到 `List({scroller})` 的那一个。
+    BlockAnchorService.getInstance().registerScroller(this.paneId, this.activeScroller());
   }
 
   /**
