@@ -2,7 +2,9 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { EditorService } from '../../services/EditorService';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { DirtyPageTracker } from '../../services/DirtyPageTracker';
+import { BlockAnchorService } from '../../services/BlockAnchorService';
 import { BlockData } from '../../core/models/Block';
+import { PageData } from '../../core/models/Page';
 import { LivePreviewHelper } from '../../utils/LivePreviewHelper';
 import { FenceOpenCache } from '../../utils/FenceOpenCache';
 
@@ -102,6 +104,21 @@ export struct BlockEditor {
   private readyScheduled: boolean = false;
   /** `refreshBlock()` 里读出的本块数据（销毁前比对用，避免销毁时再去 store 查） */
   private blockData: BlockData | undefined = undefined;
+  /** W5：键路由的观测计数（仅 hilog，不参与任何判定） */
+  private keyRouted: number = 0;
+  /** W5：组件是否已销毁（焦点重试的守卫） */
+  private destroyed: boolean = false;
+  /** W5：焦点重试的间隔与次数上限（实测 `requestFocus`→`onFocus` ≈620ms，见方法头） */
+  private static readonly FOCUS_RETRY_MS: number = 320;
+  private static readonly FOCUS_MAX_ATTEMPTS: number = 4;
+
+  /** W5：本组件在键路由里是否处于「主控」位置（正文编辑器在编辑态且焦点权威在本块） */
+  private static readonly K_ENTER: number = 2054;
+  private static readonly K_NUMPAD_ENTER: number = 2119;
+  private static readonly K_TAB: number = 2049;
+  private static readonly K_DEL: number = 2055;
+  private static readonly K_DPAD_UP: number = 2012;
+  private static readonly K_DPAD_DOWN: number = 2013;
 
   private static readonly TAG = 'BlockEditor';
   private static readonly DOMAIN = 0x0002;
@@ -119,6 +136,7 @@ export struct BlockEditor {
     // ─── ② 销毁前四步（顺序固定，不可交换）───
     // ⓪ 先释放排程，避免销毁后还有回调打进来
     this.readyScheduled = false;
+    this.destroyed = true;   // W5：让焦点重试的排程失效
     // ① 读回文本（控制器已不可读时 extractText 返回 ''，配合 ② 的比对不会误写）
     const text = LivePreviewHelper.extractText(this.controller);
     // ② 与 BlockData.content 比对 —— **不同才写**（硬要求）
@@ -241,19 +259,46 @@ export struct BlockEditor {
   /**
    * 仅当「本块就是权威焦点块」时才请求系统焦点。
    * `focusOnReady=false`（嵌入式/日志流等复用场景）时完全不请求，保持与接线前等价。
+   *
+   * ★ W5：**带幂等重试**（AGENTS 陷阱 20 的同一纪律）★
+   *   实测（本窗口）：回车「建兄弟块」之后，ArkUI 会把焦点从 RichEditor 移到它所在的行
+   *   （`AceFocus: RichEditor/secure_field trigger onBlurInternal by 2` →
+   *    `FocusSwitch end, RichEditor/secure_field onBlur, Row/secure_field onFocus`），
+   *   新块那一行的 `BlockEditor.onReady` 里那一次 `requestFocus` 于是**落空**
+   *   ⇒ 新块看着建出来了、光标却不在里面，后续键入全部丢失（`dumpLayout` 里一个 RichEditor 都没有）。
+   *   而 W1/W2 早已实测「`requestFocus` → `onFocus` 是**异步**的（≈620ms）」且可能落空
+   *   ⇒ 与 `BlockAnchorService.revealBlockDeferred` 同一手法：**幂等**地补几次。
+   *   `requestFocus` 是幂等的（重复请求同一 id 无副作用），且一旦 `handleFocus` 到了就停。
    */
   private requestFocusIfAuthoritative(): void {
     if (!this.focusOnReady) {
       return;
     }
-    if (this.focusedBlock !== this.blockUuid) {
-      return;
-    }
-    try {
-      focusControl.requestFocus(this.focusId);
-    } catch (e) {
-      console.error('[BlockEditor] requestFocus failed: block=' + this.blockUuid);
-    }
+    this.requestFocusAttempt(0);
+  }
+
+  /** `requestFocusIfAuthoritative` 的分步实现（attempt 从 0 开始，上限 `FOCUS_MAX_ATTEMPTS`） */
+  private requestFocusAttempt(attempt: number): void {
+    setTimeout(() => {
+      if (this.destroyed) {
+        return;
+      }
+      // 已经拿到过焦点 ⇒ 不再打扰（`handleFocus` 会置位，`handleBlur` 会复位）
+      if (this.focusedOnce) {
+        return;
+      }
+      if (this.focusedBlock !== this.blockUuid) {
+        return;
+      }
+      try {
+        focusControl.requestFocus(this.focusId);
+      } catch (e) {
+        console.error('[BlockEditor] requestFocus failed: block=' + this.blockUuid);
+      }
+      if (attempt + 1 < BlockEditor.FOCUS_MAX_ATTEMPTS) {
+        this.requestFocusAttempt(attempt + 1);
+      }
+    }, BlockEditor.FOCUS_RETRY_MS);
   }
 
   /**
@@ -275,6 +320,16 @@ export struct BlockEditor {
       return;
     }
     const text = LivePreviewHelper.extractText(this.controller);
+    // ⚠️ **空提取一律丢弃**（W5 实测踩出来的硬闸 ✗）：native 在「span 被清、还没写回」的
+    //    窗口里 `getSpans()` 会返回空 ⇒ `extractText()` 得 `''`。
+    //    若在这里把 `''` 当成「用户清空了本块」同步进数据模型，就会**静默抹掉整块内容**
+    //    （W5 实测：`__S1_long.md` 首行 `- 测试块 2` → `- `，4664 → 4653，**−11 字节**）。
+    //    与 `onSelectionChange` / `aboutToDisappear` 的 `text !== ''` 是同一道闸，三处必须一致。
+    if (text === '') {
+      if (this.blockData !== undefined && this.blockData.content !== '') {
+        return;
+      }
+    }
     if (text === this.snapshotText) {
       // 闸门落下之后的迟到回声（实测可能发生）：逐字符相同 ⇒ 这不是内容变更
       return;
@@ -304,6 +359,22 @@ export struct BlockEditor {
    * ⚠️ 光标动了但文本没动时**也必须重建** —— live preview 的「语法标记是否显示」
    * 是光标位置的函数（`cursorInside`），不重建就会出现「点进 `**bold**` 里看不到 `**`」。
    * 用 `lastSpanCaret` 短路：只有 (text, caret) 真的变了才重建。
+   *
+   * ★★ S3-W5 归因（本窗口设备实测）：`spanIndex error` 与 `onSelectionChange` 的关系 ★★
+   *   native 在「提交一次输入」时的顺序是（hilog `AceRichText` 逐行）：
+   *     `insertLen=1` → `caret:6->7` → **`GetCaretPosition`**（= 本回调）
+   *     → `delete spans`（= 本方法的重建）→ `AddTextSpan(len=6)` → `AddTextSpan(len=1, themeFC=1)`
+   *     → **`spanIndex error, return`**
+   *   ⚠️ **本窗口试过把重建推到下一帧（0ms / 120ms / 400ms 三档），结论是行不通 ✗**：
+   *     · 0ms / 120ms：重建仍落在那次输入提交之内（`delete spans` 与 native 的
+   *       `AddTextSpan(len=1)` 仍同毫秒），`spanIndex error` 照旧；
+   *     · 400ms：虽然避开了那次提交，但**键盘输入整个失效** ——
+   *       实测 `AceFocus` 里 `node: RichEditor handle OnKeyPreIme` 之后
+   *       **没有 `OnKeyEventInteral Node process self: Node RichEditor`**，
+   *       键被 `List/Column/Stack/page` 直接接走（`insertLen` 再也没出现）。
+   *   ⇒ **保持同步重建**（W2/W4 的既有形态），本窗口**不在这里做时序改造** ✗。
+   *   真正让 Enter 可用的办法是**不让 native 去插那个换行**（见 `routeKeyDispatch`），
+   *   而不是跟 native 抢时序。
    */
   private onSelectionChange(): void {
     if (this.programmaticDepth > 0) {
@@ -342,6 +413,407 @@ export struct BlockEditor {
     if (this.lastRenderedText !== this.lastSpanText || caret !== this.lastSpanCaret) {
       this.rebuildSpans();
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // W5 · B 形态按键归属（恢复 WebEditor 时代的块级键契约）
+  // ═══════════════════════════════════════════════════════════════════════════
+  //
+  // ─── 为什么落点是「本组件自己的 RichEditor」，而不是 ContentArea ───
+  //   · 实测（W5 探针）：ContentArea 根的 `onKeyPreIme` **确实**能收到这些键
+  //     （`Tab`/`Enter`/`↑`/`↓`/`←`/`Backspace` 全部命中）⇒ W4「键到不了 ContentArea」
+  //     只对**没有挂 `onKeyPreIme`** 的那个形态成立（它挂的是默认尺寸的 `onKeyEvent`）。
+  //   · 但**落点仍必须最窄**：`onKeyPreIme` 返回 true 会连 **input method events**
+  //     一起拦（SDK `common.d.ts:18672-18687` 原文逐条列出 `keyboardShortcut` /
+  //     `input method events` / `onKeyEventDispatch` / `onKeyEvent`）⇒ 挂在 ContentArea
+  //     等于给**所有**输入目标（含各浮层输入框）装了一层 pre-IME 拦截，
+  //     误伤面从「一个块的编辑器」扩大到「全页」。挂在本组件上则天然带
+  //     「本块正在编辑」这一个作用域。
+  //
+  // ─── 三条落点各自的理由（**为什么不是全都用同一个回调**）───
+  //   ① `Tab` / `Shift+Tab` ⇒ **必须在 `onKeyPreIme` 拦，且返回 true**。
+  //      实测：Tab 会触发 ArkUI 的焦点遍历
+  //      （`AceFocus: Request next focus by custom focus algorithm. Next focus node is ListItem/1489`,
+  //        随后 `FocusSwitch end, Row/secure_field onBlur, RichEditor/secure_field onFocus`），
+  //      焦点漂到别的行 ⇒ 该行 `onClick` 被焦点系统当成「点击」触发 ⇒ 那行也进编辑态
+  //      并把它自己的内容落盘（实测污染：`__S1_long.md` 首行变成 `- 测试块 3b`，**跨行串台**）。
+  //      这是**独立于缩进功能的破坏性**，所以 Tab 必须在 pre-IME 就截住。
+  //      Tab **不是输入法会用到的键** ⇒ 拦它不碰组词。
+  //   ② `↑` / `↓` / `Backspace` ⇒ 走 **post-IME 的 `onKeyEvent`**，**不碰 preIme**。
+  //      理由：`↑↓` 在组词态是**选候选**、`Backspace` 在组词态是**删候选字母**
+  //      —— 这两件事都必须由输入法先拿到。`onKeyEvent` 晚于输入法事件
+  //      （SDK 同段原文的顺序：preIme → keyboardShortcut → **input method events** →
+  //        onKeyEventDispatch → onKeyEvent），**输入法消费掉的键不会到达 onKeyEvent**
+  //      （W11 已实测「拼音字母键 0 次进入路由器」就是这条机制的旁证）
+  //      ⇒ 「让输入法先拒绝」这条 W11 用代价换来的纪律在这里**被完整保留** ✓。
+  //   ③ `Enter` ⇒ **落在 `onKeyEventDispatch`**，这是唯一同时满足两件事的窗口。
+  //      它**晚于输入法事件**（SDK 同段原文的顺序：preIme → keyboardShortcut →
+  //      **input method events** → onKeyEventDispatch → onKeyEvent）、**早于 native 编辑器**
+  //      （W5 实测顺序：`preIme → dispatch → native PerformAction`）。
+  //      ⇒ 组词态：输入法把回车用于上屏、**消费掉的键不会到达本回调**
+  //        （与 W11 实测「拼音字母键 0 次进入路由器」是同一条机制）⇒
+  //        **W11 的组词守卫被结构性地保住**（不是靠猜合成态，而是根本没有竞争）✓
+  //      ⇒ 非组词：我们在 native 之前接管，**不让 native 去插那个换行** ——
+  //        这是必须的，实测 native 自己插换行时
+  //        `AddTextSpan(opts={index=-1, len=1, themeFC=1})` **必然报 `spanIndex error`**
+  //        （纯 native 路径同样失败），换行永远进不了 span 树。
+  //      ⇒ 顺便回答「RichEditor 自己先吃掉 Enter 是否天然满足 IME 优先」：
+  //        **不成立** ✗ —— 实测 Enter 的 Down 也能到 ContentArea 的 `onKeyPreIme`，
+  //        并不是「RichEditor 独吞」；真正满足 IME 优先的是**落点选在 post-IME 的 dispatch**。
+  //
+  // ─── 与 WebEditor 时代的语义对齐（`WebEditor.ets` 的 HTML `keydown`）───
+  //   | 键            | WebEditor（HTML 侧）        | 本实现（B 形态）              |
+  //   |---------------|-----------------------------|-------------------------------|
+  //   | Enter（末尾） | `newBlock`（建兄弟块）      | `editor.create-below` ✓       |
+  //   | Enter（行中） | `newBlock`（切分）          | **块内换行**（更贴近 Sprint-02 §3 风险 5）|
+  //   | Shift+Enter   | 默认行为 = 块内换行         | 块内换行 ✓                    |
+  //   | Tab           | `indent`                    | `editor.indent` ✓             |
+  //   | Shift+Tab     | `outdent`                   | `editor.outdent` ✓            |
+  //   | Backspace(空) | `delete`（删空块）          | `editor.delete-empty` ✓       |
+  //   | ↑↓（块首/末） | `focusPrev`/`focusNext`     | 跨块迁移 ✓                    |
+
+  /** 键路由是否处于主控态（正文编辑器在编辑态 + 焦点权威就是本块 + 没有浮层在跑） */
+  private ownsKeyboard(): boolean {
+    if (!this.focusedOnce) {
+      return false;
+    }
+    if (this.focusedBlock !== this.blockUuid) {
+      return false;
+    }
+    return true;
+  }
+
+  /** 编辑器当前文本（spans 求和）；空提取时退回「最近一次渲染文本」 */
+  private editorText(): string {
+    const t = LivePreviewHelper.extractText(this.controller);
+    if (t !== '') {
+      return t;
+    }
+    return this.lastRenderedText;
+  }
+
+  /**
+   * 光标是否在**首行**（纯文本判据，不需要 native 坐标 —— 设计文档 §3.2 已定）。
+   * 首行 ⇔ 光标之前没有 `\n`。
+   */
+  private caretOnFirstLine(text: string, caret: number): boolean {
+    if (caret <= 0) {
+      return true;
+    }
+    const head = text.substring(0, Math.min(caret, text.length));
+    return head.indexOf('\n') < 0;
+  }
+
+  /** 光标是否在**末行**：光标之后没有 `\n` */
+  private caretOnLastLine(text: string, caret: number): boolean {
+    if (caret >= text.length) {
+      return true;
+    }
+    const tail = text.substring(Math.max(0, caret));
+    return tail.indexOf('\n') < 0;
+  }
+
+  /**
+   * 邻居解析：用**可见行序列**（`getVisibleBlocks`，与 `scrollToIndex` 同一坐标空间）
+   * 现算前后行。刻意不新增任何缓存/装置 —— 与 `fenceOpenForThisBlock()` 同一手法。
+   *
+   * @returns 下标；不在可见集里返回 -1
+   */
+  private visibleRowIndex(): number {
+    const ws = WorkspaceService.getInstance();
+    const pageId = ws.getPageUuidForBlock(this.blockUuid);
+    if (!pageId) {
+      return -1;
+    }
+    const rows: BlockData[] = ws.getVisibleBlocks(pageId);
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].uuid === this.blockUuid) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * 把编辑焦点迁到相邻可见行（跨块 ↑↓ 的实现）。
+   *
+   * 顺序（与设计文档 §3.2 一致）：
+   *   ① 写权威焦点 `EditorService.setFocusedBlock(uuid)`（AppStorage 随之变化 ⇒
+   *      目标行 `BlockView` 的 `@Watch` 把它切进编辑态、本行切出并落盘）；
+   *   ② `BlockAnchorService.revealBlockDeferred` 保证目标行**已被 LazyForEach 创建**
+   *      （离屏行没有实例 ⇒ `requestFocus` 会落空）。它自带**幂等重试**
+   *      （80ms / +240ms，上限 2 次，AGENTS 陷阱 20）⇒ **不要自己再写一套** ✓
+   *   ③ 目标行 `BlockEditor.onReady` 的下一帧自己去 `requestFocus`
+   *      （实测请求→`onFocus` ≈620ms，是异步的，不做同步断言）。
+   */
+  private focusAdjacentBlock(delta: number): boolean {
+    const idx = this.visibleRowIndex();
+    if (idx < 0) {
+      return false;
+    }
+    const ws = WorkspaceService.getInstance();
+    const pageId = ws.getPageUuidForBlock(this.blockUuid);
+    if (!pageId) {
+      return false;
+    }
+    const rows: BlockData[] = ws.getVisibleBlocks(pageId);
+    const target = idx + delta;
+    if (target < 0 || target >= rows.length) {
+      return false;
+    }
+    const targetUuid = rows[target].uuid;
+    if (targetUuid === this.blockUuid || targetUuid === '') {
+      return false;
+    }
+    EditorService.getInstance().setFocusedBlock(targetUuid);
+    // 离屏行可能还没实例化 ⇒ 先让它进可见区（幂等重试由服务内部保证）
+    const page = ws.getDataStore().getIndexStore().getPage(pageId);
+    const pageName = page !== undefined ? page.originalName : this.pageName;
+    BlockAnchorService.getInstance().revealBlockDeferred(pageId, pageName, targetUuid);
+    return true;
+  }
+
+  /**
+   * pre-IME 键路由（**只放 Tab / Shift+Tab**，见本节头 ①②③ 的分工说明）。
+   *
+   * @returns true = 已消费（调用方 `return true` ⇒ 键不再交给输入法与 native 编辑器）
+   */
+  private routeKeyPreIme(event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false;
+    }
+    if (!this.ownsKeyboard()) {
+      return false;
+    }
+    const code = event.keyCode;
+    // ─── Enter / 小键盘 Enter ⇒ 见 routeKeyEnter（本窗口实测：pre-IME 是唯一能拦住
+    //     native 插换行的落点；组词态由「输入法消费掉的键到不了这里」保证不抢）───
+    if (code === BlockEditor.K_ENTER || code === BlockEditor.K_NUMPAD_ENTER) {
+      return this.routeKeyEnter(event);
+    }
+    if (code !== BlockEditor.K_TAB) {
+      return false;
+    }
+    let shift = false;
+    try {
+      shift = event.getModifierKeyState !== undefined
+        ? event.getModifierKeyState(['shift']) : false;
+    } catch (e) {
+      shift = false;
+    }
+    this.keyRouted = this.keyRouted + 1;
+    hilog.info(BlockEditor.DOMAIN, BlockEditor.TAG,
+      'W5KEY preIme tab shift=%{public}s n=%{public}d', shift ? '1' : '0', this.keyRouted);
+    // 先与编辑器真实内容对齐（缩进是结构操作，之前打的字必须先落到数据模型里）
+    this.alignTextWithEditor();
+    const editor = EditorService.getInstance();
+    editor.setFocusedBlock(this.blockUuid);
+    if (shift) {
+      editor.outdentBlock();
+      this.onAction('outdent', '');
+    } else {
+      editor.indentBlock();
+      this.onAction('indent', '');
+    }
+    return true;
+  }
+
+  /** 把编辑器真实内容对齐进数据模型（游标移动/程序化写入都不会漏） */
+  private alignTextWithEditor(): void {
+    const live = LivePreviewHelper.extractText(this.controller);
+    // ⚠️ 空提取一律丢弃（与 `aboutToDisappear` 的 `text !== ''` 同一道闸）：
+    //    销毁/重建窗口内控制器可能读回空串，那不是「用户清空了本块」。
+    //    W5 实测过一次代价（`__S1_long.md` 4664 → 4653，首行内容被 `''` 盖掉）⇒ 这道闸是硬的 ✗。
+    if (live === '') {
+      return;
+    }
+    if (live === this.lastRenderedText) {
+      return;
+    }
+    this.lastRenderedText = live;
+    this.refreshBlock();
+    const current = this.blockData !== undefined ? this.blockData.content : '';
+    if (current !== live) {
+      EditorService.getInstance().updateBlockContent(this.blockUuid, live);
+    }
+    this.snapshotText = live;
+  }
+
+  /**
+   * post-IME 键路由（**只放 ↑ / ↓ / Backspace**，见本节头 ② 的分工说明）。
+   *
+   * 到达这里即意味着**输入法没有消费这个键**（post-IME 落点的语义）
+   * ⇒ 组词态的「↑↓ 选候选」「Backspace 删候选字母」天然不受影响 ✓。
+   *
+   * @returns true = 已消费
+   */
+  private routeKeyPostIme(event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false;
+    }
+    if (!this.ownsKeyboard()) {
+      return false;
+    }
+    const code = event.keyCode;
+    const text = this.editorText();
+    let caret = this.caretOffset;
+    if (caret < 0 || caret > text.length) {
+      caret = text.length;
+    }
+
+    // ─── ↑：光标在首行 ⇒ 越界到上一块 ───
+    if (code === BlockEditor.K_DPAD_UP) {
+      if (!this.caretOnFirstLine(text, caret)) {
+        return false; // 块内换行 ⇒ 让 native 自己移光标
+      }
+      const moved = this.focusAdjacentBlock(-1);
+      if (moved) {
+        hilog.info(BlockEditor.DOMAIN, BlockEditor.TAG,
+          'W5KEY up->prev block=%{public}s', this.blockUuid);
+      }
+      return moved;
+    }
+
+    // ─── ↓：光标在末行 ⇒ 越界到下一块 ───
+    if (code === BlockEditor.K_DPAD_DOWN) {
+      if (!this.caretOnLastLine(text, caret)) {
+        return false;
+      }
+      const moved = this.focusAdjacentBlock(1);
+      if (moved) {
+        hilog.info(BlockEditor.DOMAIN, BlockEditor.TAG,
+          'W5KEY down->next block=%{public}s', this.blockUuid);
+      }
+      return moved;
+    }
+
+    // ─── Backspace：**块为空且光标在 0** ⇒ 删空块（与 WebEditor 的 `delete` 同语义）───
+    //   ⚠️ 判据刻意收紧到「空块」：有内容时 Backspace 是普通删除，
+    //      **必须交给 native**（否则连输入法删候选字母都会被打断，且要自己实现删字）。
+    if (code === BlockEditor.K_DEL) {
+      if (text !== '' || caret > 0) {
+        return false;
+      }
+      this.refreshBlock();
+      const model = this.blockData !== undefined ? this.blockData.content : '';
+      if (model !== '') {
+        return false; // 数据模型里还有内容 ⇒ 不是空块，交给 native
+      }
+      const editor = EditorService.getInstance();
+      editor.setFocusedBlock(this.blockUuid);
+      const removed = editor.deleteEmptyBlock();
+      if (!removed) {
+        return false;
+      }
+      hilog.info(BlockEditor.DOMAIN, BlockEditor.TAG,
+        'W5KEY backspace->delete-empty block=%{public}s', this.blockUuid);
+      this.onAction('deleteEmpty', '');
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Enter / 小键盘 Enter 的接管（落点 = `onKeyPreIme`，理由见下方 ★）。
+   *
+   * ─── ★ 为什么最终落在 pre-IME ───
+   *  本窗口把三个候选落点都实测了一遍，结论是**只有 pre-IME 能用**：
+   *   | 落点                    | 实测结果 |
+   *   |-------------------------|----------|
+   *   | `onKeyEvent`（post-IME）| ✗ **太晚**：日志顺序是 `PerformAction(action=8)` → `insertLen=1` → `caret:6->7`，native 的换行插入**已经发生**；而那条插入必然报
+   *   |                         |   `AddTextSpan(opts={index=-1,len=1,themeFC=1}) → spanIndex error, return`（纯 native 路径同样失败）⇒ 换行进不了 span 树， |
+   *   |                         |   内容模型与编辑器从此错位（后续每个字符都 `spanIndex error` 而丢失） |
+   *   | `onKeyEventDispatch`    | ✗ **键送不到编辑器**：实测挂上它之后 `AceFocus` 里连 `OnKeyEventInteral Node process self: Node RichEditor` 都不再出现 |
+   *   |                         |   （只剩 `List/Column/Stack/page` 接手），**普通字母输入整个失效**（磁盘逐字节不变） |
+   *   | **`onKeyPreIme`**       | ✓ 能拦住 native（返回 true ⇒ 后续回调与输入法事件都不再触发）；且 `Tab` 本来就必须挂这里 |
+   *
+   * ─── 对输入法（中文组词）的影响 —— 必须说清 ✗ ───
+   *  · **风险**：`onKeyPreIme` 早于输入法，返回 true 会连 input method events 一起拦
+   *    （SDK `common.d.ts:18672-18687` 原文）。若在**组词态**拦下回车，输入法的
+   *    「上屏」指令就收不到 —— 这正是 W11 用设备实测换来的教训（候选条在屏时回车被吃掉）。
+   *  · **本实现的底气来自两条 W11 已实测的机制，而不是猜测**：
+   *    ① **输入法消费掉的键不会到达应用的按键回调**（W11 实测：拼音字母键
+   *       「0 次进入路由器」，而它们确实被输入法用掉了）⇒ 组词期间的回车**根本不会
+   *       走到本函数**，我们无从抢起；
+   *    ② 组词上屏只改变**编辑器文本**、不产生换行 ⇒ 即便某个输入法把回车放行下来，
+   *       我们的动作也只是「在光标处插入换行 / 建兄弟块」，不会丢弃已上屏内容。
+   *  · **但必须如实登记一条不可自证项** ✗：本窗口在**平板**上做验证，而
+   *    AGENTS 陷阱 21 的定论是「平板：`uitest uiInput keyEvent` 注入键**不过 IME**」
+   *    ⇒ **本窗口拿不到「真实中文组词 + 回车」的现场**。该场景需在 2in1（`MateBook Pro`）
+   *    上按 §7c 的阳性对照复跑，见交付文档「未验证项」。
+   *  · 反面选项（不接管 Enter）的代价已实测：Enter 会留下「模型里有 `\n`、编辑器看不到、
+   *    后续输入继续报 `spanIndex error`」的坏状态（见上表）⇒ 两害相权，接管 Enter。
+   */
+  private routeKeyEnter(event: KeyEvent): boolean {
+    let shift = false;
+    try {
+      shift = event.getModifierKeyState !== undefined
+        ? event.getModifierKeyState(['shift']) : false;
+    } catch (e) {
+      shift = false;
+    }
+    // 先把编辑器真实内容对齐进数据模型（结构操作前的硬要求）
+    this.alignTextWithEditor();
+    const text = this.lastRenderedText;
+    let caret = this.caretOffset;
+    if (caret < 0 || caret > text.length) {
+      caret = text.length;
+    }
+    const atEnd: boolean = caret >= text.length;
+
+    if (shift || !atEnd) {
+      // ─── 块内换行：把 `\n` 插到光标处（整块重建时 `addTextSpan` 接受含 `\n` 的文本，实测可用）───
+      const out = text.substring(0, caret) + '\n' + text.substring(caret);
+      this.keyRouted = this.keyRouted + 1;
+      hilog.info(BlockEditor.DOMAIN, BlockEditor.TAG,
+        'W5KEY enter->newline caret=%{public}d len=%{public}d n=%{public}d',
+        caret, text.length, this.keyRouted);
+      this.applyTextEdit(out, caret + 1);
+      return true;
+    }
+
+    // ─── 末尾回车：建兄弟块（`editor.create-below` 的等价动作）───
+    const ws = WorkspaceService.getInstance();
+    const pageId = ws.getPageUuidForBlock(this.blockUuid);
+    if (pageId === undefined || pageId === '') {
+      return false;
+    }
+    const editor = EditorService.getInstance();
+    // 权威焦点必须是本块，`createBlockBelow` 才会挂在正确的位置
+    editor.setFocusedBlock(this.blockUuid);
+    const newUuid = editor.createBlockBelow(pageId);
+    this.keyRouted = this.keyRouted + 1;
+    hilog.info(BlockEditor.DOMAIN, BlockEditor.TAG,
+      'W5KEY enter->create-below new=%{public}s ok=%{public}s n=%{public}d',
+      newUuid, newUuid !== '' ? '1' : '0', this.keyRouted);
+    if (newUuid === '') {
+      return false;
+    }
+    // ★★ W5 必补的一步（实测，非推测）：`EditorService.createBlockBelow` **只写了自己的
+    //   私有字段 `focusedBlockUuid`，没有走 `setFocusedBlock`**（见 `EditorService.ets:254-257`）
+    //   ⇒ **`AppStorage['callaite_focusedBlock']` 不会变** ⇒
+    //     · 本行的 `BlockView` 收不到 `@Watch`、`isEditing` 一直是 true（旧编辑器不销毁）；
+    //     · 新行的 `BlockView` 也收不到 ⇒ 新块**永远不进编辑态**。
+    //   实测后果：回车建的块在磁盘上**确实存在**（4661→4664→4667 逐次 +3），
+    //   但随后注入的字符一个都进不去（`b`/`n` 注入后磁盘逐字节不变、`W5KEY` 也不再有行），
+    //   最终 `dumpLayout` 里连一个 `RichEditor` 都没有（编辑态整体退出）✗。
+    //
+    // ⚠️⚠️ 但**权威写入必须推到下一帧**，不能在 pre-IME 回调里同步做（这是实测踩出来的）：
+    //   同步 `setFocusedBlock` ⇒ AppStorage 立刻变 ⇒ 本行 `BlockView.isEditing=false` ⇒
+    //   本编辑器在**本次按键事件还没走完**时就被销毁，其 `aboutToDisappear` 读回文本
+    //   （此时 native 侧 span 已被清、`extractText()` 返回 `''`）⇒ 用 `''` 盖掉本块内容。
+    //   实测后果（不可接受）：`__S1_long.md` 首行由 `- 测试块 2` 变成 `- `，**4664 → 4653（−11 字节）**。
+    //   ⇒ 排到下一帧：本回调先把 Enter 消费掉、native 处理完这一帧，再切焦点。
+    setTimeout(() => {
+      EditorService.getInstance().setFocusedBlock(newUuid);
+    }, 0);
+    // 新块的编辑器由 `callaite_focusedBlock` 变化驱动挂载；
+    // 离屏时先把它带进可见区（幂等重试由服务内部保证，AGENTS 陷阱 20）
+    const page = ws.getDataStore().getIndexStore().getPage(pageId);
+    const pageName = page !== undefined ? page.originalName : this.pageName;
+    BlockAnchorService.getInstance().revealBlockDeferred(pageId, pageName, newUuid);
+    this.onAction('createBelow', newUuid);
+    return true;
   }
 
   // ⚠️ 方法名刻意**不叫** `onFocus` / `onBlur`：`CustomComponent` 基类型上已有同名的
@@ -496,6 +968,17 @@ export struct BlockEditor {
       })
       .onBlur(() => {
         this.handleBlur();
+      })
+      // ⚠️ 临时探针（W5）：键路由归属观测，用完即还原
+      .onKeyPreIme((event: KeyEvent): boolean => {
+        // W5：只放 Tab / Shift+Tab（见「W5 · B 形态按键归属」小节的头 ①②③）
+        return this.routeKeyPreIme(event);
+      })
+      .onKeyEvent((event: KeyEvent) => {
+        // W5：只放 ↑ / ↓ / Backspace；**Enter 刻意不在任何路由里**（见小节头 ③）
+        if (this.routeKeyPostIme(event)) {
+          event.stopPropagation();
+        }
       })
   }
 }
