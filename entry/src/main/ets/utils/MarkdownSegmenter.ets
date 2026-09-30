@@ -292,5 +292,50 @@ function parseInlineMarkdown(text: string): MarkdownSegment[] {
     }
   }
 
-  return result;
+  return coalesceContentSegments(result);
+}
+
+/**
+ * 把**相邻的 content 段**合并为一段。★ A-2 修复③：段数上界（RichEditor/span 侧）。
+ *
+ * 背景（实测）：`LivePreviewHelper.buildSpansInternal` 对**每个段**各调一次
+ * `controller.addTextSpan()`，而 `parseInlineMarkdown` 在遇到「无法成段的模式字符」时
+ * **逐字符**推 content 段（`!` `=` `[` … 的兜底分支）⇒ 段数与字符数同阶。
+ * 实测（MatePad Pro 13 / debug，整页编辑器 live 模式）：4000 个 `!` ⇒ 4000 段
+ * ⇒ **单次 `buildSpans` 5130 ms**（≈1.28 ms/次 addTextSpan），主线程单次停顿 5595 ms。
+ * 合并后同一输入只剩 1 段。
+ *
+ * **为什么是纯优化（零行为变更）**：
+ *   - 只合并 `type === 'content'` 的相邻段。`buildSpansInternal` / `buildSourceSpans`
+ *     的状态机只由 **syntax 段的确切文本**（`'**'` / `` '`' `` / `'=='` / `'\n'` /
+ *     行首正则）驱动；content 段**不参与任何状态迁移**，只被原样 `addTextSpan`。
+ *     因此两段相邻 content 之间**不存在状态差**（样式由 inBold/inInlineCode/
+ *     inHighlight/行上下文决定，这三者只被 syntax 段与换行翻转）⇒ 并成一段后
+ *     样式与文本**逐字符一致**。
+ *   - syntax 段一律**不动**：`'**'` 与 `'***'` 合并会破坏 `seg.text === '**'` 的
+ *     翻转判据，故**不合并 syntax**（这是本函数只处理 content 的原因）。
+ *   - 用 `join('')` 而非逐次 `+=`：避免复制 Θ(n²) 拼接形状。
+ */
+function coalesceContentSegments(segments: MarkdownSegment[]): MarkdownSegment[] {
+  if (segments.length < 2) {
+    return segments;
+  }
+  const out: MarkdownSegment[] = [];
+  let buf: string[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (seg.type === 'content') {
+      buf.push(seg.text);
+    } else {
+      if (buf.length > 0) {
+        out.push({ text: buf.join(''), type: 'content' });
+        buf = [];
+      }
+      out.push(seg);
+    }
+  }
+  if (buf.length > 0) {
+    out.push({ text: buf.join(''), type: 'content' });
+  }
+  return out;
 }

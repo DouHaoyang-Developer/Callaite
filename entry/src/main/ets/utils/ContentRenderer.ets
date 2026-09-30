@@ -72,22 +72,46 @@ export class ContentRenderer {
 
     const segments: ContentSegment[] = [];
     let pos = 0;
+    // ★ A-2 修复①b：**连续普通文本只切一次**。
+    //   原实现在两条分支里各推一个 `text.substring(...)` 段；兜底分支更是**每字符一次**
+    //   `substring(pos, pos+1)`。当整段都是「无法成段的模式字符」（`!`×20000）时，
+    //   那就是 20000 次子串切分 —— 若运行时的 `substring` 是整串拷贝而非引用切片，
+    //   这本身就是 Θ(n²)（与 `StringCharAtStwCopy` 的「逐字符 + 拷贝」语义吻合）。
+    //   实测（本窗口交付构建，20000 字 `!` 单块）：仅做修复①②③时系统仍报
+    //   `THREAD_BLOCK_3S`；补上本条后同一输入不再触发（见 docs/S3-W3-A2停顿记录.md）。
+    //   语义等价：产出段的**文本内容、类型、顺序**均不变，只是把相邻 TEXT 提前合并，
+    //   与 `coalescePlainText` 的结果一致。
+    let plainStart = -1;
 
     while (pos < text.length) {
       // 查找当前位置开始的匹配
       const match = ContentRenderer.tryMatchAt(text, pos);
       if (match) {
+        if (plainStart >= 0) {
+          segments.push({ text: text.substring(plainStart, pos), type: SegmentType.TEXT });
+          plainStart = -1;
+        }
         segments.push(match.segment);
         pos = pos + match.consumed;
       } else {
         // 累积纯文本直到下一个匹配开始
         let nextMatch = text.length;
-        const candidates = ContentRenderer.findPatternStarts(text, pos);
-        if (candidates.length > 0) {
-          nextMatch = candidates[0];
+        // ★ A-2 修复①：只取**第一个**候补下标，不再把全后缀的候补收集成数组。
+        //   原实现（`findPatternStarts`）扫到文末并把每个候补下标压进数组，而调用点
+        //   只读 `[0]` ⇒ 当文本里连续出现「无法成段的模式字符」时（`!!!!` / `****` /
+        //   `[[[[` …），`tryMatchAt` 每次失败、`pos` 每次只前进 1，这次「扫到文末」
+        //   被重复执行 ⇒ **Θ(n²) 时间 + Θ(n²) 分配**。
+        //   实测（MatePad Pro 13 / debug）：4 KB ⇒ 单次 912 ms；8 KB ⇒ 3265 ms
+        //   （翻倍 ×3.58 ≈ 4 ⇒ 二次方）。
+        //   改成「只找第一个」后为 Θ(n)，**输出逐字节不变**（旧代码也只读 `[0]`）。
+        const firstStart = ContentRenderer.findFirstPatternStart(text, pos);
+        if (firstStart >= 0) {
+          nextMatch = firstStart;
         }
         if (nextMatch > pos) {
-          segments.push({ text: text.substring(pos, nextMatch), type: SegmentType.TEXT });
+          if (plainStart < 0) {
+            plainStart = pos;
+          }
           pos = nextMatch;
         } else {
           // ────────── P0 死循环兜底（既有缺陷，非本次引入）──────────
@@ -104,13 +128,62 @@ export class ContentRenderer {
           // 兜底语义：把该字符当普通文本消费掉，逐字前进。
           // 零回归论证：能进入本分支 ⇔ 原实现 pos 不前进 ⇒ 原实现**永不返回**。
           //   因此对任何「原本能返回」的输入，执行路径与输出**逐字节不变**。
-          segments.push({ text: text.substring(pos, pos + 1), type: SegmentType.TEXT });
+          if (plainStart < 0) {
+            plainStart = pos;
+          }
           pos = pos + 1;
         }
       }
     }
 
-    return segments;
+    if (plainStart >= 0) {
+      segments.push({ text: text.substring(plainStart, pos), type: SegmentType.TEXT });
+    }
+
+    return ContentRenderer.coalescePlainText(segments);
+  }
+
+  /**
+   * 把**相邻的纯文本（TEXT）段**合并为一段。★ A-2 修复②：段数上界。
+   *
+   * 为什么必须做（实测）：`parse` 的兜底分支在「模式起始字符但无法成段」时**逐字符**
+   * 前进，并**每字符各推一个 TEXT 段**。于是
+   *   ① 段数与字符数同阶（4000 字 ⇒ 4000 段）；
+   *   ② 下游 `BlockView.ContentSegments()` 是 `ForEach` 逐段建组件，
+   *      实测 **≈0.54 ms/段**（8000 段 ⇒ 单次停顿里多出 ≈4.3 s）。
+   * 合并后同一输入只剩 **1 段** ⇒ 下游成本与「行数」同阶，而不是与「字符数」同阶。
+   *
+   * **为什么是纯优化（零行为变更）**：
+   *   - 只合并 `type === SegmentType.TEXT` 的相邻段；`RenderSegment` 对 TEXT 段
+   *     走同一个 `Text(seg.text)` 分支，且 `isClickable(TEXT) === false`
+   *     ⇒ 拆成 N 段与并成 1 段**渲染结果相同**（同一 Text 内相邻字符无额外间距）。
+   *   - 非 TEXT 段一律原样保留、顺序不变 ⇒ 语法/链接/公式/表格等类型判定不受影响。
+   *   - 合并后各段文本的**拼接逐字符等于原文本**（不引入、不丢失字符）。
+   *   - 用 `join('')` 而不是逐次 `prev + seg.text`：后者本身就是 Θ(n²) 字符串拼接
+   *     （本窗口已实测 `chunk += charAt(i)` 那条路的代价，故不再复制该形状）。
+   */
+  private static coalescePlainText(segments: ContentSegment[]): ContentSegment[] {
+    if (segments.length < 2) {
+      return segments;
+    }
+    const out: ContentSegment[] = [];
+    let buf: string[] = [];
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (seg.type === SegmentType.TEXT) {
+        buf.push(seg.text);
+      } else {
+        if (buf.length > 0) {
+          out.push({ text: buf.join(''), type: SegmentType.TEXT });
+          buf = [];
+        }
+        out.push(seg);
+      }
+    }
+    if (buf.length > 0) {
+      out.push({ text: buf.join(''), type: SegmentType.TEXT });
+    }
+    return out;
   }
 
   private static tryMatchAt(text: string, pos: number): MatchResult | undefined {
@@ -278,17 +351,25 @@ export class ContentRenderer {
     return undefined;
   }
 
-  private static findPatternStarts(text: string, fromPos: number): number[] {
-    const result: number[] = [];
+  /**
+   * 返回 `fromPos` 起**第一个**「模式起始字符」的下标；找不到返回 -1。
+   *
+   * ★ A-2 修复①：替换掉原先的 `findPatternStarts`（返回**全部**候补下标的数组）。
+   *   唯一调用点只需要 `[0]`，数组其余部分是纯浪费；而当候补字符连续且都无法成段时，
+   *   那个「扫到文末」会被每个字符重复一次 ⇒ Θ(n²)。改为提前返回 ⇒ Θ(n)。
+   *   判据等价：`findPatternStarts(...).length > 0` ⇔ `findFirstPatternStart(...) >= 0`，
+   *   且 `candidates[0] === findFirstPatternStart(...)` ⇒ **输出逐字节不变**。
+   */
+  private static findFirstPatternStart(text: string, fromPos: number): number {
     for (let i = fromPos; i < text.length; i++) {
       const ch = text.charAt(i);
       if (ch === '[' || ch === '(' || ch === '*' || ch === '=' ||
           ch === '~' || ch === '`' || ch === '#' || ch === '!' ||
           ch === '>' || ch === '$') {
-        result.push(i);
+        return i;
       }
     }
-    return result;
+    return -1;
   }
 
   private static isTagChar(ch: string): boolean {
