@@ -2,7 +2,25 @@ import { BlockData } from '../../core/models/Block';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { TablerIcon } from '../common/Icons';
 import { OverlayKeyRouter, OverlayId, OverlayKeyBinding } from '../../utils/OverlayKeyRouter';
+import { AppState } from '../../state/AppState';
 import { KeyCode } from '@kit.InputKit';
+
+/**
+ * 页内搜索**本体**是否已就绪。
+ *
+ * U2.4 的排程裁决（计划 §U2.4 原文）：
+ *   「键位 Ctrl+Shift+F **先注册（打开即占位提示「编辑器重铸后可用」）**，
+ *     组件本体随编辑器节奏走。」
+ * ⇒ 本窗口（W12）只做**前两件**：显隐统一 + 可达入口；**本体保持占位**。
+ *
+ * 为什么用常量而不是删掉下面那段实现：
+ *   · 计划 §U2.4 第 3 件（跳块走 `AnchorRegistry` + 文本级高亮）**尚未做**，
+ *     现在就把它打开 = 交付一个「能打开、搜得到计数、但既不滚动也不高亮」的半成品，
+ *     用户看到的「跳块」是假的 —— 比占位更糟（可点但无用的 UI）。
+ *   · 保留实现、只由这一个常量切换 ⇒ 第 3 件做完时**改一行**即可，
+ *     不会出现「现在删、下轮再写一遍」的两轮 churn（这正是计划延后它的理由）。
+ */
+const FIND_IN_PAGE_BODY_READY: boolean = false;
 
 /**
  * FindInPage — 页内搜索浮动组件。
@@ -10,9 +28,11 @@ import { KeyCode } from '@kit.InputKit';
  * 在当前页面所有 Block 中搜索文本，提供上/下导航。
  * 对应 Logseq 的 find-in-page 功能。
  *
- * 用法：
- *   FindInPage({ pageId: 'xxx' })
- *   通过组件引用调用 show() / hide() 控制显隐。
+ * 用法与开合：
+ *   `FindInPage({ pageId: 'xxx' })` —— 显隐**不再由本组件自己的 @State 决定**，
+ *   而是与宿主共用 AppStorage 的 `callaite_findInPageOpen`（读写都走 `AppState`）。
+ *   入口 = `Ctrl+Shift+F`（`ShortcutService.app.find-in-page`）；
+ *   关闭 = Esc / ✕ / `AppState.closeFindInPage()`。
  *
  * 搜索逻辑：
  *   1. 递归遍历当前页所有 Block（getPageBlocks + getChildrenOfBlock）
@@ -23,7 +43,15 @@ import { KeyCode } from '@kit.InputKit';
 @Component
 export struct FindInPage {
   @Prop pageId: string = '';
-  @State isVisible: boolean = false;
+  /**
+   * U2.4（W12）：开合态**唯一来源** —— 与宿主 `BlockList` 读的是同一个 AppStorage 键。
+   *
+   * 迁移前是本组件自己的 `@State isVisible = false`，只有自己的 `show()` 能置 true，
+   * 而 `show()` 全仓 0 调用 ⇒ 组件即使被构造出来也永远是关的；
+   * 同时宿主还另有一份 `findInPageVisible` ⇒ 两份标志互不相通（U2.4 的「显隐统一」）。
+   * 现在两侧共用一个键，`AppState.openFindInPage()/closeFindInPage()` 是唯一写入口。
+   */
+  @StorageLink('callaite_findInPageOpen') @Watch('onVisibilityChanged') isVisible: boolean = false;
   @State searchQuery: string = '';
   @State matchCount: number = 0;
   @State currentMatch: number = 0;
@@ -31,33 +59,24 @@ export struct FindInPage {
   @StorageLink('callaite_blocksVersion') @Watch('onRefresh') private blocksVersion: number = 0;
 
   aboutToAppear(): void {
-    // 初始隐藏，等待 show() 调用。
-    // U2.2/W11：登记进按键路由器。开合态以**本组件自己的 isVisible 为准** ——
+    // U2.2/W11：登记进按键路由器。开合态以**共用的 `callaite_findInPageOpen` 为准** ——
     // 不按「已挂载」登记为打开，否则会出现「浮层没显示却在吞按键」的静默失效。
     //
-    // ─── ⚠️ 可达性（W12 重新核对后的准确结论，替换 W11 的旧描述）───
-    // 症结不是「两个互不相通的显隐标志」，而是**只有一半**：
-    //   · 宿主 `BlockList.findInPageVisible` 确实决定是否构造本组件，但**全仓 0 调用**
-    //     （`toggleFindInPage` / `showFindInPage` / `hideFindInPage` 三个方法也无调用点）
-    //     ⇒ 组件从未被构造 ⇒ 下面的 `isVisible`（初始 false，只有 `show()` 能置 true，
-    //     而 `show()` 同样 0 调用）**根本没机会参与**。
-    //   · 因此真正的缺口是「**没有触发源**」这一条，与 SlashMenu 本轮修掉的缺陷同型；
-    //     `isVisible` 只是第二道（且当前不可达的）闸门。
+    // ─── 可达性：W12（U2.4 前两件）已修，此处保留核对记录 ───
+    // 迁移前的缺口是**两条叠加**：
+    //   ① 宿主 `BlockList.findInPageVisible` 决定是否构造本组件，但**全仓 0 调用**
+    //      （`toggleFindInPage` / `showFindInPage` / `hideFindInPage` 三个方法也无调用点）
+    //      ⇒ 组件从未被构造；
+    //   ② 即便构造出来，本组件自己的 `isVisible` 初始 false 且只有 `show()` 能置 true，
+    //      而 `show()` 同样 0 调用 ⇒ 仍是关的。
+    //   ⇒ 两条合起来 = 「**当前没有任何路径能让它显示**」（EXEC-PLAN §17.6-2 原文）。
     //
-    // ─── 本轮（U2.3/W12）为什么**不**一并修 ───
-    //   1. 计划把 FindInPage 的可达性放在 **U2.4「FindInPage 重做」**：显隐控制反转
-    //      （删内部 isVisible，改 `@StorageLink('callaite_findInPageOpen')`）、
-    //      渲染位置从 BlockList 内联移到 MainContainer 顶部 Stack、navigate 走
-    //      `AnchorRegistry` + 文本级高亮 —— 三项都在 U2.4 里，现在补触发源会在
-    //      下个窗口被整体改写（同一模块两轮 churn）。
-    //   2. 本轮验收面（快捷键重排 + cyclePriority→SlashMenu + SlashMenu 可达）
-    //      不依赖它；而给它接一个「只能开、搜不了、不会跳块」的入口属于
-    //      「把 0 调用换成 0 效果」，比现状更糟（会产生可点但无用的 UI）。
-    //   3. 键位也还没到：计划的 U2.3 只注册 `Ctrl+Shift+F`，而**打开后应显示的是
-    //      「编辑器重铸后可用」占位提示**（计划 §U2.4 原文）—— 本轮注册它会打开一条
-    //      什么都不做的搜索栏，不注册则与现状等价。⇒ **两者都不做，留空给 U2.4**。
-    //
-    // 已按 §待验收清单登记：`FindInPage` 全链路（显示/搜索/跳块/高亮/Esc）待 U2.4 验收。
+    // W12 的修法（= U2.4 的第 1、2 件）：
+    //   · 显隐统一：删掉本组件的 `@State isVisible`，与宿主共用
+    //     `AppStorage['callaite_findInPageOpen']`（写入口只有 `AppState.open/closeFindInPage`）；
+    //   · 可达入口：`ShortcutService` 注册 `Ctrl+Shift+F`（计划 §U2.3 目标键位表）。
+    // 仍未做的第 3 件（**跳块走 `AnchorRegistry` + 文本级高亮**）见文件头
+    // `FIND_IN_PAGE_BODY_READY` 的说明；本组件当前以占位形态呈现。
     const router = OverlayKeyRouter.getInstance();
     router.registerOverlay(OverlayId.FIND_IN_PAGE, new OverlayKeyBinding((keyCode: number, event: KeyEvent) => {
       return this.applyNavKey(keyCode, event);
@@ -67,6 +86,20 @@ export struct FindInPage {
 
   aboutToDisappear(): void {
     OverlayKeyRouter.getInstance().unregisterOverlay(OverlayId.FIND_IN_PAGE);
+  }
+
+  /**
+   * 开合态变化 ⇒ 同步按键路由器的「已打开」标记。
+   *
+   * 路由器的开合态必须与视觉状态同步，否则会出现
+   * 「搜索栏已经关掉、enter/esc 仍被它吞掉」的分叉（SlashMenu 上一轮修过的同型缺陷）。
+   */
+  onVisibilityChanged(): void {
+    const open: boolean = this.isVisible;
+    OverlayKeyRouter.getInstance().setOverlayOpen(OverlayId.FIND_IN_PAGE, open);
+    if (!open) {
+      this.clearSearchState();
+    }
   }
 
   /**
@@ -105,19 +138,28 @@ export struct FindInPage {
 
   /**
    * 显示搜索框。
+   *
+   * U2.4（W12）：**不再直接写自己的状态**，而是走 `AppState` 这个唯一写入口 ——
+   * 这样宿主 `BlockList` 的 `@StorageLink` 会同步收到，两侧不可能再分叉。
    */
   show(): void {
-    this.isVisible = true;
-    OverlayKeyRouter.getInstance().setOverlayOpen(OverlayId.FIND_IN_PAGE, true);
+    AppState.openFindInPage();
   }
 
   /**
    * 隐藏并清空搜索状态。
+   *
+   * 同样走 `AppState`（闭环见 `onVisibilityChanged`：它会在关闭时清搜索状态并
+   * 同步按键路由器，故这里不再重复一遍清理）。
    */
   hide(): void {
-    this.isVisible = false;
-    // 路由开合态必须同步 —— 否则搜索栏消失后仍会继续吞掉 esc/enter。
-    OverlayKeyRouter.getInstance().setOverlayOpen(OverlayId.FIND_IN_PAGE, false);
+    AppState.closeFindInPage();
+  }
+
+  /**
+   * 清空搜索态（关闭时调用；也供将来「重开时从零开始」复用）。
+   */
+  private clearSearchState(): void {
     this.searchQuery = '';
     this.matchCount = 0;
     this.currentMatch = 0;
@@ -209,6 +251,52 @@ export struct FindInPage {
   build() {
     if (!this.isVisible) {
       Row().width('100%').height(0)
+    } else if (!FIND_IN_PAGE_BODY_READY) {
+      // ─── U2.4 占位形态（计划原文：「键位 Ctrl+Shift+F 先注册，打开即占位提示
+      //     『编辑器重铸后可用』，组件本体随编辑器节奏走」）───
+      //
+      // 为什么不直接把下面那份实现打开：第 3 件（跳块走 AnchorRegistry + 文本级高亮）
+      // 未做 ⇒ 那样交付的是「能搜到计数、但点了既不滚动也不高亮」的半成品，
+      // 用户会以为跳块坏了。占位是**诚实**的状态，也不会挡住 Esc 关闭这条回路。
+      //
+      // 提示里必须写明「怎么关」：占位条本身只有一个 ✕，用户第一反应是找 Esc。
+      Row({ space: 8 }) {
+        TablerIcon('search', 16, $r('app.color.muted_text'))
+        Text('页内搜索：编辑器重铸后可用')
+          .fontSize(13)
+          .fontColor($r('app.color.muted_text'))
+          .layoutWeight(1)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .id('callaite_findInPagePlaceholder')
+        Text('Esc 关闭')
+          .fontSize(11)
+          .fontColor($r('app.color.muted_text'))
+          .opacity(0.7)
+        Row() {
+          TablerIcon('x', 16, $r('app.color.muted_text'))
+        }
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .width(28)
+        .height(28)
+        .borderRadius(4)
+        .id('callaite_findInPageClose')
+        .onClick(() => {
+          this.hide();
+        })
+      }
+      .width('100%')
+      .height(44)
+      .padding({ left: 12, right: 8 })
+      .backgroundColor($r('app.color.surface1'))
+      .border({ width: { bottom: 1 }, color: $r('app.color.border') })
+      // 兜底落点：焦点不在本条上时仍要能接管 Esc（与下面正式形态同一份路由器去重标记）
+      .onKeyEvent((event: KeyEvent) => {
+        if (OverlayKeyRouter.getInstance().handle(event, OverlayId.FIND_IN_PAGE)) {
+          event.stopPropagation();
+        }
+      })
     } else {
       Row({ space: 8 }) {
         TablerIcon('search', 16, $r('app.color.muted_text'))

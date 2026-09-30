@@ -120,7 +120,16 @@ export struct BlockList {
   @State blocks: BlockData[] = [];
   /** 可见行序列（List 的数据源；顶层块 + 已展开子块，屏幕顺序）。 */
   @State rows: BlockData[] = [];
-  @State findInPageVisible: boolean = false;
+  /**
+   * U2.4（W12）：页内搜索条开合态 —— **与 FindInPage 共用同一个 AppStorage 键**。
+   *
+   * 迁移前是本组件的 `@State findInPageVisible`，而 `FindInPage` 内部另有一个
+   * `@State isVisible`（初始 false，只有自己的 `show()` 能置 true）⇒ **两份互不相通的
+   * 显隐标志**：宿主放开时组件内部仍是关的，且没有任何路径能让两者同时为真。
+   * 现改为单一开合态（`callaite_findInPageOpen`，读写都经 `AppState`），
+   * 与 U2.3 的 SlashMenu 同一约定（见下面 slashMenuOpen 的注释）。
+   */
+  @StorageLink('callaite_findInPageOpen') private findInPageVisible: boolean = false;
   /**
    * U2.3：Slash 菜单开合态与目标块 —— **改由 AppStorage 单一来源**。
    *
@@ -575,17 +584,21 @@ export struct BlockList {
     AppState.openSlashMenu(blockUuid);
   }
 
-  // ─── 页内搜索 ───
+  // ─── 页内搜索（U2.4 / W12：开合态统一走 AppState，与 FindInPage 同一个键）───
 
   toggleFindInPage(): void {
-    this.findInPageVisible = !this.findInPageVisible;
+    if (AppState.isFindInPageOpen()) {
+      AppState.closeFindInPage();
+    } else {
+      AppState.openFindInPage();
+    }
   }
 
   showFindInPage(): void {
-    this.findInPageVisible = true;
+    AppState.openFindInPage();
   }
 
   hideFindInPage(): void {
-    this.findInPageVisible = false;
+    AppState.closeFindInPage();
   }
 }

@@ -32,6 +32,7 @@ interface StorageKeys {
   searchPanelOpen: string;
   slashMenuOpen: string;
   slashMenuBlockUuid: string;
+  findInPageOpen: string;
   exportDialogOpen: string;
   importDialogOpen: string;
   rightSidebarBlocks: string;
@@ -48,6 +49,7 @@ const STORAGE_KEYS: StorageKeys = {
   searchPanelOpen: 'callaite_searchPanelOpen',
   slashMenuOpen: 'callaite_slashMenuOpen',
   slashMenuBlockUuid: 'callaite_slashMenuBlockUuid',
+  findInPageOpen: 'callaite_findInPageOpen',
   exportDialogOpen: 'callaite_exportDialogOpen',
   importDialogOpen: 'callaite_importDialogOpen',
   rightSidebarBlocks: 'callaite_rightSidebarBlocks'
@@ -231,6 +233,11 @@ export class AppState {
     // 初值必须在页面挂载前存在 —— BlockList 以 @StorageLink 读它们决定是否构造 SlashMenu。
     AppStorage.setOrCreate(STORAGE_KEYS.slashMenuOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.slashMenuBlockUuid, '');
+    // U2.4（W12）：页内搜索条的**唯一开合态**。
+    // 初值必须在页面挂载前存在 —— BlockList 以 @StorageLink 读它决定是否构造 FindInPage，
+    // FindInPage 自己也以 @StorageLink 读同一个键决定显隐（此前是 BlockList 的 @State
+    // 与组件内部 @State 两份互不相通的标志，见 FindInPage 类头 §可达性）。
+    AppStorage.setOrCreate(STORAGE_KEYS.findInPageOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.exportDialogOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.importDialogOpen, false);
     AppStorage.setOrCreate(STORAGE_KEYS.rightSidebarBlocks, JSON.stringify([]));
@@ -642,6 +649,36 @@ export class AppState {
 
   static closeSlashMenu(): void {
     AppStorage.setOrCreate(STORAGE_KEYS.slashMenuOpen, false);
+  }
+
+  // ─── 页内搜索（FindInPage，U2.4 / W12）───
+
+  static isFindInPageOpen(): boolean {
+    return AppStorage.get<boolean>(STORAGE_KEYS.findInPageOpen) ?? false;
+  }
+
+  /**
+   * 打开页内搜索条（FindInPage）。
+   *
+   * 为什么开合态放 AppStorage 而不是某个组件的 @State（与 openSlashMenu 同一条理由）：
+   *   ① 入口在 `ShortcutService`（Ctrl+Shift+F），而**渲染点**在 `BlockList` ——
+   *      服务够不到组件的 @State，AppStorage 是两侧都能读写的唯一通道；
+   *   ② 关闭动作发生在 `FindInPage` 内部（Esc / ✕），必须能让**宿主卸载/隐藏**它 ——
+   *      内部 @State 宿主观察不到（SlashMenu 上一轮正是这么踩的：内部 dismiss 只把
+   *      自己画成 0×0，组件仍挂在树上，`OverlayKeyRouter` 的开合态与视觉状态分叉）。
+   *
+   * 互斥：与快速切换 / 全局搜索 / Slash 菜单互斥（多块浮层同时开着会争键盘焦点，
+   * 与 openSlashMenu、setCommandPaletteOpen、setSearchPanelOpen 同一判据）。
+   */
+  static openFindInPage(): void {
+    AppStorage.setOrCreate(STORAGE_KEYS.findInPageOpen, true);
+    AppStorage.setOrCreate(STORAGE_KEYS.commandPaletteOpen, false);
+    AppStorage.setOrCreate(STORAGE_KEYS.searchPanelOpen, false);
+    AppStorage.setOrCreate(STORAGE_KEYS.slashMenuOpen, false);
+  }
+
+  static closeFindInPage(): void {
+    AppStorage.setOrCreate(STORAGE_KEYS.findInPageOpen, false);
   }
 
   static isExportDialogOpen(): boolean {

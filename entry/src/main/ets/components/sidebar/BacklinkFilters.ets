@@ -349,8 +349,44 @@ export struct BacklinkFilters {
           this.CountRow()
         }
         // ─── 反链列表 ───
+        //
+        // ★ W12 修复（切页后反链列表不刷新）：本段**刻意内联在 build() 里**，
+        //   而不是抽成 `BacklinkList(filtered)` 那样的**带参 @Builder**。
+        //
+        //   实测（W12，2in1，`2026-09-25` ⇄ `2026-09-30`）：
+        //     · 计数行（`CountRow` 直接读 `this.getFilteredBacklinks()`）**切页后正确更新**；
+        //     · 列表（`@Builder BacklinkList(filtered)` 里的 `ForEach`）**不更新** ——
+        //       切到反链为 0 的页面后，上一条反链卡片**仍留在屏幕上**，
+        //       形成「计数 0 / 列表 1」的自相矛盾画面（截图与 `dumpLayout` 双证）。
+        //   插桩实测的判据：切页后 `@Prop @Watch` 确实跑到了、`@State backlinks` 确实刷新了
+        //     （`BF.watch page=2026-09-25 raw=0 showList=true`），
+        //     ⇒ **数据层是新的，只有 ForEach 没重跑**。
+        //   机制与 AGENTS 陷阱 15 同族：**参数化 `@Builder` 里的 `ForEach` 不随「参数变化」重跑**
+        //     （它只认自己被创建那次的数据；本例 `filtered` 由 1 条变 0 条，ForEach 仍渲染旧 1 条）。
+        //   ⇒ 修法就是**让 ForEach 直接依赖 `@State`**：内联进 build()，
+        //     数据源改为 `this.getFilteredBacklinks()`（与计数行同源，两处口径不可能再打架）。
+        //   ⚠️ 不要为了「复用」把它再抽回带参 @Builder —— 那正是本缺陷的成因。
         if (this.showList) {
-          this.BacklinkList(this.getFilteredBacklinks())
+          if (this.getFilteredBacklinks().length === 0) {
+            Column({ space: 8 }) {
+              TablerIcon('link-off', 28, $r('app.color.muted_text'))
+              // 空态分两种：本来就没有反链 vs 有反链但被筛掉了 —— 后者要给出可操作提示，
+              // 否则用户看到「暂无反链」会以为数据没了（筛选态下的静默误导）。
+              Text(this.hasActiveFilter() ? '没有匹配的反链（请调整筛选条件）' : '暂无反链')
+                .fontSize(13)
+                .fontColor($r('app.color.muted_text'))
+            }
+            .width('100%')
+            .padding({ top: 32, bottom: 32 })
+            .alignItems(HorizontalAlign.Center)
+          } else {
+            Column({ space: 0 }) {
+              ForEach(this.getFilteredBacklinks(), (item: BacklinkDisplay) => {
+                this.BacklinkItem(item)
+              }, (item: BacklinkDisplay) => item.sourceBlockId)
+            }
+            .width('100%')
+          }
         }
       }
       .width('100%')
@@ -398,33 +434,6 @@ export struct BacklinkFilters {
       source: AnchorSource.BACKLINK,
       pageNameHint: item.sourcePageName
     });
-  }
-
-  /**
-   * 反链列表渲染。
-   */
-  @Builder
-  BacklinkList(filtered: BacklinkDisplay[]) {
-    if (filtered.length === 0) {
-      Column({ space: 8 }) {
-        TablerIcon('link-off', 28, $r('app.color.muted_text'))
-        // 空态分两种：本来就没有反链 vs 有反链但被筛掉了 —— 后者要给出可操作提示，
-        // 否则用户看到「暂无反链」会以为数据没了（筛选态下的静默误导）。
-        Text(this.hasActiveFilter() ? '没有匹配的反链（请调整筛选条件）' : '暂无反链')
-          .fontSize(13)
-          .fontColor($r('app.color.muted_text'))
-      }
-      .width('100%')
-      .padding({ top: 32, bottom: 32 })
-      .alignItems(HorizontalAlign.Center)
-    } else {
-      Column({ space: 0 }) {
-        ForEach(filtered, (item: BacklinkDisplay) => {
-          this.BacklinkItem(item)
-        }, (item: BacklinkDisplay) => item.sourceBlockId)
-      }
-      .width('100%')
-    }
   }
 
   /**

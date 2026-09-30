@@ -527,6 +527,30 @@ export class ShortcutService {
       }
     });
 
+    // Ctrl+Shift+F — 页内搜索（FindInPage）。U2.4（W12）：**先注册键位**。
+    //
+    // 计划原文（`PLAN-UI-Alignment.md` §U2.4 延后理由）：
+    //   「键位 Ctrl+Shift+F **先注册（打开即占位提示「编辑器重铸后可用」）**，
+    //     组件本体随编辑器节奏走。」
+    // 计划键位表（同文件 §U2.3 目标键位表）：
+    //   `Ctrl+Shift+F` 现动作「无」→ 新动作「**FindInPage（页内搜索）**」，
+    //   备注「U2.4 重做后归位」。
+    //
+    // 与 Ctrl+F 的分工（**不要合并**）：Ctrl+F = 全局搜索（跨页面 + 块内容，SearchPanel）；
+    // Ctrl+Shift+F = **页内**搜索。计划备注另写明「Obsidian 语义里 Ctrl+F 是页内 ——
+    // 若后续要严格对齐，与 Ctrl+Shift+F 对调成本为零（注册表一行）」⇒ 保持现状，勿擅改。
+    self.register({
+      id: 'app.find-in-page',
+      key: 'F',
+      ctrl: true,
+      shift: true,
+      alt: false,
+      description: '页内搜索',
+      action: () => {
+        AppState.openFindInPage();
+      }
+    });
+
     // Ctrl+S — 保存当前页面
     self.register({
       id: 'app.save',
