@@ -319,7 +319,27 @@ export struct BlockEditor {
       return;
     }
     this.caretOffset = caret;
-    if (caret !== this.lastSpanCaret) {
+    // ★ 对症修复（S3-W4 实测）：native 在「插入字符」时**先报光标、后报内容变更**
+    //   （系统日志顺序恒为 `insertLen=1 → caret:5->6 → OnSelectionChange`，`onDidChange` 在其后）。
+    //   旧实现只看 `caret !== lastSpanCaret` 就重建，而 `rebuildSpans()` 用的是
+    //   **上一次的 `lastRenderedText`** ⇒ 把刚输入的字符用一个旧快照覆盖掉：
+    //   实测 native 侧 `delete spans, range=[0,6]` 之后只 `AddTextSpan len=5`，
+    //   字符被静默丢弃、磁盘逐字节不变（`__S1_long.md` 4661B / MD5 不变）。
+    //   ⇒ 这里先与编辑器**真实内容**对齐（并在内容真的变了时同步数据模型），
+    //     再决定是否重建；重建时用的就是新文本，不会再覆盖。
+    const live: string = LivePreviewHelper.extractText(this.controller);
+    // ⚠️ 空提取必须丢弃（与 `aboutToDisappear` 的 `text !== ''` 同一道闸）：
+    //    重建窗口内控制器可能读回空串，那不是「用户清空了本块」。
+    if (live !== '' && live !== this.lastRenderedText) {
+      this.lastRenderedText = live;
+      this.refreshBlock();
+      const current = this.blockData !== undefined ? this.blockData.content : '';
+      if (current !== live) {
+        EditorService.getInstance().updateBlockContent(this.blockUuid, live);
+      }
+      this.snapshotText = live;
+    }
+    if (this.lastRenderedText !== this.lastSpanText || caret !== this.lastSpanCaret) {
       this.rebuildSpans();
     }
   }
