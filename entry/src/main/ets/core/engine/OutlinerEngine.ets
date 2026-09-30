@@ -65,12 +65,27 @@ export class OutlinerEngine {
       this.blockTree.clearRecycleBin();
     }
 
+    // ⚠️ 落盘页面必须在 dispatch **之前**解析（W9-U1.4 实测修复）：
+    // `delete-block` / `delete-blocks` 的 dispatch 实现内部会调用
+    // `IndexStore.removeBlock()` 把 block→page 索引一并清掉，dispatch 之后再走
+    // findPageForOp → getPageUuidForBlock 已经查不到该块 ⇒ `if (pageId)` 分支被跳过
+    // ⇒ **删除永远不写盘**：内存树与该行 UI 都已删除、磁盘 .md 仍保留原内容，
+    // 重启后块「复活」，期间任何一次无关的落盘又会把删除悄悄提交 —— 两个方向都错。
+    //
+    // 实测证据（MatePad Pro 13 / API 26）：批量删除 2 块后 UI 状态栏 300→298 块、
+    // 两行从列表消失，而 `__S1_long.md` 与删除前**逐字节相同**
+    // （MD5 20476B1A6AE6A233639E1563D0251672，4689 字节）。
+    //
+    // 其余 op 在 dispatch 前后解析到的页面完全相同（块仍在树中），行为不变；
+    // delete 之外的语义因此零漂移。
+    const pageIdBeforeOp = this.findPageForOp(op);
+
     const result = this.dispatch(op);
 
     if (result.success) {
       // 修复：记录操作结果，供 undo 使用
       this.lastOpResults.set(op, result.affectedUuids);
-      this.persistForOp(op);
+      this.persistForOp(op, pageIdBeforeOp);
     }
 
     return result;
@@ -421,10 +436,15 @@ export class OutlinerEngine {
    *     再同步 savePage 本次受影响的页面。保留原有的即时落盘语义。
    *   · 其余操作（collapse 等）→ 不动文件，与原实现一致
    *     （`collapse` 从未在 persistForOp 的落盘清单里）。
+   *
+   * @param pageIdOverride 由 `execute()` 在 **dispatch 之前**解析好的受影响页面。
+   *        破坏性操作（delete-*）在 dispatch 中会清掉 block→page 索引，
+   *        dispatch 之后再解析必然为空 —— 传入该值可让删除照常落盘。
+   *        省略时退化为「现场解析」（undo/redo 路径仍用旧语义）。
    */
-  private persistForOp(op: OutlinerOp): void {
+  private persistForOp(op: OutlinerOp, pageIdOverride?: string): void {
     if (this.isTextOnlyOp(op)) {
-      const pageId = this.findPageForOp(op);
+      const pageId = pageIdOverride !== undefined ? pageIdOverride : this.findPageForOp(op);
       if (pageId) {
         DirtyPageTracker.getInstance().markDirty(pageId);
       }
@@ -438,7 +458,7 @@ export class OutlinerEngine {
     // 结构性操作之前：必须先把「已标脏未落盘」的内容写下去
     DirtyPageTracker.getInstance().flushNow();
 
-    const pageId = this.findPageForOp(op);
+    const pageId = pageIdOverride !== undefined ? pageIdOverride : this.findPageForOp(op);
     if (pageId) {
       this.persistNow(pageId);
     }

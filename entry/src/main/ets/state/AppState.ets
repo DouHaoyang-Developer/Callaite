@@ -229,6 +229,10 @@ export class AppState {
     // 移动端浮层（Obsidian iOS：标签总览 / 更多菜单）
     AppStorage.setOrCreate('callaite_tabOverviewOpen', false);
     AppStorage.setOrCreate('callaite_mobileMenuOpen', false);
+    // U1.4 块多选：模式开关与选中态版本号必须在页面挂载前存在，
+    // 各 BlockView / BlockSelection 的 @StorageLink 才能取到确定初值。
+    AppStorage.setOrCreate('callaite_selectionMode', false);
+    AppStorage.setOrCreate('callaite_selectionVersion', 0);
 
     // 历史栈初始化
     const initHistory: HistoryStack = { pages: [AppStorage.get<string>(STORAGE_KEYS.currentPage) ?? 'Home'], current: 0 };
@@ -627,6 +631,54 @@ export class AppState {
 
   static getBlocksVersion(): number {
     return AppStorage.get<number>('callaite_blocksVersion') ?? 0;
+  }
+
+  // ─── 块多选（U1.4） ───
+
+  /**
+   * 递增 selectionVersion —— 通知所有 BlockView 重算自己的选中态。
+   *
+   * 为什么需要它，而不复用 `callaite_blocksVersion`：
+   * 选中/取消选中**不改动任何块数据**，若借用 blocksVersion，BlockList 会走一遍
+   * refreshBlocks → getVisibleBlocks → dataSource.onDataReloaded **整表重建**
+   * （`__S1_long` 这类 300 行页面上每点选一次就重建一次列表，LazyForEach 复用与
+   * 拖拽命中表 registerBlockRow 全部跟着抖动）。selectionVersion 只驱动「重算
+   * isSelected」这一件事，与数据刷新彻底解耦。
+   *
+   * 背景：`EditorService.selectedUuids` 是普通私有数组，不参与 ArkTS 状态观察
+   * （不在 @State/@StorageLink 中），因此必须有一个显式的「版本号」通道把变化
+   * 广播到 UI —— 这正是本方法存在的原因。
+   */
+  static bumpSelectionVersion(): void {
+    const current = AppStorage.get<number>('callaite_selectionVersion') ?? 0;
+    AppStorage.setOrCreate('callaite_selectionVersion', current + 1);
+  }
+
+  static getSelectionVersion(): number {
+    return AppStorage.get<number>('callaite_selectionVersion') ?? 0;
+  }
+
+  /**
+   * 是否处于「块多选模式」。
+   *
+   * 这是 U1.4 **可点击入口**依赖的唯一开关（触屏上不依赖 Ctrl 键，也不与 S1-H 的
+   * 长按拖拽抢手势）：
+   *   · 关闭时：行内不渲染选择圈，点击行内容仍是「进入编辑」——与接线前完全一致；
+   *   · 开启时：行内出现选择圈（24vp，常显），点圈即增删选中；行内容点击让位给选中。
+   */
+  static isSelectionMode(): boolean {
+    return AppStorage.get<boolean>('callaite_selectionMode') ?? false;
+  }
+
+  /**
+   * 开/关块多选模式（并顺手 bump 一次选中态版本号，使各行的选择圈同步增减）。
+   *
+   * 只负责开关与通知：清空选中集合由 EditorService.clearSelection() 承担
+   * （见 BlockSelection.handleExitSelectionMode，避免本类反向依赖 EditorService）。
+   */
+  static setSelectionMode(on: boolean): void {
+    AppStorage.setOrCreate('callaite_selectionMode', on);
+    AppState.bumpSelectionVersion();
   }
 
   // ─── Block 定位高亮（U2.1a） ───

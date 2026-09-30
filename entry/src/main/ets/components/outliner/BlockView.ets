@@ -47,6 +47,24 @@ export struct BlockView {
   @State bulletColor: ResourceColor = $r('app.color.muted_text');
   // 选中状态（多选支持）
   @State isSelected: boolean = false;
+  // ─── U1.4 块多选接通 ───
+  /**
+   * 全局多选模式开关（AppStorage，由 BlockSelection 的常显入口「选择」或 Ctrl+点击开启）。
+   *
+   * 为什么必须是「模式」而不是直接给长按加语义：块级长按已被 S1-H 的拖拽抓取占用
+   * （见下方 LongPressGesture，500ms → reportRowGrab），把长按改判为选中会直接
+   * 破坏已验收的拖拽。模式开关把「选中」搬到一条与任何手势都不冲突的路径上：
+   * 关闭时本组件的行为与接线前逐字节等价。
+   */
+  @StorageLink('callaite_selectionMode') selectionMode: boolean = false;
+  /**
+   * 选中态版本号。
+   *
+   * `EditorService.selectedUuids` 是普通私有数组，不参与 ArkTS 状态观察，故以本序号
+   * 为 watch 源：任何一处改动选中集合后 `AppState.bumpSelectionVersion()`，
+   * 各可见行据此重算 `isSelected`（只影响边框与底色，不触碰块数据）。
+   */
+  @StorageLink('callaite_selectionVersion') @Watch('onSelectionVersionChanged') selectionVersion: number = 0;
   // 内联查询文本（{{query ...}} 或 #+BEGIN_QUERY）
   @State inlineQuery: string = '';
   // Markdown 表格原始行（按行保留，支持单元格编辑）
@@ -159,6 +177,10 @@ export struct BlockView {
   refreshBlock(): void {
     const ws = WorkspaceService.getInstance();
     this.blockData = ws.getBlock(this.blockUuid);
+    // U1.4：一并同步选中态。必要性：LazyForEach 复用/新建行时本方法是唯一的入口
+    // （aboutToAppear 与各类刷新都经过它），若此处不取，复用出来的行会带着上一行的
+    // isSelected 残留；@Watch 只在版本号**变化**时触发，创建晚于 bump 的实例收不到回调。
+    this.isSelected = EditorService.getInstance().isSelected(this.blockUuid);
     if (this.blockData) {
       this.displaySegments = ContentRenderer.parse(this.blockData.content);
       this.isCollapsed = this.blockData.collapsed;
@@ -196,6 +218,13 @@ export struct BlockView {
             }
 
             Row({ space: 8 }) {
+              // ─── U1.4：多选模式下的行内选择圈（常显，不依赖 hover） ───
+              // 触屏不产生 onHover（AGENTS §7 陷阱 11），故这里不做任何显隐条件判断：
+              // 进入多选模式即出现，退出即消失。
+              if (this.selectionMode) {
+                this.SelectionToggle()
+              }
+
               // Bullet + 折叠箭头
               this.BulletControl()
 
@@ -302,7 +331,19 @@ export struct BlockView {
                 this.reportRowGrab(event);
               })
           )
-          .onClick(() => {
+          .onClick((event: ClickEvent) => {
+            // U1.4：Ctrl+点击（桌面）＝进入多选并切换本行选中，与 Logseq/Obsidian 一致。
+            // 触屏等价入口是行内选择圈（SelectionToggle），不依赖任何按键 ——
+            // 本窗口的验收入口因此不走 Ctrl 路径（uitest 的按键注入不达 ArkUI 按键管线）。
+            if (BlockView.ctrlPressed(event)) {
+              this.selectViaCtrl();
+              return;
+            }
+            // 多选模式下点击行内容不再改焦点：焦点留在编辑器会让
+            // WebEditor / 快捷键的语义与「正在多选」互相干扰。
+            if (this.selectionMode) {
+              return;
+            }
             if (!this.isEditing) {
               EditorService.getInstance().setFocusedBlock(this.blockUuid);
             }
@@ -325,6 +366,9 @@ export struct BlockView {
           }
         }
         .width('100%')
+        // U1.4 选中态视觉：2vp 主题色描边 + 一层弱底色（两层通道同时表达，
+        // 单靠描边在浅色页面上不够醒目；底色取 surface2，与 hover/锚点高亮同一档）。
+        .backgroundColor(this.isSelected ? $r('app.color.surface2') : Color.Transparent)
         .border(this.isSelected ? { width: 2, color: $r('app.color.primary') } : { width: 0, color: Color.Transparent })
         .borderRadius(4)
       }.width('100%').padding({ left: 16, right: 16 })
@@ -346,6 +390,35 @@ export struct BlockView {
       return $r('app.color.surface2');
     }
     return Color.Transparent;
+  }
+
+  /**
+   * U1.4：行内选择圈（仅多选模式渲染）。
+   *
+   * 为什么用「圈」而不是复用 bullet：bullet 的点击已绑定「折叠/展开子块」与「进入编辑」
+   * 两个语义（见 BulletControl），再叠一层选中语义会让同一个 16vp 圆点承担三义；
+   * 且 bullet 没有形状状态可表达选中与否。选择圈是独立节点，语义与视觉都单一。
+   *
+   * 尺寸 24vp（= 48px @ density 2）—— 不依赖 hover、不需要长按，触屏可直接点中；
+   * 并挂 `id` 供 uitest dumpLayout 精确定位（本窗口的验收坐标即由此而来）。
+   */
+  @Builder
+  SelectionToggle() {
+    Row() {
+      if (this.isSelected) {
+        TablerIcon('check', 14, $r('app.color.surface0'))
+      }
+    }
+    .width(24).height(24)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(12)
+    .backgroundColor(this.isSelected ? $r('app.color.primary') : Color.Transparent)
+    .border({ width: this.isSelected ? 0 : 1.5, color: $r('app.color.muted_text') })
+    .id('callaite_selectionToggle_' + this.blockUuid)
+    .onClick(() => {
+      this.toggleRowSelection();
+    })
   }
 
   @Builder
@@ -421,7 +494,13 @@ export struct BlockView {
     // 整行可点击进入编辑（此前仅 Text 本体响应，空块的 Text(' ') 只有几像素宽，
     // 点击行内空白处无法进入编辑 —— 表现为"编辑器点了没反应"）。
     // 带自身 onClick 的 segment（[[链接]]/#标签 等）优先消费事件，不触发编辑。
-    .onClick(() => {
+    .onClick((event: ClickEvent) => {
+      // U1.4：Ctrl+点击的**选中**由行容器统一处理（ArkUI 点击事件默认向上冒泡，
+      // 见 SDK common.d.ts:18621 与「事件冒泡」文档）。这里只让位，不自行切换选中 ——
+      // 若两处都切换，一次 Ctrl+点击会被切换两次，净效果变成「没选中」。
+      if (BlockView.ctrlPressed(event)) {
+        return;
+      }
       this.enterEdit();
     })
   }
@@ -709,8 +788,68 @@ export struct BlockView {
   // ─── 辅助方法 ───
 
   enterEdit(): void {
+    // U1.4：多选模式下点击行内容**不再进入编辑**。
+    // 理由：进入编辑态后整行被 WebEditor 覆盖（BlockView build 的 isEditing 分支），
+    // 选择圈随之消失，用户无法继续多选；且编辑器持焦会与「正在多选」的语义互相干扰。
+    // 这里只做「让位」，选中动作本身由 SelectionToggle 承担（单一写入口，避免
+    // 点击冒泡到行容器时同一行被切换两次 → 净效果为无变化）。
+    if (this.selectionMode) {
+      return;
+    }
     EditorService.getInstance().setFocusedBlock(this.blockUuid);
     this.isEditing = true;
+  }
+
+  // ─── U1.4 块多选 ───
+
+  /**
+   * 选中态版本号变化 → 重算本行选中态。
+   * 与 refreshBlock 的分工：本方法**不重读块内容**（选中不改数据），只重算 isSelected，
+   * 避免每次点选都触发一遍 ContentRenderer.parse 等重活。
+   */
+  onSelectionVersionChanged(): void {
+    this.isSelected = EditorService.getInstance().isSelected(this.blockUuid);
+  }
+
+  /**
+   * 切换本行的选中态 —— 本组件内选中集合的**唯一写入口**。
+   *
+   * 写完立即 bump selectionVersion：本行的 isSelected 已就地更新，bump 是为了让
+   * 其它行（LazyForEach 中已创建但未参与本次点击的实例）同步 —— 例如「全选」之后
+   * 可见行都要亮起描边。
+   */
+  toggleRowSelection(): void {
+    const editor = EditorService.getInstance();
+    editor.toggleSelection(this.blockUuid);
+    this.isSelected = editor.isSelected(this.blockUuid);
+    AppState.bumpSelectionVersion();
+  }
+
+  /**
+   * Ctrl+点击（桌面路径）：未进入多选模式则先进入，再切换本行。
+   *
+   * ⚠️ 这只是**桌面便利路径**，不是本窗口的验收入口：uitest 注入的按键不达 ArkUI
+   * 按键管线（AGENTS §3），因而 Ctrl 路径在本机无法自证。触屏等价入口是行内选择圈
+   * （SelectionToggle）与底部常显的「选择」按钮，二者都不经过任何按键。
+   */
+  private selectViaCtrl(): void {
+    if (!AppState.isSelectionMode()) {
+      AppState.setSelectionMode(true);
+    }
+    this.toggleRowSelection();
+  }
+
+  /**
+   * 读取点击事件的 Ctrl 修饰键状态。
+   * `getModifierKeyState` 在 BaseEvent 上是可选方法（common.d.ts:8166），
+   * 取不到时按「未按下」处理，绝不因此改变普通点击的既有行为。
+   */
+  private static ctrlPressed(event: ClickEvent): boolean {
+    try {
+      return event.getModifierKeyState!(['ctrl']);
+    } catch (e) {
+      return false;
+    }
   }
 
   /**

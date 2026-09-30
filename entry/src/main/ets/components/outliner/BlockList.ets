@@ -342,9 +342,14 @@ export struct BlockList {
         })
       }
 
-      // 多选批量操作浮动栏（feed 内嵌模式不渲染，避免每个日期节叠一层）
+      // 多选批量操作浮动栏 + 多选入口（feed 内嵌模式不渲染，避免每个日期节叠一层）
+      // U1.4：pageId 必须传**真实页面 uuid**。此前这里传的是 this.pageId，而 BlockList
+      // 的唯一调用点（PageView.ets:249）根本没传 pageId ⇒ @Prop 恒为 ''，
+      // 「全选」因此走 selectAll('') → getTopLevelBlocks('') → 空列表，点了没反应。
+      // pageUuidForDrag 是 refreshBlocks 每次刷新的本页 uuid（S1-H 已备），直接复用，
+      // 不再新增第二个 uuid 来源（避免两处漂移）。
       if (!this.embedded) {
-        BlockSelection({ pageId: this.pageId })
+        BlockSelection({ pageId: this.pageUuidForDrag })
       }
     }
     .width('100%')
