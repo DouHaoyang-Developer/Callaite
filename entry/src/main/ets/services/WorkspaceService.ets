@@ -4,6 +4,7 @@ import { DataStore } from '../core/db/DataStore';
 import { OutlinerEngine } from '../core/engine/OutlinerEngine';
 import { PageData } from '../core/models/Page';
 import { BlockData } from '../core/models/Block';
+import { BacklinkInfo } from '../core/db/DataStore';
 import { OutlinerOp, OpResult } from '../core/engine/OutlinerOps';
 
 /**
@@ -179,6 +180,29 @@ export class WorkspaceService {
 
   getPageUuidForBlock(blockUuid: string): string | undefined {
     return this.dataStore.getPageUuidForBlock(blockUuid);
+  }
+
+  /**
+   * 读取反链 —— **先 flush 脏页，再读索引**。
+   *
+   * 为什么读一次反链也要 flush（S3-W1 的「双向验收①：保存后不切页就能看到新反链」）：
+   *   文本输入走惰性落盘 ⇒ `update-block` 只 `markDirty`，索引对账挂在落盘链路上。
+   *   若读方不先 flush，就会出现**纯粹由读取时机造成的假阴性**：
+   *   用户刚打完 `[[x]]`，反链面板因为「聚焦块变化」刷新（`RightSidebar` 的
+   *   `@Watch('callaite_focusedBlock')`，见其注释「挂它只为驱动反链刷新」），
+   *   而此刻页面还没到 5s 兜底、也还没失焦 ⇒ 索引里当然还没有这条反链
+   *   ⇒ 面板显示「改完了但反链没加」，与 W12-3 的现象**逐字相同**，
+   *   但根因完全不同（一个是索引从不更新，一个是读得太早）。
+   *
+   * 成本：`flushNow()` 在无脏页时是 O(1) 直接返回（见 `DirtyPageTracker.flushNow`），
+   *   正常使用下脏页数 ≤1，所以「多一次 flush」在绝大多数调用里是零开销。
+   *
+   * ⚠️ 本方法**不改变索引口径**，只是把「读前置 flush」这件事收敛成一个入口 ——
+   *   与 `SaveQueue` / `DirtyPageTracker` 同样的「单一写入口」约定。
+   */
+  getBacklinksFresh(pageName: string): BacklinkInfo[] {
+    this.flushDirtyPages();
+    return this.dataStore.getBacklinks(pageName);
   }
 
   saveAll(): void {

@@ -63,6 +63,20 @@ export interface BlockData {
   refs: string[];
   /** Block 引用列表（从 content 中解析的 ((uuid))） */
   blockRefs: string[];
+  /**
+   * S3-W1：上一次**已折进引用索引**的 `content` 快照（空串 = 从未索引）。
+   *
+   * 为什么需要它（反链索引层时效性的前置）：`refs`/`blockRefs` 此前只在
+   * `MarkdownParser.parse` 里算过一次 —— 即「页面从 .md 载入」那一刻。
+   * 之后任何一次编辑（`BlockTree.updateBlock` 只改 `content`）都不会重算它们，
+   * 于是引用索引所读的数据源在编辑后**永远是建页那一刻的快照**。
+   *
+   * 本字段让索引侧能以 O(1) 判定「这个块的引用是否需要重算」：
+   *   · 不等 ⇒ 该块的引用变了，只有它需要重新正则扫描（增量，不是全页重扫）；
+   *   · 相等 ⇒ 跳过正则，直接沿用索引里已有的条目。
+   * 代价是每块多存一份 content 引用（字符串不可变 ⇒ 无拷贝）。
+   */
+  contentIndexed: string;
 
   // ─── 标签与分类 ───
   /** 标签列表（从 content 中解析的 #tag） */
@@ -101,6 +115,7 @@ export function createBlockData(uuid: string, pageId: string, parentId: string, 
     propertiesOrder: [],
     refs: [],
     blockRefs: [],
+    contentIndexed: '',
     tags: [],
     class: '',
     createdAt: now,

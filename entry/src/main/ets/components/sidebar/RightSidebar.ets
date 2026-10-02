@@ -81,8 +81,12 @@ export struct RightSidebar {
 
   /** 聚焦块变化 ⇒ 只刷新反链（大纲/属性与聚焦块无关，不做无谓重算） */
   onFocusedBlockChanged(): void {
+    // S3-W1：走 `getBacklinksFresh()`（读前先 flush 脏页）。
+    // 本回调的**存在理由**就是「编辑正文会产生新的 [[引用]]，反链面板必须跟着变」
+    // （见本组件 focusedBlock 声明处的注释）；而文本输入是惰性落盘、索引对账挂在落盘链路上
+    // ⇒ 不先 flush 就会在这个回调里读到「还没对账」的旧索引，恰好复现 W12-3 的假象。
     this.backlinksCache = WorkspaceService.getInstance()
-      .getDataStore().getBacklinks(this.getCurrentDisplayPage());
+      .getBacklinksFresh(this.getCurrentDisplayPage());
     this.backlinkDataVersion = this.backlinkDataVersion + 1;
   }
 
@@ -442,7 +446,7 @@ export struct RightSidebar {
     AppState.addRightSidebarBlock(block);
     this.addPanelOpen = false;
     this.backlinksCache = WorkspaceService.getInstance()
-      .getDataStore().getBacklinks(this.getCurrentDisplayPage());
+      .getBacklinksFresh(this.getCurrentDisplayPage());
     this.backlinkDataVersion = this.backlinkDataVersion + 1;
   }
 
@@ -655,7 +659,10 @@ export struct RightSidebar {
 
   refreshCaches(): void {
     const ws = WorkspaceService.getInstance();
-    this.backlinksCache = ws.getDataStore().getBacklinks(this.getCurrentDisplayPage());
+    // S3-W1：`getBacklinksFresh()` = 先 flush 脏页再读反链（读前置 flush 的单一入口）。
+    // 切页/切标签时 `flushNow` 本来就被 `AppState`/`TabState` 调用过，此处是**幂等**的
+    // （无脏页时 O(1) 返回）；保留它是为了不依赖「调用方一定先 flush 过」这一假设。
+    this.backlinksCache = ws.getBacklinksFresh(this.getCurrentDisplayPage());
     this.headingsCache = this.collectHeadings(ws);
     this.propsCache = this.collectProps(ws);
     // W8-U1.3：通知挂载中的 BacklinkFilters 重新拉取（切页后它必须换数据）

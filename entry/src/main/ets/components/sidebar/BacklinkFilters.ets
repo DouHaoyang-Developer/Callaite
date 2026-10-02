@@ -126,11 +126,15 @@ export struct BacklinkFilters {
    * 加载反链数据。
    *
    * 口径与 `RightSidebar.refreshCaches()` / `BacklinkWarning.countBacklinks()` 完全一致：
-   * 都走 `WorkspaceService.getDataStore().getBacklinks(pageName)`（单一数据源，不另开口径）。
+   * 都走 `WorkspaceService` 的反链读取入口（单一数据源，不另开口径）。
+   *
+   * ⚠️ S3-W1：改用 `getBacklinksFresh()` 而不是 `getDataStore().getBacklinks()` ——
+   *   前者在读之前先 flush 脏页，否则「刚打完 `[[x]]`、索引还没对账」时读到的是旧索引，
+   *   面板会显示成 W12-3 的样子（假阴性）。**索引口径没变**，变的只是读取时机。
    */
   loadBacklinks(): void {
     const ws = WorkspaceService.getInstance();
-    this.backlinks = ws.getDataStore().getBacklinks(this.pageName);
+    this.backlinks = ws.getBacklinksFresh(this.pageName);
   }
 
   /**

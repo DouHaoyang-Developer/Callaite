@@ -193,6 +193,7 @@ export class OutlinerEngine {
     for (let i = 0; i < deleted.length; i++) {
       this.dataStore.getIndexStore().removeBlock(deleted[i].uuid);
     }
+    this.invalidateDeletedRefs(deleted);
     const ids = this.extractUuids(deleted);
     return { success: true, message: 'Block deleted', affectedUuids: ids };
   }
@@ -205,8 +206,29 @@ export class OutlinerEngine {
         this.dataStore.getIndexStore().removeBlock(deleted[j].uuid);
         allDeleted.push(deleted[j].uuid);
       }
+      this.invalidateDeletedRefs(deleted);
     }
     return { success: true, message: 'Blocks deleted', affectedUuids: allDeleted };
+  }
+
+  /**
+   * S3-W1：删除块时**作废它的引用索引快照**（`BlockData.contentIndexed`）。
+   *
+   * 为什么必须有这一步（受控探针 D 场景实测暴露）：
+   *   引用索引里「删除」是靠 `IndexStore` 的清场摘条目的；而
+   *   `reindexBlockReferences` 用 `contentIndexed === content` 做短路
+   *   ⇒ 被删块进 `recycleBin` 时**快照还是旧的**（内容一个字没改）。
+   *   撤销把块原样恢复（`restoreFromRecycleBin` 只搬 blockMap/childrenMap）之后，
+   *   下次落盘对账会认为「这个块早已索引过」而**跳过重建**
+   *   ⇒ **删除→撤销后反链永久消失**（正是陷阱 16 说的那类「撤销能落盘但恢复错了」）。
+   *
+   * 判据就一句话：**条目被摘除这件事本身，必须让「已索引」这个断言失效**
+   *   —— 否则「已索引」与「索引里真的有」会分家。
+   */
+  private invalidateDeletedRefs(deleted: BlockData[]): void {
+    for (let i = 0; i < deleted.length; i++) {
+      deleted[i].contentIndexed = '';
+    }
   }
 
   private doMoveBlock(op: MoveBlockOp): OpResult {

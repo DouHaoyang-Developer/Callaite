@@ -92,8 +92,16 @@ export class DataStore {
     this.blockTree.loadPageBlocks(result.page.uuid, result.blocks);
     this.indexStore.indexBlocks(result.blocks);
 
-    // 构建引用索引
-    this.indexStore.rebuildReferences(result.blocks);
+    // 构建引用索引。
+    // S3-W1：改用 `reindexPageReferences`（先摘本页旧条目/悬空条目，再按当前内容重建），
+    // 不再用只加不减的 `rebuildReferences`。
+    // 为什么载入路径也需要「先清」：同一个页面被重新载入时（`loadGraph` 全量重载 /
+    // 整页编辑器整页换代），页面的 uuid 可能被复用而**块 uuid 全部换新** ⇒
+    // 旧条目会以「源块已不在索引里」的悬空形态永久留在 backlinkIndex 中（显示层靠
+    // `getBacklinks` 的 `if (block && page)` 兜住，但索引自身会持续膨胀）。
+    // 载入期索引为空或该页条目待重建，故两种实现结果一致，但对账版本**不会留悬空**；
+    // 代价是首次载入时块的内容快照未播种 ⇒ 会做一次全页正则（仅此一次）。
+    this.indexStore.reindexPageReferences(result.page.uuid, result.blocks);
   }
 
   // ─── 页面 CRUD ───
@@ -168,7 +176,10 @@ export class DataStore {
     this.blockTree.loadPageBlocks(pageUuid, result.blocks);
     this.indexStore.addPage(result.page);
     this.indexStore.indexBlocks(result.blocks);
-    this.indexStore.rebuildReferences(result.blocks);
+    // S3-W1：原先此处单独调 `rebuildReferences(result.blocks)`（只加不减的播种路径）。
+    // 整页重建会换掉全部块 uuid ⇒ 旧块在索引里的条目此时已成悬空条目，
+    // 「只加不减」清不掉它们 ⇒ 反链会留下幽灵行。改由 `savePage` 内部的
+    // `reindexPageReferences` 统一对账：它先摘悬空/换代的条目，再按新内容重建。
     this.savePage(pageUuid);
     return true;
   }
@@ -322,6 +333,8 @@ export class DataStore {
 
   /**
    * 保存单个页面到 .md 文件。
+   *
+   * ⚠️ **S3-W1：本方法是「引用索引对账」的唯一挂点**，挂在写盘**之后**（见下）。
    */
   savePage(pageUuid: string): void {
     const page = this.indexStore.getPage(pageUuid);
@@ -333,6 +346,41 @@ export class DataStore {
     const fullPath = this.fileRepo.joinPath(this.fileRepo.getGraphRoot(), page.filePath);
     this.fileRepo.writeTextSync(fullPath, markdown);
     page.updatedAt = Date.now();
+
+    // ─── S3-W1：反链索引层的时效性（W12-3）───
+    //
+    // 为什么挂在这里：
+    //  ① **覆盖完整**：`writeTextSync` 全仓只此一处调用（`FileRepository.ets:129` 是定义），
+    //     而 `savePage` 又被两条落盘链共用 ——
+    //       · 惰性链：`EditorService.updateBlockContent` → `OutlinerEngine.execute`
+    //         → `persistForOp`（文本类只 `markDirty`，5s 兜底/失焦/切页时 flush）
+    //         → `DirtyPageTracker.flushPages` → 注入回调 `OutlinerEngine.persistNow`
+    //         → 本方法；
+    //       · 即时链：结构性操作 `persistForOp` → `persistNow` → 本方法。
+    //     所以「正文变了」与「索引对账」在**同一次落盘事务**里完成，不存在只写盘不对账的缺口。
+    //  ② **时序正确**：必须在写盘之后。挂在这一步之前的话，一旦 `writeTextSync` 抛异常，
+    //     内存索引就已经被改成「磁盘上并不存在」的内容 —— 索引会先于磁盘说谎。
+    //     现在这个次序下，写失败 ⇒ 抛异常 ⇒ 对账不执行 ⇒ 索引保持上一次的真实值。
+    //  ③ **不额外引入计时器**：`flushNow` 本身就是事件驱动 + 5s 硬截止的防抖器
+    //     （`DirtyPageTracker.armTimer` 刻意**不顺延**，见其注释）。在它内部再套一层
+    //     setTimeout 只会把索引的陈旧窗口从「写盘时刻」推迟到「写盘后 N ms」，
+    //     代价是新增一个需要与脏页集合/生命周期对齐的状态 —— 收益为零。
+    //     **本挂点拿到的防抖间隔 = 既有 5000ms 硬截止**（真机需实测该间隔下的成本，
+    //     量法与判据见 `docs/S3-W1-反链索引层时效性.md` §3）。
+    //
+    // 为什么是「对账」而不是再调一次 `rebuildReferences`：
+    //   `rebuildReferences` 是**只加不减**的（`addReference` 无删除语义）⇒ 直接复用会让
+    //   反链只增不减（W12-3 的另一半：删掉 `[[x]]` 后反链不消失）。
+    //   详见 `IndexStore.reindexPageReferences` 的复杂度与清场规则。
+    //
+    // 容错：索引对账失败绝不能连累「内容已经写进磁盘」这个事实 —— 写盘成功即算成功，
+    //   索引是**派生数据**，下一次落盘会重新对账（内容快照不匹配 ⇒ 自动重算）。
+    try {
+      this.indexStore.reindexPageReferences(pageUuid, blocks);
+    } catch (e) {
+      console.error('[DataStore] reindexPageReferences failed for page ' + pageUuid
+        + ': ' + JSON.stringify(e));
+    }
   }
 
   /**
