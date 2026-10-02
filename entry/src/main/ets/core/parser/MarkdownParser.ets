@@ -53,14 +53,30 @@ export class MarkdownParser {
         }
       }
     } else {
-      // 无 frontmatter：行首第一个 -  之前的内容都是页面元数据
+      // 无 frontmatter：页面元数据是文件开头连续的 `key:: value` 行。
+      //
+      // ⚠️ S3-W2（W1-8 静默丢块）—— 旧实现判据是 `trimmed.startsWith('- ')`，而
+      // 「是否 Block」的判据是 `countIndent().isBlock`，两者对**空块行**不一致：
+      //   `'- '.trim()` === `'-'`（尾部空格被吃掉）⇒ 不 startsWith `'- '` ⇒
+      //   空块行被当成元数据。于是「开头若干个空块」的文件（应用内「添加」行反复建空块
+      //   即可产生）会把**整个文件**并入元数据区 ⇒ 解析出 0 个块 ⇒ 下一次落盘写出
+      //   0 字节。实测（离线复刻本文件逻辑，输入 32 行全为 `- `）：32 行/95 B → 0 B。
+      // 另一条同源缺口：`metadataEndIndex = i + 1` 在**每一行**上都执行，于是任何
+      //   非块行（纯文本行）也会把边界一路推到文件末尾 —— 只要文件里一行块都没有，
+      //   同样得到 0 块。
+      // 新判据把边界只推进到「真正像元数据的行」（匹配 PROPERTY_REGEX）：空行视为
+      //   中性（不推进、不终止），第一条既非空行、又不像元数据的行**就是内容的起点**。
+      // 保持不变式：没有任何属性行开头 ⇒ 边界为 0（内容全部交给块循环，不静默吞行）。
       for (let i = 0; i < lines.length; i++) {
         const trimmed = lines[i].trim();
-        if (trimmed.startsWith(BLOCK_PREFIX)) {
-          metadataEndIndex = i;
-          break;
+        if (trimmed === '') {
+          continue; // 空行中性：既不推进边界，也不终止扫描
         }
-        metadataEndIndex = i + 1; // 全部读完也没有 Block 的情况
+        if (PROPERTY_REGEX.exec(trimmed)) {
+          metadataEndIndex = i + 1;
+        } else {
+          break; // 属性行必须聚在文件开头；第一条非属性行即内容起点
+        }
       }
     }
 

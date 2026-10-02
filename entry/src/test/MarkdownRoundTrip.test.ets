@@ -190,6 +190,72 @@ export default function markdownRoundTripTest() {
       expect(typeof md === 'string').assertTrue();
     });
 
+    it('往返【回归·W1-8 静默丢块】：开头空块行不得被吞成「页面元数据」', 0, () => {
+      // 缺陷：无 frontmatter 的元数据边界用 `trimmed.startsWith('- ')` 判定，而
+      //   `'- '.trim()` === `'-'`（尾部空格被吃掉）⇒ **空块行不满足该判据**。
+      //   于是「开头若干个空块」的文件会把整个文件并入元数据区 ⇒ 解析出 0 块 ⇒
+      //   下一次落盘把页面写成 0 字节（实测离线复刻：32 行全 `- ` 时 95 B → 0 B）。
+      //   应用内「添加」行反复建空块即可产生这种文件，故为真实数据丢失路径。
+      const bare: string[] = [];
+      for (let i = 0; i < 31; i++) {
+        bare.push('- ');
+      }
+      bare.push('- 尾块内容');
+      const src: string = bare.join('\n');
+
+      const r1 = MarkdownParser.parse(src, 'P', 'P.md');
+      // 1) 一个块都不能丢
+      expect(r1.blocks.length).assertEqual(32);
+      // 2) 空块内容为空、尾块内容保留
+      expect(r1.blocks[0].content).assertEqual('');
+      expect(r1.blocks[31].content).assertEqual('尾块内容');
+      // 3) 落盘内容与磁盘原文逐字符相同（这是「不丢数据」的直接判据）
+      const md1: string = MarkdownExporter.export(r1.page, r1.blocks);
+      expect(md1).assertEqual(src);
+
+      // 4) 二次往返仍稳定（幂等）
+      const r2 = MarkdownParser.parse(md1, 'P', 'P.md');
+      const md2: string = MarkdownExporter.export(r2.page, r2.blocks);
+      expect(r2.blocks.length).assertEqual(32);
+      expect(md2).assertEqual(src);
+    });
+
+    it('往返【回归·W1-8】：全空块文件不得被写成 0 字节', 0, () => {
+      // 上一条的极端形态：文件里**一行块内容都没有**，全是空块。
+      // 旧实现下 metadataEndIndex 会被推到 lines.length ⇒ 0 块 ⇒ 导出空串 ⇒ 页面清零。
+      const bare: string[] = [];
+      for (let i = 0; i < 20; i++) {
+        bare.push('- ');
+      }
+      const src: string = bare.join('\n');
+
+      const r = MarkdownParser.parse(src, 'P', 'P.md');
+      expect(r.blocks.length).assertEqual(20);
+      const md: string = MarkdownExporter.export(r.page, r.blocks);
+      expect(md).assertEqual(src);
+      expect(md.length > 0).assertTrue();
+    });
+
+    it('契约【回归】：元数据边界只吃「文件开头的属性行」，不吃正文', 0, () => {
+      // 旧实现的第二条缺口：边界在**每一行**都推进，故「文件里一行块都没有」时
+      //   也会得到 0 块。新实现把边界只推进到匹配 PROPERTY_REGEX 的连续属性行。
+      const withProps = MarkdownParser.parse('title:: T\ntags:: a, b\n- x', 'P', 'P.md');
+      expect(withProps.page.properties.get('title')).assertEqual('T');
+      expect(withProps.blocks.length).assertEqual(1);
+      expect(withProps.blocks[0].content).assertEqual('x');
+
+      // 第一条非属性行即内容起点（此处为纯文本）——块数仍为 0（契约未放宽），
+      // 但它**不再**被当作元数据吞掉：后续若接上块行，边界停在纯文本处。
+      const strayThenBlock = MarkdownParser.parse('纯文本\n- x', 'P', 'P.md');
+      expect(strayThenBlock.blocks.length).assertEqual(1);
+      expect(strayThenBlock.blocks[0].content).assertEqual('x');
+
+      // 纯属性行仍全部进页面属性（不回归成块）
+      const onlyProps = MarkdownParser.parse('title:: T\nfoo:: bar', 'P', 'P.md');
+      expect(onlyProps.page.properties.get('foo')).assertEqual('bar');
+      expect(onlyProps.blocks.length).assertEqual(0);
+    });
+
     it('辅助：countIndent 层级与块前缀判定', 0, () => {
       const l0 = MarkdownParser.countIndent('- 顶层');
       expect(l0.level).assertEqual(0);
