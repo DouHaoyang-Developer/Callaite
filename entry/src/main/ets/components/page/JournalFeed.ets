@@ -137,9 +137,10 @@ export struct JournalFeed {
                   AppState.setCurrentPage(day);
                 })
 
-              // 任务面板（仅今天）
+              // 任务面板（仅今天）。S3-W4：原先这里传的 `pageName: day` 已被删除 ——
+              // 该组件从不读它，且它自己的日期窗口就是 `getTodayDateString()`。
               if (index === 0) {
-                TaskDashboard({ pageName: day })
+                TaskDashboard()
               }
 
               // 该日 Block 列表（内嵌模式：高度自适应、无多选浮动栏）

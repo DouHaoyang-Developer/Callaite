@@ -12,7 +12,12 @@ import { QueryEngine, QueryOptions } from '../../core/db/QueryEngine';
  */
 @Component
 export struct TaskDashboard {
-  @Prop pageName: string = '';
+  // ─── S3-W4 清理：`@Prop pageName` 已删除 ───
+  // 本组件**从不读它**（`this.pageName` 全仓 0 命中）；唯一的传入点是
+  // `JournalFeed.ets:142` 的 `TaskDashboard({ pageName: day })`，而那个调用点自身被
+  // `if (index === 0)`（= 仅「今天」那一节）包着，且 `refreshTasks()` 的日期窗口本来
+  // 就取自 `JournalService.getTodayDateString()` ⇒ 该字段是**同址冗余的第二条通道**，
+  // 删除无行为变化 ✓。
   @State scheduledTasks: BlockData[] = [];
   @State deadlineTasks: BlockData[] = [];
 

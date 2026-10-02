@@ -20,7 +20,10 @@ import { countBacklinks } from '../../utils/BacklinkWarning';
 @Component
 export struct GraphActions {
   @Prop pageName: string;
-  @Prop isVisible: boolean;
+  // ─── S3-W4 清理：`@Prop isVisible` 已删除 ───
+  // 本组件**从不读它**（`this.isVisible` 全仓 0 命中），唯一的传入点是 `GraphView.ets:411`
+  // 的 `GraphActions({…})`，而那个调用点自身就被 `if (this.showActions)` 包着 ——
+  // 「是否渲染」由宿主的那道守卫承担，本字段是**同址冗余的第二条通道** ⇒ 删除无行为变化 ✓。
   @Prop positionX: number = 0;
   @Prop positionY: number = 0;
 

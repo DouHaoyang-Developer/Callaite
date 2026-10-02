@@ -410,7 +410,6 @@ export struct GraphView {
         if (this.showActions) {
           GraphActions({
             pageName: this.actionPageName,
-            isVisible: this.showActions,
             positionX: this.actionX,
             positionY: this.actionY,
             onClose: () => {

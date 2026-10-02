@@ -20,7 +20,8 @@ export struct VaultSwitcherDialog {
   }
 
   /** 深色固定配色（对齐 Obsidian 仓库切换器在明暗主题下均为深色） */
-  private static readonly BG: string = '#1E1E1E';
+  // S3-W4 清理：`private static readonly BG: string = '#1E1E1E';` 已删除 ——
+  // 全仓 `VaultSwitcherDialog.BG` 0 命中（同名兄弟 BG_SIDE/TXT/MUTED/SEL 都在用）。
   private static readonly BG_SIDE: string = '#252525';
   private static readonly TXT: string = '#DADADA';
   private static readonly MUTED: string = '#999999';

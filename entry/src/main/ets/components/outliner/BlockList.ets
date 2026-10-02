@@ -84,7 +84,14 @@ class BlockDataSource implements IDataSource {
  */
 @Component
 export struct BlockList {
-  @Prop pageId: string = '';
+  // ─── S3-W4（W13-4 清理）：`@Prop pageId` 已**整段删除** ───
+  // 它曾是本组件的对外入参，但消费方在 W13 就已被替换掉、传入方在 W3 也被删掉了：
+  //   · 消费侧：唯一读点曾是 `FindInPage({ pageId: this.pageId })`（本文件内联挂载）；
+  //     W13 把该挂载改为 `pageUuidForDrag`（见下方 `BlockSelection` 的同址注释）。
+  //   · 传入侧：W3 把 `FindInPage` 迁到 `MainContainer` 顶层 Stack 时，连这两处内联挂载
+  //     一起删除 ⇒ 本仓两个构造点（`PageView.ets:254` / `JournalFeed.ets:146`）**都不传它**。
+  // ⇒ 字段成为「零读 + 零写 + 零传参」的完全孤立字段，清除无行为变化 ✓（详见
+  //   `docs/S3-W4-死字段清理.md`）。页 uuid 的来源仍是 `pageUuidForDrag`（唯一来源）。
   /**
    * 页面名。**必须 watch**：`AppState.setCurrentPage`（AppState.ets）只写 currentPage
    * 与历史栈，**不会** bump `callaite_blocksVersion`；而本组件的刷新入口只有
