@@ -4,6 +4,12 @@
  * 用于实时阅览模式下的 RichEditor span 样式渲染
  */
 
+import { hilog } from '@kit.PerformanceAnalysisKit';
+
+/** 无条件前进兜底的日志域/标签（仅观测用，不参与任何判定逻辑） */
+const MARKDOWN_SEGMENTER_DOMAIN = 0x0002;
+const MARKDOWN_SEGMENTER_TAG = 'MarkdownSegmenter';
+
 export interface MarkdownSegment {
   text: string;
   type: 'syntax' | 'content';
@@ -123,6 +129,9 @@ function parseInlineMarkdown(text: string): MarkdownSegment[] {
 
   const result: MarkdownSegment[] = [];
   let i = 0;
+  // 无条件前进兜底的水位线：见循环末尾的守卫
+  let guardMark = -1;
+  let guardFires = 0;
 
   while (i < text.length) {
     // 行内 LaTeX $...$（单 $ 符）
@@ -220,8 +229,41 @@ function parseInlineMarkdown(text: string): MarkdownSegment[] {
     }
 
     // Wiki 链接 [[target]] 或 [[target|display]]
-    if (text.startsWith('[[')) {
-      const closeIdx = text.indexOf(']]', 2);
+    // ⚠️⚠️ W8 修复（P0 `W7-1`）：**判定必须与游标对齐**，否则死循环 ⇒ OOM 崩应用 ✗✗
+    //
+    // 原实现是 `startsWith('[[')`（**没有 position 实参 = 只看串首**）+
+    // `indexOf(']]', 2)` + `slice(2, closeIdx)` —— **三个实参全部写死成「串首」**，
+    // 而 `i` 是游标 ✗。于是「文本以 `[[` 开头、且首个 `]]` 之后还有字符」
+    // （`[[W]]Y]]Z` · `[[链接]] ` —— **尾随一个空格也算**）会走到
+    // `i = closeIdx + 2` —— 一个**已经走过**的位置 ⇒ 下一轮该分支**仍成立**
+    // ⇒ `i` 永不前进、每轮 push 3 段 ⇒ `result` 无界增长 ⇒
+    // `Heap::AllocateHugeObject` 79 MB 失败 ⇒ `OutOfMemoryError`、进程被杀
+    // （设备实测 **14 s 确定性复现**；崩溃栈 `parseInlineMarkdown` ← `parseMarkdownSegments:110`
+    //  ← `LivePreviewHelper.buildSpansInternal:278` ← `BlockEditor.rebuildSpans:221`）。
+    // 这是本函数**同族第 2 例**：第 1 例是「孤立 `!` 死循环」（见本函数末尾的兜底注释，
+    // 由 `d4d1b5f` 修掉）。
+    //
+    // ── 修法：只增加一条「不许把游标写回去」的守卫（零漂移）──
+    // `startsWith`（无实参）是**全局属性**、与游标无关 ⇒ 它恒等价于
+    // `i === 0 && startsWith('[[')`。所以本分支**只可能在 i 落后于首个 `]]` 时**发生
+    // 「写回过去」，判据就是 `closeIdx + 2 <= i`。
+    //
+    // ⚠️ **刻意不把判定整体改成 `startsWith('[[', i)` + `indexOf(']]', i + 2)`** ✗ ——
+    // 那会把**串中间的 wikilink 也纳入语法识别**，是**语义扩展**而不是修 bug：
+    // 受控差分实测（`%TEMP%\w8\diff_test.js`，4112 条语料）它让 **64 条**原本正常终止的
+    // 输入**分段结果改变**（`未命名页的 [[2026-09-25]] 引用` 由「1 段 content」变成「5 段」，
+    // `b[[a]]` / `![[a]]` 同理）⇒ 既有语义被一并改掉 ✗（本窗口的硬要求是**零漂移**）。
+    // 本守卫对**所有修复前能正常终止的输入**是**恒假**的 ⇒ 分段结果**逐字节不变** ✓
+    // （60112 条语料差分：drift = 0）。
+    // > 串中间 wikilink 在编辑态不被识别为语法，**是既有行为，本次刻意不动** ✗；
+    // > 若要改，属**产品/语义决策**（需与 `ContentRenderer` 对齐 + 独立验收），另开窗口 ✓。
+    //
+    // ⚠️ 与「未闭合」不是一回事：未闭合时 `closeIdx === -1`，**没有**越界风险，
+    // 那时仍必须走本分支的「未闭合 ⇒ 逐字符当内容」通道（改了就是漂移 ✗）。
+    const wikiClose: number = text.startsWith('[[') ? text.indexOf(']]', 2) : -1;
+    const isWikiTail: boolean = wikiClose !== -1 && wikiClose + 2 <= i;
+    if (!isWikiTail && text.startsWith('[[')) {
+      const closeIdx = wikiClose;
       if (closeIdx !== -1) {
         result.push({ text: '[[', type: 'syntax' });
         const inner = text.slice(2, closeIdx);
@@ -290,6 +332,23 @@ function parseInlineMarkdown(text: string): MarkdownSegment[] {
       result.push({ text: text.charAt(i), type: 'content' });
       i += 1;
     }
+
+    // ═══ 无条件前进兜底（W8 新增；改的是「类」，不只是上面那一个 bug）═══
+    // 本函数是**游标式 while**：终止性完全依赖「每次迭代 `i` 严格增长」这条不变量 ✗。
+    // 而仓里已经出现过**两次**它被打破（`d4d1b5f` 的孤立 `!`、W8 的串首 `[[`），
+    // 两次都表现为「主线程挂死 / OOM」这种**在设备上极难定位**的形态。
+    // 逐个分支去证明「它一定前进」在当下成立，但挡不住**下一次**加分支的人 ✗。
+    // ⇒ 这里把它降级成一个**运行时不变量**：迭代末比较水位，没前进就强制 +1
+    //    并打一条 WARN（可 grep，兼作「还有没有第三个不推进的分支」的活体探针）✓。
+    // 只有 `continue` 的分支会跳过这一句 —— 而它们的 `continue` 之前都写了 `i =`/`i +=` ✓。
+    if (i <= guardMark) {
+      guardFires += 1;
+      hilog.warn(MARKDOWN_SEGMENTER_DOMAIN, MARKDOWN_SEGMENTER_TAG,
+        'parseInlineMarkdown cursor stalled: forced advance i=%{public}d len=%{public}d fires=%{public}d',
+        i, text.length, guardFires);
+      i = guardMark + 1;
+    }
+    guardMark = i;
   }
 
   return coalesceContentSegments(result);

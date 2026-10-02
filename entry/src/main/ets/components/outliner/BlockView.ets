@@ -265,6 +265,30 @@ export struct BlockView {
     }
   }
 
+  /**
+   * 块级编辑器（`BlockEditor` / `WebEditor`）回调的**统一分发器**（W8 新增，修 E14 / W7-2）。
+   *
+   * 分工（AGENTS §7 陷阱 22）：**引擎/服务只负责「数据 + 磁盘」，`callaite_blocksVersion`
+   * 的 bump 由 UI 层负责**。编辑器把结构操作**委托**给 `EditorService`，
+   * 而这几个服务方法**刻意不 bump**（保持「服务不碰视图」的分工）⇒ 必须在这里补 ✗。
+   *
+   * 为什么 `refreshBlock()` 一个人不够：本行的 `depth` 是 `@State`，缩进/反缩进只改
+   * `level`/`parentId`、**不改 uuid** ⇒ `LazyForEach` 的键未变 ⇒ itemGenerator 不重跑 ⇒
+   * 本行（以及其它可见行）都不会重算 ⇒ 磁盘对、画面陈旧（陷阱 15）。
+   *
+   * 只对**结构类**动作 bump ✗：`dispose`（销毁）与内容类（`newBlock`/`save`/`autosave`/
+   * `slashOpen` …）不改变行结构，多 bump 一次就是白跑一遍全部可见行的 `refreshBlock()`
+   * （含 `ContentRenderer.parse`）—— 与 W8/W11 的「文本输入不 bump」性能前提冲突。
+   * 而 `createBelow` 已由 `EditorService.createBlockBelow` 自己 bump（W6 修），这里不重复 ✗。
+   */
+  onEditorAction(action: string): void {
+    this.refreshBlock();
+    if (action === 'indent' || action === 'outdent' || action === 'deleteEmpty'
+      || action === 'undoRedo') {
+      AppState.bumpBlocksVersion();
+    }
+  }
+
   build() {
     if (!this.blockData) {
       Row().width('100%').height(0)
@@ -343,8 +367,15 @@ export struct BlockView {
                       this.isEditing = false;
                       this.refreshBlock();
                     },
-                    onAction: (_a: string, _d: string) => {
-                      this.refreshBlock();
+                    onAction: (a: string, _d: string) => {
+                      // ⚠️ W8 修复（E14 / W7-2）：此前这里**只有 `refreshBlock()`**，
+                      //    于是「编辑器内 Tab/Shift+Tab 缩进」这条入口的数据与磁盘都对、
+                      //    而**行不就地刷新**（要离开页面再回来才显示缩进）✗。
+                      //    原因是本行的 `depth` 是 `@State`、只在 `refreshBlock()` 里重算，
+                      //    而缩进只改 `level`/`parentId`、**不改 uuid** ⇒ `LazyForEach` 的
+                      //    键未变 ⇒ itemGenerator 不重跑 ⇒ 只有 `callaite_blocksVersion`
+                      //    的 `@Watch` 能把这一行叫醒（AGENTS §7 陷阱 15 / 22）。
+                      this.onEditorAction(a);
                     }
                   }).layoutWeight(1)
                 } else {
@@ -357,8 +388,10 @@ export struct BlockView {
                       this.isEditing = false;
                       this.refreshBlock();
                     },
-                    onAction: (_a: string, _d: string) => {
-                      this.refreshBlock();
+                    onAction: (a: string, _d: string) => {
+                      // WebEditor 与 BlockEditor 走**同一个**分发器（语义逐字对齐）：
+                      // 见 BlockEditor 分支处的详尽注释。
+                      this.onEditorAction(a);
                     }
                   }).layoutWeight(1)
                 }

@@ -1,5 +1,6 @@
 import { TablerIcon } from '../common/Icons';
 import { EditorService } from '../../services/EditorService';
+import { AppState } from '../../state/AppState';
 
 /**
  * Toolbar — 编辑器浮动工具栏。
@@ -63,6 +64,13 @@ export struct Toolbar {
         .onClick(() => {
           const editor = EditorService.getInstance();
           editor.undo();
+          // ⚠️ W8 修复（E14 / W7-2）：`undo()` 只回滚**数据 + 磁盘**，
+          //    而撤销一次缩进会把 `level` 改回去（uuid 不变）⇒ `LazyForEach` 键未变
+          //    ⇒ 行不重算 ⇒ **磁盘对、画面陈旧**（要离开页面再回来才对）✗。
+          //    `OutlinerEngine` 刻意不 bump（全仓仅 UI 层 bump，AGENTS §7 陷阱 22）
+          //    ⇒ 工具栏这条入口必须自己补。`refreshState()` 只刷新「按钮可用性」，
+          //    **不会**让任何一行重算 ✗。
+          AppState.bumpBlocksVersion();
           this.refreshState();
         })
 
@@ -77,6 +85,8 @@ export struct Toolbar {
         .onClick(() => {
           const editor = EditorService.getInstance();
           editor.redo();
+          // 同 `callaite_undoBtn`：重做同样会改 `level`/`parentId`，必须 bump 才能让行重算。
+          AppState.bumpBlocksVersion();
           this.refreshState();
         })
       }

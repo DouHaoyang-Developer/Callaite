@@ -381,6 +381,11 @@ export class ShortcutService {
       description: '缩进当前 Block',
       action: () => {
         EditorService.getInstance().indentBlock();
+        // ⚠️ W8 修复：`EditorService.indentBlock()` 只改 `level`/`parentId`（uuid 不变）
+        //    ⇒ `LazyForEach` 键未变 ⇒ 行不重算 ⇒ 磁盘对、画面陈旧（AGENTS 陷阱 15）。
+        //    引擎/服务刻意不 bump（只 UI 层 bump，陷阱 22；`core/engine/` 零命中）
+        //    ⇒ 凡「服务被直接调用」的入口都要自己补这一句 ✗。
+        AppState.bumpBlocksVersion();
       }
     });
 
@@ -394,6 +399,8 @@ export class ShortcutService {
       description: '反缩进当前 Block',
       action: () => {
         EditorService.getInstance().outdentBlock();
+        // 同 `editor.indent`：结构位变了，必须 bump 才能让行重算。
+        AppState.bumpBlocksVersion();
       }
     });
 
@@ -406,7 +413,13 @@ export class ShortcutService {
       alt: false,
       description: '删除空 Block',
       action: () => {
-        EditorService.getInstance().deleteEmptyBlock();
+        const editor = EditorService.getInstance();
+        // 只有**真的删掉**了块才 bump（`deleteEmptyBlock` 对非空块返回 false）。
+        // 服务侧刻意不 bump（陷阱 22）⇒ 这条入口必须自己补，否则删掉的行不从列表消失。
+        const removed = editor.deleteEmptyBlock();
+        if (removed) {
+          AppState.bumpBlocksVersion();
+        }
       }
     });
 
@@ -420,6 +433,8 @@ export class ShortcutService {
       description: '上移当前 Block',
       action: () => {
         EditorService.getInstance().moveBlockUp();
+        // 同上：移动改的是结构位（uuid 不变）⇒ 必须 bump。
+        AppState.bumpBlocksVersion();
       }
     });
 
@@ -433,6 +448,7 @@ export class ShortcutService {
       description: '下移当前 Block',
       action: () => {
         EditorService.getInstance().moveBlockDown();
+        AppState.bumpBlocksVersion();
       }
     });
 
@@ -448,6 +464,9 @@ export class ShortcutService {
       description: '撤销',
       action: () => {
         EditorService.getInstance().undo();
+        // Ctrl+Z 不经 `Toolbar`（那条入口已在 Toolbar.ets 里补）⇒ 这里也必须补，
+        // 否则快捷键撤销下同样是「磁盘对、画面陈旧」✗。
+        AppState.bumpBlocksVersion();
       }
     });
 
@@ -461,6 +480,7 @@ export class ShortcutService {
       description: '重做',
       action: () => {
         EditorService.getInstance().redo();
+        AppState.bumpBlocksVersion();
       }
     });
 
