@@ -4,6 +4,7 @@ import { window, promptAction } from '@kit.ArkUI';
 import { WorkspaceService } from '../services/WorkspaceService';
 import { JournalService } from '../services/JournalService';
 import { AppState } from '../state/AppState';
+import { StatePersistence } from '../state/StatePersistence';
 import { FileService } from '../services/FileService';
 
 const DOMAIN = 0x0002;
@@ -31,6 +32,29 @@ export default class ShareReceiveAbility extends UIAbility {
     //   `indexStore.clear()` 后**全量重读 Graph**（`DataStore.loadGraph`），
     //   放进「每次分享都跑」的公共路径会变成**每次分享重载整个 vault** ✗。
     FileService.setContext(this.context);
+    // ★ W13（修 `W12-A`）：**恢复跨进程状态，且必须在 `loadContent` 之前完成**。
+    //
+    // 与 `EntryAbility.onCreate`（`EntryAbility.ets:33`）**调用同一个源** —— 即
+    // `StatePersistence.load()` 这个既有的、Ability 无关的共用恢复入口 ⇒ **没有第二份恢复代码** ✓。
+    //
+    // 为什么不能省（`W12-A` 的根因）：`pages/Index.ets:7` 的
+    // `@StorageLink('callaite_onboarded') onboarded: boolean = false` 在**键不存在**时
+    // 会就地建键并取 `false` ⇒ `Index.ets:11` 走 `OnboardingPage()` 分支 ✗。
+    // 而全仓**只有 `EntryAbility.onCreate` 调过 `load()`**（`git grep StatePersistence.load`
+    // 仅 1 处 ✓）⇒ `AppState.initialize()` **根本不写这个键**（它只设 config/language/
+    // themeMode/侧栏/路由等默认值 ✓）⇒ 分享窗口单独冷启动时该键**从未被建立** ⇒ 渲染 onboarding ✗。
+    //
+    // 为什么必须放在这里（本 Ability 的最早时机 ✓）：本方法的返回早于
+    // `onWindowStageCreate` ⇒ 早于那里的 `windowStage.loadContent('pages/Index')` ✓。
+    // 恢复若晚于 `loadContent`，`Index` 已经按 `false` 选过分支了 ✗（这是本条的要害 ✓）。
+    // 位置紧跟 `setContext`（`load()` 需要 `FileService.getContext()` ✓），
+    // 与 `EntryAbility` 的 `setContext` → `load()` 顺序**逐字同源** ✓。
+    //
+    // ⚠️ 刻意**不**在这里做 `FileService.initGraph()` 之外的任何初始化 ——
+    //   `initGraph` 保持**只在冷启动跑一次**（见上方注释 ✗），
+    //   本行也不引入 `TabState.initialize()`（那属另一类语义，见 W13 文档 §7/§8）。
+    StatePersistence.load();
+
     FileService.initGraph();
 
     // 提取分享内容并暂存（在窗口创建后处理以支持 toast 提示）
