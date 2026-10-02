@@ -110,10 +110,22 @@ export class PluginAPI {
         return; // 今日页已有该模板块 ⇒ 按天幂等，不再插
       }
     }
-    ws.executeOp({
+    const r = ws.executeOp({
       type: 'insert-block', content: marker ? marker + ' ' + content : content,
       pageId: page.uuid, parentId: page.uuid, leftId: '', level: 0
     });
+    // ★ W11（修 `W8-A`）：真插入才 bump —— 守卫命中时上面已 `return`，语义不变 ✓。
+    //   为什么补在**服务内**（而不是调用方）：本方法的调用方是**插件**
+    //   （`BuiltinPlugins.ets:16` 的 `onEnable`）与 `insertTemplateByName`（零外部调用方），
+    //   而插件是纯逻辑类、拿不到视图层语义 ⇒ 「补在调用方」这一层不存在。
+    //   且**有可达的运行时调用方**：设置页插件开关 → `PluginManager.enable()` → `onEnable()`
+    //   （`SettingsPage.ets:845-847`）⇒ 插入可能发生在 UI 存活期间，目标页（今日日志）
+    //   可能正被 `JournalFeed` 内嵌 `BlockList` 或**副窗格**（`callaite_splitPage`）显示
+    //   ⇒ 没有 bump 就是「数据与磁盘都对、界面毫无反应」（陷阱 22 / 15）。
+    //   W10 的注释已把「放在这一层（最靠近插入）⇒ 覆盖所有调用方」定为既定决策，本行沿用它 ✓。
+    if (r.success) {
+      AppState.bumpBlocksVersion();
+    }
   }
 
   /** 搜索页面 */

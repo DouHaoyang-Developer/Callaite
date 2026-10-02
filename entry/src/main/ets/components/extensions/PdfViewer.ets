@@ -81,7 +81,7 @@ export struct PdfViewer {
       return;
     }
     const content = 'PDF 标注 (' + this.fileName + ':' + pageNumber.toString() + '): "' + trimmed.substring(0, 200) + '"';
-    ws.executeOp({
+    const r = ws.executeOp({
       type: 'insert-block',
       content: content,
       pageId: page.uuid,
@@ -90,6 +90,16 @@ export struct PdfViewer {
       level: 0
     });
     ws.savePage(page.uuid);
+    // ★ W11（修 `W8-A`）：新增块是结构性变更 ⇒ 必须通知视图重算可见行序列（陷阱 22 / 15）。
+    //   补在**本组件内**的理由：`PdfViewer` 自己就是 UI 组件（`@Component struct`，
+    //   唯一构造点 `PdfPage.ets:170`）⇒ 它**就是** `WorkspaceService.executeOp` 的调用方，
+    //   与 W8 把 bump 补在 `BlockView` / `Toolbar` 属同一层次 ✓。
+    //   陈旧面是可达的：目标页取自 `AppState.getCurrentPage()`（真页时即当前显示的页），
+    //   取不到则回退到**今日日志页** —— 而今日页可能正被 `JournalFeed` 的
+    //   内嵌 `BlockList` 或副窗格显示 ⇒ 不 bump 就只落数据与磁盘。
+    if (r.success) {
+      AppState.bumpBlocksVersion();
+    }
     // 持久化页内高亮
     const highlight: PdfHighlight = { page: pageNumber, text: trimmed };
     this.highlights.push(highlight);

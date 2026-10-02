@@ -1,5 +1,6 @@
 import { ImportService } from '../../services/ImportService';
 import { PickerService } from '../../services/PickerService';
+import { AppState } from '../../state/AppState';
 
 /**
  * ImportDialog — 导入对话框。
@@ -60,6 +61,15 @@ export struct ImportDialog {
 
   /**
    * 执行导入。
+   *
+   * ★ W11（修 `W8-A`）：导入是**纯结构性变更**（`insert-block` × N，可能还含 `new-page`），
+   *   而 `ImportService` 不做任何视图通知 ⇒ 两条成功分支各补一次
+   *   `AppState.bumpBlocksVersion()`。
+   *   为什么补在**调用方**（而不是 `ImportService` 内）：本组件是全仓**唯一**的
+   *   `ImportService` 调用方（`ContentArea` 是唯一渲染点）⇒ 沿用 W8 的既定分工
+   *   「结构类操作补在调用方，服务不碰视图」✓。
+   *   设备级证据（臂 A，未修构建）：同一操作磁盘 26 B → 135 B（+14 块）而
+   *   `JournalFeed` 今日节仍只有 1 行、下一节标题 y 停在 600 ⇒ 本次修复对症 ✓。
    */
   private doImport(): void {
     if (this.filePath.length === 0) {
@@ -79,6 +89,8 @@ export struct ImportDialog {
       const ok = ImportService.importToPage(this.filePath, this.pageName);
       this.isImporting = false;
       if (ok) {
+        // ★ W11（W8-A）：块已入库+落盘 ⇒ 通知视图重建可见行序列
+        AppState.bumpBlocksVersion();
         // 重新解析以显示 Block 数量
         const r = ImportService.importMarkdownFile(this.filePath);
         this.showMsg('导入成功：' + r.blockCount.toString() + ' 个 Block', 'success');
@@ -90,6 +102,8 @@ export struct ImportDialog {
       const pageName = ImportService.importAsNewPage(this.filePath);
       this.isImporting = false;
       if (pageName.length > 0) {
+        // ★ W11（W8-A）：同上（此分支还可能新建了页面本身）
+        AppState.bumpBlocksVersion();
         const r = ImportService.importMarkdownFile(this.filePath);
         this.showMsg('导入成功：页面「' + pageName + '」，' + r.blockCount.toString() + ' 个 Block', 'success');
       } else {

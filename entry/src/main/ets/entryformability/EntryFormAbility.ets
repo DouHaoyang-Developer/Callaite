@@ -2,6 +2,7 @@ import { formBindingData, FormExtensionAbility, formInfo, formProvider } from '@
 import { Want } from '@kit.AbilityKit';
 import { WorkspaceService } from '../services/WorkspaceService';
 import { JournalService } from '../services/JournalService';
+import { AppState } from '../state/AppState';
 import { InsertBlockOp } from '../core/engine/OutlinerOps';
 import { PageData } from '../core/models/Page';
 import { BlockData } from '../core/models/Block';
@@ -227,8 +228,17 @@ export default class EntryFormAbility extends FormExtensionAbility {
         leftId: lastBlock ? lastBlock.uuid : '',
         level: TOP_BLOCK_LEVEL
       };
-      ws.executeOp(op);
+      const r = ws.executeOp(op);
       ws.savePage(page.uuid);
+      // ★ W11（修 `W8-A`）：新增块是结构性变更 ⇒ 必须通知视图重算可见行序列（陷阱 22 / 15）。
+      //   补在**本扩展内**的理由：这条路径**没有 UI 调用方** —— 触发者是桌面服务卡片
+      //   （`onFormEvent` → `handleQuickNoteFromMessage` → 本方法），本扩展即调用链顶
+      //   ⇒ 按陷阱 22 的判据只能在此补（引擎/`WorkspaceService` 刻意不 bump ✓）。
+      //   ⚠️ 诚实边界：卡片扩展与主 UI **是否同进程**无法从外部证明 ⇒ 若跨进程，
+      //      本行只在该进程的 AppStorage 内建键（无害但无效）。见 W11 文档 §11 不可自证项。
+      if (r.success) {
+        AppState.bumpBlocksVersion();
+      }
     } catch (_e) { /* 静默 */ }
   }
 }

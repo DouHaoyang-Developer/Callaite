@@ -175,9 +175,21 @@ export class EditorService {
 
   // ─── 粘贴处理 ───
 
+  /**
+   * 把一段 Markdown 文本逐行拆成顶层块插入指定页面（**每行一次 `insert-block`**）。
+   *
+   * ★ W11（修 `W8-A`）：本方法**零调用方**（全仓仅本定义处 1 命中，未接线），
+   *   故「补在调用方」这一层**不存在** ⇒ 按陷阱 22 的判据（「这条结构变更路径上
+   *   究竟有没有一个地方 bump」）补在**服务内** —— 与本文件 `createBlockBelow` /
+   *   `createChildBlock`（W6 补的服务内 bump）层次一致 ✓。
+   *   刻意**只在循环结束后 bump 一次**：循环内 bump 会在长文档粘贴时触发 N 次
+   *   `BlockList` 全表重建（N ≈ 行数）。
+   *   未接线状态**不删**（陷阱 2：零引用 ≠ 死代码，取决于路线图）✓。
+   */
   pasteMarkdownAsBlocks(markdown: string, pageId: string): void {
     if (!markdown) return;
     const lines = markdown.split('\n');
+    let inserted = 0;
     for (let i = 0; i < lines.length; i++) {
       const trimmed = lines[i].trim();
       if (trimmed === '') continue;
@@ -190,11 +202,17 @@ export class EditorService {
         content = trimmed.substring(2);
       }
       const ws = WorkspaceService.getInstance();
-      ws.executeOp({
+      const r = ws.executeOp({
         type: 'insert-block', content: content,
         pageId: pageId, parentId: pageId,
         leftId: '', level: level
       });
+      if (r.success) inserted += 1;
+    }
+    // ★ W11（W8-A）：新增块是结构性变更 ⇒ 必须通知视图重算可见行序列，
+    //   否则「数据与磁盘都对、界面毫无反应」（陷阱 22 / 15）。只在真的插入过才 bump。
+    if (inserted > 0) {
+      AppState.bumpBlocksVersion();
     }
   }
 

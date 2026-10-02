@@ -85,7 +85,7 @@ export default class ShareReceiveAbility extends UIAbility {
       hilog.warn(DOMAIN, LOG_TAG, 'Today journal page not found: %{public}s', today);
       return;
     }
-    ws.executeOp({
+    const r = ws.executeOp({
       type: 'insert-block',
       content: text,
       pageId: page.uuid,
@@ -94,6 +94,16 @@ export default class ShareReceiveAbility extends UIAbility {
       level: 0
     });
     ws.savePage(page.uuid);
+    // ★ W11（修 `W8-A`）：新增块是结构性变更 ⇒ 必须通知视图重算可见行序列（陷阱 22 / 15）。
+    //   补在**本 Ability 内**的理由：这条路径**没有 UI 调用方** —— 触发者是系统分享框架
+    //   （`onCreate(want)` → `onWindowStageCreate` → `processPendingShare`），
+    //   本 Ability 自己就是调用链顶 ⇒ 按陷阱 22 的判据（「这条路径上究竟有没有一个地方
+    //   bump」），只能由它自己补，`WorkspaceService`/`OutlinerEngine` **刻意不 bump** ✓。
+    //   同进程时 AppStorage 的 `callaite_blocksVersion` 与主窗口共享；若被系统放进
+    //   另一进程，本行只在该进程内建键，无副作用（**不可自证项**，见 W11 文档 §11）。
+    if (r.success) {
+      AppState.bumpBlocksVersion();
+    }
     // 跳转到今日日志页
     AppState.setCurrentPage(today);
     hilog.info(DOMAIN, LOG_TAG, 'Shared text added to journal');
@@ -111,7 +121,7 @@ export default class ShareReceiveAbility extends UIAbility {
       hilog.warn(DOMAIN, LOG_TAG, 'Today journal page not found: %{public}s', today);
       return;
     }
-    ws.executeOp({
+    const r = ws.executeOp({
       type: 'insert-block',
       content: '[' + url + ']',
       pageId: page.uuid,
@@ -120,6 +130,10 @@ export default class ShareReceiveAbility extends UIAbility {
       level: 0
     });
     ws.savePage(page.uuid);
+    // ★ W11（修 `W8-A`）：同 `handleSharedText`（理由见那里的注释）
+    if (r.success) {
+      AppState.bumpBlocksVersion();
+    }
     AppState.setCurrentPage(today);
     hilog.info(DOMAIN, LOG_TAG, 'Shared URL added to journal');
   }
