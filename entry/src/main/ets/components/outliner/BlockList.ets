@@ -1,7 +1,6 @@
 import { BlockData } from '../../core/models/Block';
 import { BlockView } from './BlockView';
 import { BlockSelection } from './BlockSelection';
-import { FindInPage } from './FindInPage';
 import { BlockDragLayer, forwardRowGrab } from './BlockDragLayer';
 import {
   bindSlashMenuSlot,
@@ -120,16 +119,16 @@ export struct BlockList {
   @State blocks: BlockData[] = [];
   /** 可见行序列（List 的数据源；顶层块 + 已展开子块，屏幕顺序）。 */
   @State rows: BlockData[] = [];
-  /**
-   * U2.4（W12）：页内搜索条开合态 —— **与 FindInPage 共用同一个 AppStorage 键**。
-   *
-   * 迁移前是本组件的 `@State findInPageVisible`，而 `FindInPage` 内部另有一个
-   * `@State isVisible`（初始 false，只有自己的 `show()` 能置 true）⇒ **两份互不相通的
-   * 显隐标志**：宿主放开时组件内部仍是关的，且没有任何路径能让两者同时为真。
-   * 现改为单一开合态（`callaite_findInPageOpen`，读写都经 `AppState`），
-   * 与 U2.3 的 SlashMenu 同一约定（见下面 slashMenuOpen 的注释）。
-   */
-  @StorageLink('callaite_findInPageOpen') private findInPageVisible: boolean = false;
+  // ─── U2.4 第 2 件后半（S3-W3）：本组件已**不再挂载 `FindInPage`** ───
+  // 计划 §U2.4 第 2 条（`PLAN-UI-Alignment.md (v1.md:321`）要求把页内搜索条
+  // 「从 BlockList 内联移到 MainContainer 顶部 Stack」——S3-W3 已迁走：
+  // 挂载点唯一化到 `MainContainer.build()` 的顶层 `Stack`（右上角浮动小卡）。
+  //
+  // 随之删掉的是 W12 加在本组件上的 `@StorageLink('callaite_findInPageOpen')`：
+  // 它当时**唯一**的用途就是给下方两处 `if (this.findInPageVisible) FindInPage(...)`
+  // 当门（`BlockList.ets` 内除此以外 0 读取点）。留着它只会让「每条块列表都因
+  // 搜索条开合重跑一次 `build()`」——而迁移后那一次重跑**什么都不会变**（搜索条已不在本组件内）。
+  // 显隐统一本身（`AppState.open/closeFindInPage` 单一写入口）**未变**，只是消费方换成了 MainContainer。
   /**
    * U2.3：Slash 菜单开合态与目标块 —— **改由 AppStorage 单一来源**。
    *
@@ -303,15 +302,11 @@ export struct BlockList {
         // 此处 LazyForEach 宿主仍是 Column —— 内嵌场景本就处于滚动容器之外，
         // 虚拟化无法生效（S1-B 之前整页模式同样如此），行为与迁移前完全一致。
         Column({ space: 0 }) {
-          // 页内搜索栏
-          if (this.findInPageVisible) {
-            // W13：必须传**真实页面 uuid**。此前传的是 `this.pageId`，而本组件的唯一调用点
-            // （PageView.ets:254）**没有传 pageId** ⇒ @Prop 恒为 '' ⇒ FindInPage 会去
-            // `getPageBlocks('')` 里搜 ⇒ **恒 0 匹配**（实测：注入查询后计数停在 `0/0`）。
-            // 与 BlockList.ets:440-446 给 BlockSelection 修的是同一个坑
-            // （那里改用了 pageUuidForDrag，见其字段注释）。
-            FindInPage({ pageId: this.pageUuidForDrag })
-          }
+          // ─── 页内搜索条已迁走（S3-W3）───
+          // 原先此处内联 `FindInPage({ pageId: this.pageUuidForDrag })`：它占据 Column
+          // 的纵向空间 ⇒ 打开搜索条会把**整个 List 往下推**（这正是迁移前
+          // `Ctrl+Shift+F` 像素差分覆盖整条内容列的原因）。现挂在 `MainContainer`
+          // 顶层 Stack 的右上角，成为真正的浮动小卡（计划 §U2.4 第 2 条）。
 
           if (this.blocks.length === 0) {
             this.EmptyState()
@@ -351,11 +346,7 @@ export struct BlockList {
         // ─── 整页模式（PageView 大纲页）───
         // List 自身即滚动容器，LazyForEach 的虚拟化在此条件下才真正生效。
         Column({ space: 0 }) {
-          // 页内搜索栏（浮动在顶部）
-          if (this.findInPageVisible) {
-            // W13：同内嵌分支 —— 传真实页面 uuid（`this.pageId` 恒为 ''，见上方说明）
-            FindInPage({ pageId: this.pageUuidForDrag })
-          }
+          // ─── 页内搜索条已迁走（S3-W3，同上）───
 
           List({ space: 0, scroller: this.activeScroller() }) {
             if (this.blocks.length === 0) {
