@@ -20,16 +20,51 @@ const LOG_TAG = 'ShareReceive';
  */
 export default class ShareReceiveAbility extends UIAbility {
   private pendingSharedText: string = '';
+  /** 窗口是否已就绪（`loadContent` 回调已返回）—— 决定 `onNewWant` 走哪条处理时机 */
+  private stageReady: boolean = false;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, LOG_TAG, 'Ability onCreate');
 
     // 初始化文件服务上下文与 Graph（冷启动时确保 WorkspaceService 可用）
+    // ⚠️ 只在冷启动做（保持原实现的位置与次数 ✗）：`FileService.initGraph()` 会
+    //   `indexStore.clear()` 后**全量重读 Graph**（`DataStore.loadGraph`），
+    //   放进「每次分享都跑」的公共路径会变成**每次分享重载整个 vault** ✗。
     FileService.setContext(this.context);
     FileService.initGraph();
 
     // 提取分享内容并暂存（在窗口创建后处理以支持 toast 提示）
-    this.pendingSharedText = this.extractSharedText(want);
+    this.acceptShareText(want, 'onCreate');
+  }
+
+  /**
+   * ★ W12（修 `W11-A`）：**已启动实例再次被拉起时的入口**。
+   *
+   * 本 Ability 的 `launchType` 是**默认的 `singleton`**（`module.json5` 未配置该字段 ⇒
+   * 取默认值；SDK `LaunchType.SINGLETON = 0`，设备 hilog 实测 `launchType:0` 一致 ✓）。
+   * `singleton` 的契约是：**首次启动走 `onCreate`，此后每次拉起都走 `onNewWant`** ✗✓
+   * ⇒ 不实现本回调 ⇒ 第二次及以后的分享内容**没有任何代码读取那个 `Want`** ⇒ **静默丢弃** ✗。
+   *
+   * 与「改用 `launchType: multiton`」的分工说明见 W12 文档 §3：本窗口**选 `onNewWant`** ——
+   * ① 它就是这套生命周期的**约定入口**，且设备 hilog 已证明系统**本来就在调它**
+   *    （`[JUA2177] JsUIAbility call js, name: onNewWant` ✓）；改 `launchType` 是绕过约定，
+   *    还会每次分享**新建一个窗口/任务**（实测一次启动即产生新窗口 ✓）；
+   * ② 改动面最小：只动 1 个 `.ets`，**不碰 `module.json5`** ✓。
+   */
+  onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    hilog.info(DOMAIN, LOG_TAG, 'Ability onNewWant');
+    // 与 `onCreate` **共用同一条处理路径**（`acceptShareText` → `processPendingShare`）✗✓
+    // ⚠️ 这里**不**重复 `FileService.initGraph()`：Graph 在冷启动已加载，
+    //    且 `initGraph` 是全量重载（见 `onCreate` 注释），每次分享跑一次会重载整个 vault ✗。
+    this.acceptShareText(want, 'onNewWant');
+    if (this.stageReady) {
+      // 窗口已就绪 ⇒ 本次分享立刻就地处理
+      this.processPendingShare();
+    } else {
+      // 窗口还没起来（`loadContent` 回调未返回）⇒ 先暂存在 pendingSharedText，
+      // 等 `onWindowStageCreate` 的回调里统一处理 ⇒ **内容不丢** ✓
+      hilog.info(DOMAIN, LOG_TAG, 'Window stage not ready, share deferred to onWindowStageCreate');
+    }
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
@@ -42,12 +77,43 @@ export default class ShareReceiveAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, LOG_TAG, 'Content loaded');
+      this.stageReady = true;
+      // 处理暂存内容：① `onCreate` 那次分享 ② 窗口就绪前到达的 `onNewWant` 分享（若有）
       this.processPendingShare();
     });
   }
 
   /**
+   * 公共处理路径（`onCreate` 与 `onNewWant` **共用**）✗✓ —— 避免两份逻辑分叉。
+   *
+   * 只做「把该 `Want` 的分享内容追加到暂存串」这一件事；
+   * 文件服务初始化**不在这里**（`initGraph` 是全量重载，只应在冷启动做，见 `onCreate`）。
+   */
+  private acceptShareText(want: Want, source: string): void {
+    const text = this.extractSharedText(want);
+    if (text.length === 0) {
+      hilog.warn(DOMAIN, LOG_TAG, 'No shared text found in want (%{public}s)', source);
+      return;
+    }
+    // ⚠️ 这里**只追加、绝不因「与上次相同」而跳过** ✗ —— 见 processPendingShare 的语义说明
+    this.pendingSharedText += text;
+    hilog.info(DOMAIN, LOG_TAG, 'Accepted share (%{public}s, len=%{public}d)', source, text.length);
+  }
+
+  /**
    * 处理暂存的分享内容：根据类型调用对应处理器并显示 toast。
+   *
+   * ⚠️ **语义决策（W12 拍板 ✗✓）**：**每一次分享都落一个块，不做内容去重** ✗。
+   *
+   * 本缺陷登记名是 `W11-A`「去重」，但**真正的缺陷是「第二次静默丢弃」** ——
+   * 「同一份内容分享两次应该只留一个块」是**应用的猜测**，而「用户点了两次」是**用户的动作** ✗✓。
+   * 判据：用户连点两次分享，期望的是「两次都被记下来」；
+   * 而**静默丢弃是应用替用户做了决定** ✗ —— 这与本会话「数据丢失 > 一切」的口径一致
+   * （同 W2 静默丢块 / W7 OOM 崩溃 ✓）。
+   * 另：本仓其余插入路径（`insert-block` / 导入 / 插件 `insertTodayBlock`）**都不按内容去重**
+   * ⇒ 分享路径单独去重会造成**同一操作在不同入口下语义不一致** ✗。
+   * ⇒ 若将来真的需要去重，应做成**用户可见且可撤销**的能力（例：toast 提示「重复内容，已跳过」），
+   *   而不是在这里静默比对字符串 ✗。
    */
   private processPendingShare(): void {
     if (this.pendingSharedText.length === 0) {
