@@ -16,6 +16,35 @@ import { AppState } from '../../state/AppState';
 import { t } from '../../utils/i18n';
 
 /**
+ * 日志流内嵌模式（embedded=true，JournalFeed 的「每天一节」）**每节最多实例化的行数**。
+ *
+ * ─── 为什么必须有这个上限（S3-W6 实测，硬证据）───
+ * 内嵌模式的 LazyForEach 宿主是普通 `Column`（见 build() 内嵌分支注释），
+ * 而 `LazyForEach` **只在 List/Grid/WaterFall 等滚动容器内才虚拟化**（AGENTS §7 陷阱 8）
+ * ⇒ 该分支的「可见行序列」是**全量实例化**的。
+ * 平时这没问题（一天的日志通常几块到几十块），但只要**某一天的页面很大**，
+ * 它就会把整页的行塞进「默认落点」的首页：
+ *   实测夹具 `2026-09-30.md` = 1037 块（W8 遗留的 1000 块压测页，**恰好是一个日志日期**），
+ *   落在日志流默认的 7 天窗口（2026-09-26…2026-10-02）内
+ *   ⇒ 首页一次实例化 1046 行（1037 + 今天 9）
+ *   ⇒ **22,322 个 a11y 节点 / Total Pss 774,134 kB (≈756 MB)**，a11y 树被压垮，
+ *      `uitest dumpLayout` 与 `-uiLayout -i` **两条通道同时丢失应用子树**（阻断验收本身）。
+ *
+ * ─── 对照组（同一构建 / 同一 vault / 同一台机，只换落点）───
+ * 同一个 1037 块页面以**文档页**打开时，走的是 `List` + LazyForEach（真虚拟化）
+ * ⇒ 只实例化 **14 行** ⇒ **662 个 a11y 节点 / 119,119 kB (≈116.3 MB)** ✓
+ * （与 W8 的 116.9 MB 基线吻合）。
+ * ⇒ **膨胀的唯一变量是「容器是否虚拟化」，不是数据量、不是日期枚举范围。**
+ *
+ * ─── 取值 ───
+ * 30 行/节 × 7 节上限 = 210 行（现实中最坏情形），仍比 1046 行低一个数量级；
+ * 单日日志通常远小于 30 行 ⇒ 正常用户**看不到本上限的存在**。
+ * 超出部分不丢失：节尾渲染 `TruncationFooter()`，点击进入该日单日页
+ * （那里是虚拟化的 List，可浏览与编辑全部块）。
+ */
+const EMBEDDED_MAX_ROWS: number = 30;
+
+/**
  * BlockDataSource — LazyForEach 数据源。
  * 管理**可见行**序列（顶层块 + 已展开子块，屏幕从上到下的顺序）。
  */
@@ -126,6 +155,11 @@ export struct BlockList {
   @State blocks: BlockData[] = [];
   /** 可见行序列（List 的数据源；顶层块 + 已展开子块，屏幕顺序）。 */
   @State rows: BlockData[] = [];
+  /**
+   * 内嵌模式（日志流）下**未被实例化**的行数 —— 即 `rows.length - EMBEDDED_MAX_ROWS`。
+   * 恒为 0 表示本节未截断（整页模式恒为 0）。驱动节尾 `TruncationFooter()` 的显隐与文案。
+   */
+  @State hiddenRowCount: number = 0;
   // ─── U2.4 第 2 件后半（S3-W3）：本组件已**不再挂载 `FindInPage`** ───
   // 计划 §U2.4 第 2 条（`PLAN-UI-Alignment.md (v1.md:321`）要求把页内搜索条
   // 「从 BlockList 内联移到 MainContainer 顶部 Stack」——S3-W3 已迁走：
@@ -298,7 +332,26 @@ export struct BlockList {
       this.rows = [];
       this.pageUuidForDrag = '';
     }
-    this.dataSource.setBlocks(this.rows);
+    const shown: BlockData[] = this.rowsForDisplay();
+    this.hiddenRowCount = this.rows.length - shown.length;
+    this.dataSource.setBlocks(shown);
+  }
+
+  /**
+   * 交给 LazyForEach 的行序列。
+   *
+   * 整页模式（embedded=false）宿主是 `List`（真虚拟化）⇒ **原样返回，不截断**；
+   * 内嵌模式（embedded=true）宿主是普通 `Column`（陷阱 8：不虚拟化）⇒ 按
+   * `EMBEDDED_MAX_ROWS` 截断（理由与取值见该常量注释）。
+   *
+   * 只影响「实例化多少行」，不改 `this.rows` 本身 —— 依赖完整行序列的
+   * `slashEntryTargetUuid()` 等只出现在整页分支，语义不受影响。
+   */
+  private rowsForDisplay(): BlockData[] {
+    if (this.embedded && this.rows.length > EMBEDDED_MAX_ROWS) {
+      return this.rows.slice(0, EMBEDDED_MAX_ROWS);
+    }
+    return this.rows;
   }
 
   build() {
@@ -307,7 +360,11 @@ export struct BlockList {
         // ─── 内嵌模式（JournalFeed 日志流每一节）───
         // 不自建滚动容器：高度自适应内容，滚动由外层 JournalFeed 的 Scroll 承担。
         // 此处 LazyForEach 宿主仍是 Column —— 内嵌场景本就处于滚动容器之外，
-        // 虚拟化无法生效（S1-B 之前整页模式同样如此），行为与迁移前完全一致。
+        // 虚拟化无法生效（S1-B 之前整页模式同样如此）。
+        // ⚠️ 正因如此，本分支的**行数必须自带上限**（S3-W6）：数据源改为
+        //    `rowsForDisplay()`，最多 EMBEDDED_MAX_ROWS 行（理由/取证见该常量注释）。
+        //    此前这里是全量 `this.rows` —— 一个 1037 块的日志日就把首页推到
+        //    22,322 个 a11y 节点 / 756 MB，两条 UI 枚举通道同时失效。
         Column({ space: 0 }) {
           // ─── 页内搜索条已迁走（S3-W3）───
           // 原先此处内联 `FindInPage({ pageId: this.pageUuidForDrag })`：它占据 Column
@@ -330,6 +387,12 @@ export struct BlockList {
               }
               .width('100%')
             }, (row: BlockData) => row.uuid)
+          }
+
+          // 截断提示行：本节行数超过 EMBEDDED_MAX_ROWS 时出现（否则 hiddenRowCount 恒为 0，
+          // 本行不渲染 ⇒ 正常日志日的渲染结果与加本上限之前**逐节点相同**）。
+          if (this.hiddenRowCount > 0) {
+            this.TruncationFooter()
           }
 
           // 底部添加按钮（feed 内嵌模式不渲染 — Logseq 无显式添加按钮，回车即新建）
@@ -521,6 +584,34 @@ export struct BlockList {
 
   // ─── 空页面状态 ───
   // Logseq 风格：左对齐的项目符号点 + 弱化占位提示，而非居中的大图标。
+
+  /**
+   * 内嵌模式（日志流）的「本节已截断」行。
+   *
+   * 只在 `hiddenRowCount > 0` 时被调用（见 build() 内嵌分支）。点击 = 打开该日单日页，
+   * 那里的 BlockList 走 `List` + LazyForEach（真虚拟化，实测 1037 块只实例化 14 行），
+   * 可以浏览/编辑本节未展开的全部块 ⇒ **内容不丢失，只是不在首页铺开**。
+   *
+   * 用 `.id()` 暴露给 uitest：本行的存在与否，就是「上限是否生效」的可枚举判据
+   * （a11y 通道恢复后，`dumpLayout` 里能按 id 精确定位 —— AGENTS 验证纪律 8）。
+   */
+  @Builder
+  TruncationFooter() {
+    Row({ space: 6 }) {
+      TablerIcon('dots', 15, $r('app.color.muted_text'))
+      Text('还有 ' + this.hiddenRowCount + ' 块未展开 —— 打开当日页查看')
+        .fontSize(13)
+        .fontColor($r('app.color.primary'))
+    }
+    .width('100%')
+    .height(34)
+    .padding({ left: 6 })
+    .borderRadius(4)
+    .id('callaite_feedTruncated_' + this.pageName)
+    .onClick(() => {
+      AppState.setCurrentPage(this.pageName);
+    })
+  }
 
   @Builder
   EmptyState() {
