@@ -274,7 +274,9 @@ export struct LeftSidebar {
       } else {
         ForEach(this.allTags, (tag: string) => {
           Row({ space: 6 }) {
-            TablerIcon('tag', 13, $r('app.color.muted_text'))
+            // S3-W20 修：此处原为 'tag'（单数），而 TablerIconPaths 注册表（149 项）里只有 'tags'
+            // ⇒ findIconPath() 返回 undefined ⇒ 该图标**静默不渲染**（全仓 123 处静态图标名中唯一一处未注册）。
+            TablerIcon('tags', 13, $r('app.color.muted_text'))
             Text('#' + tag)
               .fontSize(13)
               .fontColor($r('app.color.text'))

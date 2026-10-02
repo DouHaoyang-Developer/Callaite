@@ -176,13 +176,21 @@ export struct ContentArea {
           .height(420)
           .borderRadius(12)
           .clip(true)
+          // 面板本体底色（S3-W20 修）：此前这里**没有任何背景色**，而 CommandPalette 的根
+          // Column 自述 backgroundColor(Color.Transparent) ⇒ 卡片整体透明，下层正文直接透上来
+          // 与结果行文字重叠（实测：块文本 x=1316/y=540…1346 与结果行 x=1241/y=765…1050 同区叠加，
+          // 截图中 W13X3 / W13R2 / W13AFTER 与 2026-10-2 / 2026-09-25 互相穿透、不可读）。
+          // 取 surface0（明 #FFFFFF / 暗 #202020）——不透明、随主题走，保证模态可读性优先。
+          .backgroundColor($r('app.color.surface0'))
           .shadow({ radius: 24, color: 'rgba(0,0,0,0.22)', offsetY: 8 })
           .border({ width: 0.6, color: $r('app.color.glass_border') })
 
           Column()
             .width('100%')
             .layoutWeight(1)
-            .backgroundColor(Color.Transparent)
+            // 遮罩必须**上下对称**（S3-W20 修）：此前上片是 rgba(0,0,0,0.35)、
+            // 下片却是 Color.Transparent ⇒ 同一层模态的下半屏不下沉，视觉上「半张遮罩」。
+            .backgroundColor('rgba(0,0,0,0.35)')
             .onClick(() => {
               AppState.setCommandPaletteOpen(false);
             })
