@@ -16,35 +16,6 @@ import { AppState } from '../../state/AppState';
 import { t } from '../../utils/i18n';
 
 /**
- * 日志流内嵌模式（embedded=true，JournalFeed 的「每天一节」）**每节最多实例化的行数**。
- *
- * ─── 为什么必须有这个上限（S3-W6 实测，硬证据）───
- * 内嵌模式的 LazyForEach 宿主是普通 `Column`（见 build() 内嵌分支注释），
- * 而 `LazyForEach` **只在 List/Grid/WaterFall 等滚动容器内才虚拟化**（AGENTS §7 陷阱 8）
- * ⇒ 该分支的「可见行序列」是**全量实例化**的。
- * 平时这没问题（一天的日志通常几块到几十块），但只要**某一天的页面很大**，
- * 它就会把整页的行塞进「默认落点」的首页：
- *   实测夹具 `2026-09-30.md` = 1037 块（W8 遗留的 1000 块压测页，**恰好是一个日志日期**），
- *   落在日志流默认的 7 天窗口（2026-09-26…2026-10-02）内
- *   ⇒ 首页一次实例化 1046 行（1037 + 今天 9）
- *   ⇒ **22,322 个 a11y 节点 / Total Pss 774,134 kB (≈756 MB)**，a11y 树被压垮，
- *      `uitest dumpLayout` 与 `-uiLayout -i` **两条通道同时丢失应用子树**（阻断验收本身）。
- *
- * ─── 对照组（同一构建 / 同一 vault / 同一台机，只换落点）───
- * 同一个 1037 块页面以**文档页**打开时，走的是 `List` + LazyForEach（真虚拟化）
- * ⇒ 只实例化 **14 行** ⇒ **662 个 a11y 节点 / 119,119 kB (≈116.3 MB)** ✓
- * （与 W8 的 116.9 MB 基线吻合）。
- * ⇒ **膨胀的唯一变量是「容器是否虚拟化」，不是数据量、不是日期枚举范围。**
- *
- * ─── 取值 ───
- * 30 行/节 × 7 节上限 = 210 行（现实中最坏情形），仍比 1046 行低一个数量级；
- * 单日日志通常远小于 30 行 ⇒ 正常用户**看不到本上限的存在**。
- * 超出部分不丢失：节尾渲染 `TruncationFooter()`，点击进入该日单日页
- * （那里是虚拟化的 List，可浏览与编辑全部块）。
- */
-const EMBEDDED_MAX_ROWS: number = 30;
-
-/**
  * BlockDataSource — LazyForEach 数据源。
  * 管理**可见行**序列（顶层块 + 已展开子块，屏幕从上到下的顺序）。
  */
@@ -130,13 +101,10 @@ export struct BlockList {
    * 补齐 pageName 的 watch 后，切页即重算。
    */
   @Prop @Watch('onPageNameChanged') pageName: string = '';
-  // embedded=true 时用于日志流 feed 内嵌：高度自适应内容、不渲染多选浮动栏
-  @Prop embedded: boolean = false;
   /**
    * 可选外部 Scroller。
-   * embedded=false（整页大纲）时由 ContentArea 注入，使上层可对 Block 列表定位
-   * （U2.1a 块定位备用）；embedded=true（日志流 feed 内嵌）时必须留空 ——
-   * feed 每一节都不能自建滚动容器，否则与外层 JournalFeed 的 Scroll 冲突。
+   * 由 ContentArea 注入，使上层可对 Block 列表定位
+   * （U2.1a 块定位备用）。
    *
    * 该字段故意不加 @Prop：Scroller 是稳定引用对象，无需参与 ArkTS 状态观察，
    * 普通成员变量在父组件构造时同步赋值，build() 首次执行前已就绪。
@@ -155,11 +123,6 @@ export struct BlockList {
   @State blocks: BlockData[] = [];
   /** 可见行序列（List 的数据源；顶层块 + 已展开子块，屏幕顺序）。 */
   @State rows: BlockData[] = [];
-  /**
-   * 内嵌模式（日志流）下**未被实例化**的行数 —— 即 `rows.length - EMBEDDED_MAX_ROWS`。
-   * 恒为 0 表示本节未截断（整页模式恒为 0）。驱动节尾 `TruncationFooter()` 的显隐与文案。
-   */
-  @State hiddenRowCount: number = 0;
   // ─── U2.4 第 2 件后半（S3-W3）：本组件已**不再挂载 `FindInPage`** ───
   // 计划 §U2.4 第 2 条（`PLAN-UI-Alignment.md (v1.md:321`）要求把页内搜索条
   // 「从 BlockList 内联移到 MainContainer 顶部 Stack」——S3-W3 已迁走：
@@ -332,186 +295,120 @@ export struct BlockList {
       this.rows = [];
       this.pageUuidForDrag = '';
     }
-    const shown: BlockData[] = this.rowsForDisplay();
-    this.hiddenRowCount = this.rows.length - shown.length;
-    this.dataSource.setBlocks(shown);
-  }
-
-  /**
-   * 交给 LazyForEach 的行序列。
-   *
-   * 整页模式（embedded=false）宿主是 `List`（真虚拟化）⇒ **原样返回，不截断**；
-   * 内嵌模式（embedded=true）宿主是普通 `Column`（陷阱 8：不虚拟化）⇒ 按
-   * `EMBEDDED_MAX_ROWS` 截断（理由与取值见该常量注释）。
-   *
-   * 只影响「实例化多少行」，不改 `this.rows` 本身 —— 依赖完整行序列的
-   * `slashEntryTargetUuid()` 等只出现在整页分支，语义不受影响。
-   */
-  private rowsForDisplay(): BlockData[] {
-    if (this.embedded && this.rows.length > EMBEDDED_MAX_ROWS) {
-      return this.rows.slice(0, EMBEDDED_MAX_ROWS);
-    }
-    return this.rows;
+    this.dataSource.setBlocks(this.rows);
   }
 
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
-      if (this.embedded) {
-        // ─── 内嵌模式（JournalFeed 日志流每一节）───
-        // 不自建滚动容器：高度自适应内容，滚动由外层 JournalFeed 的 Scroll 承担。
-        // 此处 LazyForEach 宿主仍是 Column —— 内嵌场景本就处于滚动容器之外，
-        // 虚拟化无法生效（S1-B 之前整页模式同样如此）。
-        // ⚠️ 正因如此，本分支的**行数必须自带上限**（S3-W6）：数据源改为
-        //    `rowsForDisplay()`，最多 EMBEDDED_MAX_ROWS 行（理由/取证见该常量注释）。
-        //    此前这里是全量 `this.rows` —— 一个 1037 块的日志日就把首页推到
-        //    22,322 个 a11y 节点 / 756 MB，两条 UI 枚举通道同时失效。
-        Column({ space: 0 }) {
-          // ─── 页内搜索条已迁走（S3-W3）───
-          // 原先此处内联 `FindInPage({ pageId: this.pageUuidForDrag })`：它占据 Column
-          // 的纵向空间 ⇒ 打开搜索条会把**整个 List 往下推**（这正是迁移前
-          // `Ctrl+Shift+F` 像素差分覆盖整条内容列的原因）。现挂在 `MainContainer`
-          // 顶层 Stack 的右上角，成为真正的浮动小卡（计划 §U2.4 第 2 条）。
+      // ─── 整页模式（PageView 大纲页）───
+      // List 自身即滚动容器，LazyForEach 的虚拟化在此条件下才真正生效。
+      //
+      // ─── S3-W16：内嵌模式（embedded=true，日志流每一节）分支已删除 ───
+      // 该分支的宿主是普通 `Column`（`LazyForEach` 在其中**不虚拟化**，AGENTS §7 陷阱 8）
+      // ⇒ 整节块行全量实例化 ⇒ 一个 1037 块的日志日就能把首页推到 22,322 个 a11y 节点 /
+      //    756 MB，两条 UI 枚举通道同时失效（S3-W6 实测）。W6 用 `EMBEDDED_MAX_ROWS = 30`
+      //    的临时上限解除阻断，但那不构成 Pss 硬上界（W6-F1）。
+      // 日志流已改为**单一扁平 `List`**：由 `JournalFeed` 自己把「天 × 块行」拍平成一个序列，
+      // 每个块行都是那里 `List` 的直接 item ⇒ 虚拟化生效（W6-F2，结构性正解）。
+      // 因此本组件不再有内嵌调用方（全仓唯一构造点 `PageView.ets` 不传 embedded），
+      // 该分支连同 `EMBEDDED_MAX_ROWS` / `hiddenRowCount` / `rowsForDisplay()` /
+      // `TruncationFooter()` 一并删除 —— 少一条「不虚拟化」的容器路径。
+      Column({ space: 0 }) {
+        // ─── 页内搜索条已迁走（S3-W3）───
+        // 原先此处内联 `FindInPage({ pageId: this.pageUuidForDrag })`：它占据 Column
+        // 的纵向空间 ⇒ 打开搜索条会把**整个 List 往下推**（这正是迁移前
+        // `Ctrl+Shift+F` 像素差分覆盖整条内容列的原因）。现挂在 `MainContainer`
+        // 顶层 Stack 的右上角，成为真正的浮动小卡（计划 §U2.4 第 2 条）。
 
+        List({ space: 0, scroller: this.activeScroller() }) {
           if (this.blocks.length === 0) {
-            this.EmptyState()
+            // 空态也必须是 ListItem —— List 的直接子节点只能是 ListItem/ListItemGroup
+            ListItem() {
+              this.EmptyState()
+            }
           } else {
-            // 可见行序列使用 LazyForEach（宿主是 Column，不做虚拟化）。
-            // 与整页分支同样展平：每个可见行只含一个 BlockView ⇒ 行高由内容确定，
-            // 不会出现「父行把整棵子树包在一个容器里」导致的高度传播。
+            // 可见行序列使用 LazyForEach 虚拟列表。
+            // List 宿主下 itemGenerator 必须直接产出 ListItem，虚拟化在此条件下生效
+            // （SDK lazy_for_each.d.ts:881-883：组件回收以「位于滚动容器内」为前提）。
+            //
+            // 每个可见行 = 1 个 ListItem + 1 个 BlockView（**不再把子块树塞进同一个 item**）：
+            // item 高度只由该行 BlockView 的内容决定，List 因此能正确测量并回收，
+            // 同时消除了 S1-B 之后「List 把视口高度让给报不出确定高度的 item」的拉伸传播。
             LazyForEach(this.dataSource, (row: BlockData) => {
-              Column() {
-                BlockView({
-                  blockUuid: row.uuid,
-                  slashMenuListId: this.ensureSlashMenuListId()
-                })
+              ListItem() {
+                // ⚠️ 这个 Column 包装**不可省略**（实测）：
+                //   直接把自定义组件 BlockView 作为 ListItem 的唯一子节点时，BlockView 相当于
+                //   matchParent 子组件，List 仍会把剩余视口高度分给该 item（父行 400vp+，子行被推下去）；
+                //   套一层 `Column().width('100%')` 后，容器先被有确定尺寸的内容撑开、item 高度
+                //   回到内容高度 —— 与扁平页（`__S1_long` 每行 48vp）的结构完全一致。
+                Column() {
+                  // S1-H：onRowGrab 指向**同一个**拖拽层实例（见 handleRowGrab），
+                  // 行内不挂任何拖拽/Pan 手势，位移跟踪全部由该单实例承担。
+                  // 展平后每行 uuid 唯一且明确，长按上报 / 命中表 / 落库三者的 uuid 一一对应。
+                  //
+                  // ⚠️ 不再传 `depth: row.level`：键未变的行不会重跑本 itemGenerator，
+                  //    传参型 @Prop 因此在缩进/反缩进后收不到新值（缺陷 2）。
+                  //    层级改为 BlockView 从块数据自读（见 BlockView.depth / onBlocksVersionChanged）。
+                  BlockView({
+                    blockUuid: row.uuid,
+                    // U2.3：行内 Slash 入口的宿主路由键（值恒定，不会被结构性刷新影响）
+                    slashMenuListId: this.ensureSlashMenuListId(),
+                    onRowGrab: (uuid: string, gx: number, gy: number) => {
+                      this.handleRowGrab(uuid, gx, gy);
+                    }
+                  })
+                }
+                .width('100%')
               }
-              .width('100%')
             }, (row: BlockData) => row.uuid)
           }
 
-          // 截断提示行：本节行数超过 EMBEDDED_MAX_ROWS 时出现（否则 hiddenRowCount 恒为 0，
-          // 本行不渲染 ⇒ 正常日志日的渲染结果与加本上限之前**逐节点相同**）。
-          if (this.hiddenRowCount > 0) {
-            this.TruncationFooter()
-          }
-
-          // 底部添加按钮（feed 内嵌模式不渲染 — Logseq 无显式添加按钮，回车即新建）
-          if (!this.embedded) {
+          // 底部添加按钮：作为列表尾项，位置/外观与迁移前一致
+          // （迁移前它在 Column 尾部，随内容滚动到最下方）
+          ListItem() {
             this.AddBlockButton()
           }
         }
         .width('100%')
-        .height('auto')
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
+      }
+      .width('100%')
+      .height('100%')
 
-        // Slash 命令菜单（U2.3）。放在 **Stack 层**而不是上面的 Column 里：
-        // Stack 的子组件默认叠放，菜单才会「浮」在行内容之上；
-        // 放进 Column 会与 List 争抢纵向空间（List 是 layoutWeight(1) 的吸收项，
-        // 300vp 的菜单只能把它挤扁或者自己滚到视口之外）。
-        if (this.slashMenuOpen) {
-          SlashMenu({ blockUuid: this.slashMenuUuid })
-            .align(Alignment.BottomEnd)
-            .margin({ right: 16, bottom: 16 })
-        }
-      } else {
-        // ─── 整页模式（PageView 大纲页）───
-        // List 自身即滚动容器，LazyForEach 的虚拟化在此条件下才真正生效。
-        Column({ space: 0 }) {
-          // ─── 页内搜索条已迁走（S3-W3，同上）───
+      // ─── S1-H：块拖拽重排层 ───
+      // 位置：**List 之外**，且整页只挂这 1 个实例。
+      // 因此不存在「每行一个手势容器」与 List 纵向滚动竞争的问题；
+      // 行内只保留一个 LongPressGesture（时长内不移动 → 滚动识别器判负），
+      // 位移跟踪由本层的 onTouch 承担。
+      // 命中模式为 Transparent（层内自设）：本层参与命中但不阻塞兄弟 List 的命中，
+      // 滚动、行内点击、hover 全部照旧。
+      BlockDragLayer({
+        layerId: this.ensureDragLayerId(),
+        pageUuid: this.pageUuidForDrag,
+        scroller: this.activeScroller()
+      })
 
-          List({ space: 0, scroller: this.activeScroller() }) {
-            if (this.blocks.length === 0) {
-              // 空态也必须是 ListItem —— List 的直接子节点只能是 ListItem/ListItemGroup
-              ListItem() {
-                this.EmptyState()
-              }
-            } else {
-              // 可见行序列使用 LazyForEach 虚拟列表。
-              // List 宿主下 itemGenerator 必须直接产出 ListItem，虚拟化在此条件下生效
-              // （SDK lazy_for_each.d.ts:881-883：组件回收以「位于滚动容器内」为前提）。
-              //
-              // 每个可见行 = 1 个 ListItem + 1 个 BlockView（**不再把子块树塞进同一个 item**）：
-              // item 高度只由该行 BlockView 的内容决定，List 因此能正确测量并回收，
-              // 同时消除了 S1-B 之后「List 把视口高度让给报不出确定高度的 item」的拉伸传播。
-              LazyForEach(this.dataSource, (row: BlockData) => {
-                ListItem() {
-                  // ⚠️ 这个 Column 包装**不可省略**（实测）：
-                  //   直接把自定义组件 BlockView 作为 ListItem 的唯一子节点时，BlockView 相当于
-                  //   matchParent 子组件，List 仍会把剩余视口高度分给该 item（父行 400vp+，子行被推下去）；
-                  //   套一层 `Column().width('100%')` 后，容器先被有确定尺寸的内容撑开、item 高度
-                  //   回到内容高度 —— 与扁平页（`__S1_long` 每行 48vp）的结构完全一致。
-                  Column() {
-                    // S1-H：onRowGrab 指向**同一个**拖拽层实例（见 handleRowGrab），
-                    // 行内不挂任何拖拽/Pan 手势，位移跟踪全部由该单实例承担。
-                    // 展平后每行 uuid 唯一且明确，长按上报 / 命中表 / 落库三者的 uuid 一一对应。
-                    //
-                    // ⚠️ 不再传 `depth: row.level`：键未变的行不会重跑本 itemGenerator，
-                    //    传参型 @Prop 因此在缩进/反缩进后收不到新值（缺陷 2）。
-                    //    层级改为 BlockView 从块数据自读（见 BlockView.depth / onBlocksVersionChanged）。
-                    BlockView({
-                      blockUuid: row.uuid,
-                      // U2.3：行内 Slash 入口的宿主路由键（值恒定，不会被结构性刷新影响）
-                      slashMenuListId: this.ensureSlashMenuListId(),
-                      onRowGrab: (uuid: string, gx: number, gy: number) => {
-                        this.handleRowGrab(uuid, gx, gy);
-                      }
-                    })
-                  }
-                  .width('100%')
-                }
-              }, (row: BlockData) => row.uuid)
-            }
-
-            // 底部添加按钮：作为列表尾项，位置/外观与迁移前一致
-            // （迁移前它在 Column 尾部，随内容滚动到最下方）
-            if (!this.embedded) {
-              ListItem() {
-                this.AddBlockButton()
-              }
-            }
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .scrollBar(BarState.Auto)
-          .edgeEffect(EdgeEffect.Spring)
-        }
-        .width('100%')
-        .height('100%')
-
-        // ─── S1-H：块拖拽重排层 ───
-        // 位置：整页分支的 Stack 内、**List 之外**，且整页只挂这 1 个实例。
-        // 因此不存在「每行一个手势容器」与 List 纵向滚动竞争的问题；
-        // 行内只保留一个 LongPressGesture（时长内不移动 → 滚动识别器判负），
-        // 位移跟踪由本层的 onTouch 承担。
-        // 命中模式为 Transparent（层内自设）：本层参与命中但不阻塞兄弟 List 的命中，
-        // 滚动、行内点击、hover 全部照旧。
-        BlockDragLayer({
-          layerId: this.ensureDragLayerId(),
-          pageUuid: this.pageUuidForDrag,
-          scroller: this.activeScroller()
-        })
-
-        // Slash 命令菜单（U2.3）。放在 **Stack 层**、BottomEnd 位：
-        //   · 浮在行内容之上（Stack 子组件默认叠放）；
-        //   · 不参与 Column 的纵向分配 —— 放进 Column 会与 layoutWeight(1) 的 List
-        //     争空间（要么把 List 挤扁，要么菜单自己被推到视口之外）；
-        //   · 右下角避开底部居中的多选入口胶囊（BlockSelection.SelectionEntry，
-        //     同样常显、同样在 Stack 底部），两个常显入口不叠在一起。
-        if (this.slashMenuOpen) {
-          SlashMenu({ blockUuid: this.slashMenuUuid })
-            .align(Alignment.BottomEnd)
-            .margin({ right: 16, bottom: 16 })
-        }
+      // Slash 命令菜单（U2.3）。放在 **Stack 层**、BottomEnd 位：
+      //   · 浮在行内容之上（Stack 子组件默认叠放）；
+      //   · 不参与 Column 的纵向分配 —— 放进 Column 会与 layoutWeight(1) 的 List
+      //     争空间（要么把 List 挤扁，要么菜单自己被推到视口之外）；
+      //   · 右下角避开底部居中的多选入口胶囊（BlockSelection.SelectionEntry，
+      //     同样常显、同样在 Stack 底部），两个常显入口不叠在一起。
+      if (this.slashMenuOpen) {
+        SlashMenu({ blockUuid: this.slashMenuUuid })
+          .align(Alignment.BottomEnd)
+          .margin({ right: 16, bottom: 16 })
       }
 
-      // 多选批量操作浮动栏 + 多选入口（feed 内嵌模式不渲染，避免每个日期节叠一层）
+      // 多选批量操作浮动栏 + 多选入口
       // U1.4：pageId 必须传**真实页面 uuid**。此前这里传的是 this.pageId，而 BlockList
       // 的唯一调用点（PageView.ets:249）根本没传 pageId ⇒ @Prop 恒为 ''，
       // 「全选」因此走 selectAll('') → getTopLevelBlocks('') → 空列表，点了没反应。
       // pageUuidForDrag 是 refreshBlocks 每次刷新的本页 uuid（S1-H 已备），直接复用，
       // 不再新增第二个 uuid 来源（避免两处漂移）。
-      if (!this.embedded) {
-        BlockSelection({ pageId: this.pageUuidForDrag })
-      }
+      BlockSelection({ pageId: this.pageUuidForDrag })
 
       // ─── U2.3：页面级 Slash 命令入口（常显）───
       // 位置：Stack 的 BottomStart（左下角）—— 与右下角的菜单本体、底部居中的多选入口
@@ -520,12 +417,12 @@ export struct BlockList {
       // 为什么需要它（除了行内按钮）：行内按钮在**每一行**上，长列表里要滚到目标行才点得到；
       // 页面级入口始终在屏，是「菜单存在」这件事本身的可见入口（与多选入口同一设计取舍）。
       // 目标块 = 当前焦点块；无焦点时退回可见行第一行（无行则不可点，点击无副作用）。
-      if (!this.embedded && this.blocks.length > 0) {
+      if (this.blocks.length > 0) {
         this.SlashEntryButton()
       }
     }
     .width('100%')
-    .height(this.embedded ? 'auto' : '100%')
+    .height('100%')
   }
 
   /**
@@ -584,34 +481,6 @@ export struct BlockList {
 
   // ─── 空页面状态 ───
   // Logseq 风格：左对齐的项目符号点 + 弱化占位提示，而非居中的大图标。
-
-  /**
-   * 内嵌模式（日志流）的「本节已截断」行。
-   *
-   * 只在 `hiddenRowCount > 0` 时被调用（见 build() 内嵌分支）。点击 = 打开该日单日页，
-   * 那里的 BlockList 走 `List` + LazyForEach（真虚拟化，实测 1037 块只实例化 14 行），
-   * 可以浏览/编辑本节未展开的全部块 ⇒ **内容不丢失，只是不在首页铺开**。
-   *
-   * 用 `.id()` 暴露给 uitest：本行的存在与否，就是「上限是否生效」的可枚举判据
-   * （a11y 通道恢复后，`dumpLayout` 里能按 id 精确定位 —— AGENTS 验证纪律 8）。
-   */
-  @Builder
-  TruncationFooter() {
-    Row({ space: 6 }) {
-      TablerIcon('dots', 15, $r('app.color.muted_text'))
-      Text('还有 ' + this.hiddenRowCount + ' 块未展开 —— 打开当日页查看')
-        .fontSize(13)
-        .fontColor($r('app.color.primary'))
-    }
-    .width('100%')
-    .height(34)
-    .padding({ left: 6 })
-    .borderRadius(4)
-    .id('callaite_feedTruncated_' + this.pageName)
-    .onClick(() => {
-      AppState.setCurrentPage(this.pageName);
-    })
-  }
 
   @Builder
   EmptyState() {
