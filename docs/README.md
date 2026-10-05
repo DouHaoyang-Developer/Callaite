@@ -12,7 +12,7 @@
 |---|---|
 | 了解项目全貌 / 接手 | `../README.md` → 本目录 `docs/EXEC-PLAN.md` |
 | 继续推进开发 | **`docs/EXEC-PLAN.md`**（主计划：规则 · 阶段 · D-Gate 定案 · 冲刺记录与遗留池） |
-| 知道下一步做什么 | `EXEC-SPRINT-02.md`（最新冲刺：S3 原生整改 → M3）※ 在 `D:\Users\DouHaoyang\Downloads\` |
+| 知道下一步做什么 | `EXEC-SPRINT-02.md`（最新冲刺：S3 原生整改 → M3）※ 在 `%USERPROFILE%\Downloads\`（`%USERPROFILE%` = 用户主目录占位符；W28 脱敏时略去原盘符 ✓，行数未变动 ✓） |
 | 知道哪些还没验收 | **`docs/待验收清单.md`**（每项含判据 + 阻塞原因 + 可执行步骤） |
 | 查编辑器路线为何这么定 | `docs/D-GATE-1-判定表.md` + `docs/D-GATE-1-证据/` |
 | 查设计依据（行为规格） | ⛔ **`docs/Obsidian核心功能与UIUX拆解报告.md` · `Obsidian解析器与编辑器拆解报告.md` · `Obsidian逆向分析报告.md`** —— **均已按 clean-room 法律红线排除、未入库** ✗（仅本地保留于 `Callaite-工作文档/`；见 §六 排除清单） |
@@ -92,7 +92,7 @@
 | `..` | 代码仓库根（HarmonyOS ArkTS 大纲笔记应用） | ✅ git —— 其描述文档是 `../README.md` |
 | `.`（= `Callaite/docs/`） | **本目录**：计划 · 报告 · 判定表 · 清单 · 证据 · 截图 | ✅ git（**2026-10-05 并入 `Callaite`**，private ✓） |
 | `../../AGENTS.md`（原件）/ `AGENTS.md`（**入库副本** ✓） | AI Agent 工作规矩（**面向 `Callaite/`**，不属任何单一项目） | 原件 ❌ 无 / 副本 ✅ git |
-| `D:\Users\DouHaoyang\Downloads\EXEC-SPRINT-*.md` | 冲刺层文档（由主计划派生） | ❌ 无 |
+| `%USERPROFILE%\Downloads\EXEC-SPRINT-*.md` | 冲刺层文档（由主计划派生） | ❌ 无 |
 
 ---
 

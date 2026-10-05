@@ -3132,7 +3132,7 @@ HOW OBTAINED: the user asked for a three-way consultation (Codex + a GLM agent +
   either: there is no Codex plugin/tool in my toolset, and `web_fetch` on the GLM chat URL fails outright
   ("URL hostname resolves to a non-public IP address") and would in any case need the user's login. What I COULD do
   was READ Codex's local history, which turned out to contain a genuine, high-value Callaite analysis.
-  Locations: `C:\Users\DouHaoyang\.codex\sessions\2026\09\25\rollout-2026-09-25T22-01-33-01a0d8df-1394-7bc3-83fc-eab98ec4e24f.jsonl`
+  Locations: `%USERPROFILE%\.codex\sessions\2026\09\25\rollout-2026-09-25T22-01-33-01a0d8df-1394-7bc3-83fc-eab98ec4e24f.jsonl`（`%USERPROFILE%` = 用户主目录占位符；W28 脱敏时略去原盘符 ✓，行数未变动 ✓）
   (4,977,700 B / 372 lines; `session_meta.cwd` = `F:\DevEcoStudioProjects` => this IS the workspace session) and
   `...\visualizations\2026\09\25\01a0d8df-.../callaite-lint.json` (110,677 B). A `codex-windows-sandbox-service`
   process (pid 8492) was running.
@@ -3185,7 +3185,7 @@ NET EFFECT ON THE PLAN: the S4 scope is unchanged in shape but gains two concret
   should be prepared as a SINGLE paste-ready block to minimise their token/quota consumption.
 
 ### 22.33 GLM's EXEC-SPRINT-04 (UI main line) - received, reviewed, and RULED ON
-SOURCE: `D:\Users\DouHaoyang\Downloads\EXEC-SPRINT-04.md` (69 lines), written by the GLM agent. Baseline `4729ed9`.
+SOURCE: `%USERPROFILE%\Downloads\EXEC-SPRINT-04.md` (69 lines), written by the GLM agent. Baseline `4729ed9`.
 ITS SHAPE (good, keep it): T1 design-token foundation MUST be W1 (without tokens each per-screen refactor reinvents
   its own "habit" - exactly the W20 finding of 1466 literals / 19 font sizes / 14 radii / 1 line-height definition);
   it SPLITS "hard to use" (hit targets 15-24.5 vp vs a 40+ standard, dead ends, no keyboard nav) from "messy"
@@ -3259,11 +3259,11 @@ USER AUTHORISATION (verbatim): "allow Callaite-工作文档 to be merged into th
   ("reverse-engineering product directories must never be committed, uploaded or shared; only behavioural specs").
   Note the project's own earlier line was narrower ("artifacts no, reports yes") - we are being deliberately more
   conservative, because the cost is zero (the files stay local) and the downside of being wrong is public exposure.
-*** RULING C - DO NOT mass-desensitise the 77 absolute paths *** W23 found 0 credential hits but 77 absolute paths
-  and 6 `C:\Users\DouHaoyang`. Ruling: leave them. Two reasons: (1) mass-editing would invalidate every
+*** RULING C - DO NOT mass-desensitise the 77 absolute paths [SUPERSEDED BY W28, 2026-10-05 - see the note at the end of this ruling] *** W23 found 0 credential hits but 77 absolute paths
+  and 6 user-home paths. Its ruling: leave them. Two reasons: (1) mass-editing would invalidate every
   file:line citation, which is the documents' core value; (2) the git committer identity already carries the same
   personal information and the repo's EXISTING 82 commits already contain it, so editing the docs would close a
-  barn door. Revisit only if the user confirms the repo is public AND wants it.
+  barn door. Revisit only if the user confirms the repo is public AND wants it. [W28, 2026-10-05: the in-line pass was done instead - every replacement stayed inside its own line, so no line was added or removed and all `file:line` citations remain valid.]
 *** MIGRATION TRAP W23 CAUGHT (critical) *** gitignore patterns are relative to the directory containing the
   `.gitignore`. Moving `Callaite-工作文档/` to `Callaite/docs/` would turn its `.gitignore` into
   `Callaite/docs/.gitignore`, whose `docs/Obsidian逆向分析报告.md` pattern would then resolve to
