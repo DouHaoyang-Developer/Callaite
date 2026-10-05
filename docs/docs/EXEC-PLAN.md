@@ -3530,3 +3530,95 @@ HANDOVER: emulator still UP (`127.0.0.1:5555`); the FIXED build is installed (HA
   because a page name is a user-authored identifier - quietly rewriting it creates a second class of surprise.
   Whatever is chosen must be implemented in BOTH `createPage` and `renamePage`, and the check must use the SAME
   `pageNameToFileName` mapping that writes the file (trap 29: two criteria for one concept will diverge).
+
+### 22.41 SPRINT-04 SO FAR - W0 (N1) + W27 (H2) + W28 (desensitisation): all committed, pushed, verified
+COMMITS NOW ON THE REMOTE (all verified by `git ls-remote` == local HEAD, left-right 0/0 at each step):
+  `303b72f` W0 verdict record | `d75d536` .md desensitisation | `ce32363` .sh desensitisation |
+  `23e288c` .gitattributes | `c7cba93` H2 reject policy | `eabbcab` .sh placeholder fix |
+  `3973c5c` W27's AGENTS.md backfill.
+WHO COMMITTED WHAT (asked and answered): `c7cba93` was committed and pushed by ME (the parent agent) after
+  W27 handed back with its 11 files uncommitted. W27's own closing question - "if you did not commit it, then a
+  third window is committing on my behalf" - is answered: no third window exists. W27 behaved correctly by
+  DETECTING that its code commit already existed and REFUSING to create a duplicate ("that would only pollute
+  history"), then asking instead of filling the gap. That refusal is the discipline this project wants.
+*** W0 (N1) - DATA INTEGRITY, both defects reproduced on device, N1-a fixed ***
+  See Sec.22.39/22.40. Emulator `MateBook Pro`, hot start, no coldboot needed. H2 reproduced end to end with a
+  byte-exact transfer (`Z.md`'s post-rename md5 == `PAGEA.md`'s pre-rename md5 while Z's own 24 B was destroyed).
+  N1-a fixed by turning `writeTextSync` and `savePage` from void into boolean with an early return, which needed
+  ZERO changes in `DirtyPageTracker` because the downstream contract was already boolean; its safety net and
+  `persistNow`'s catch became reachable for the first time.
+*** W27 (H2) - THE REJECT POLICY, BOTH ENTRY POINTS, DEVICE-VERIFIED BOTH WAYS ***
+  CRITERION: collision iff `M(newName)` equals the `filePath` of any existing page whose uuid is not the target's;
+  byte-exact, case-SENSITIVE, no Unicode normalisation. `M` is taken ONLY from `Page.ets` - no second sanitize
+  (trap 29). The occupied set uses `p.filePath` and not `M(p.name)` because the write step is
+  `joinPath(graphRoot, page.filePath)` => the criterion and the harm are defined on the same term.
+  CASE SENSITIVITY WAS MEASURED, NOT ASSUMED: `/data` is ext4, and a same-partition probe showed `ZzCase.md` and
+  `zzcase.md` coexisting with different contents. THE TRAP IT FOUND: `IndexStore.getPageByName:97` uses
+  `name.toLowerCase()`, so the INDEX is case-insensitive while the FILE mapping is not - reusing the index's
+  identity would have FALSELY REJECTED `a_b` when `A_B` exists. Hence "the criterion must never lowercase".
+  THE GUARD SITS BEFORE `deleteFile` - W27 verified this by asserting the SOURCE page's md5 is also unchanged on
+  rejection; had the guard been after the delete, a rejection would have left the page with no file at all.
+  ARCHITECTURE: `createPage: PageData -> PageData | undefined`; `renamePage: void -> boolean`; propagation through
+  the existing `OpResult.success` channel; UI feedback via the EXISTING `promptAction.openToast` (30 uses
+  repo-wide) - no new mechanism invented. 10 files, +217/-19. Scope was exhaustive: 6 UI create sites, 3 rename
+  sites, the `SlashMenu` op channel that had been DISCARDING its OpResult, with `ImportService` and
+  `JournalService` needing zero changes because they already handled it.
+  DEVICE ACCEPTANCE, BOTH WAYS: first a POSITIVE CONTROL proving the guard is not a blanket refusal (`A/B` created
+  `A_B.md` successfully), then one rejection per entry point - file count 7->7, `A_B.md` md5 byte-unchanged, toast
+  captured with distinct wording for create vs rename, and after a cold start both pages still present with all
+  six pre-existing files unchanged.
+  sec.7b ON ALL TEN CHANGED FILES: `10/10` in the compile graph, probe residue 0, clean rebuild green.
+  REGRESSION: E1 executed (2 B -> 11 B at T+8 s without a page switch); W2's 95 B silent-loss fixture reproduced
+  byte-exactly (95 B / 32 lines / every line `- ` / CR=0) and the cold-start round trip held (status bar "32 "
+  blocks, a second save gave 96 B / first line `- A`, no collapse to 0 bytes). W2's 60 B recipe was NOT
+  byte-reproduced and is honestly recorded as PARTIALLY EXECUTED, because key/text injection degraded to zero
+  effect late in the session while clicks kept working. E3/E4/E13/E14 and the S3-W1 30/30 probe were NOT executed
+  and are NOT claimed.
+  THREE ITEMS REGISTERED, NOT FIXED, and written into the doc's Sec.1.8 at my request: (a) the occupied set comes
+  from the INDEX, so an ORPHAN `.md` with no page object can still be overwritten by the atomic `renameSync` - the
+  ruling says "another existing PAGE" so orphans are out of scope, and the doc explicitly warns readers not to
+  think the guard covers them; (b) `uniquePageName` in `LeftSidebar` and `NewFileDialog` de-duplicates by NAME,
+  not by FILE mapping, so that hole remains even though the path is now rejected at `createPage`; (c) THE SECOND
+  MANY-TO-ONE, at the INDEX layer: `IndexStore.addPage` keys on `name.toLowerCase()`, so `A_B` and `a_b` share one
+  `pageNameIndex` key and `getPageByName('A_B')` returns whichever was created later. W27 wrote this as a
+  CONTRAST with opposite answers at the two layers - the file layer says "not the same page", the index layer says
+  "the same page" - which is trap 29's family: the divergence is not in the mapping but in WHAT COUNTS AS THE SAME
+  PAGE. It added the reverse constraint that matters most: **NEVER lowercase H2's criterion just because the index
+  is case-insensitive; if this is ever fixed, fix the INDEX's identity key, not H2's criterion.**
+*** W28 - DESENSITISATION, FOUR ROUNDS, ALL PUSHED ***
+  `.md` (4 files / 7 lines), 8 `.sh` (10 occurrences), the `.sh` placeholder correction, and a new
+  `.gitattributes`. Rules: user-home paths -> `%USERPROFILE%`, one consistent placeholder; `F:\DevEcoStudioProjects`
+  and `D:\Program Files` deliberately KEPT (no username, and they carry the documents' readability);
+  `127.0.0.1:5555` and the HarmonyOS version numbers kept as false positives. Invariants proven every round:
+  LINE COUNTS UNCHANGED (so every `file:line` citation in the docs stays valid - this is why in-line substitution
+  is safe where mass rewriting is not), LF preserved with CRLF=0, no BOM.
+  IT DISAGREED WITH ME AND WAS RIGHT: I proposed `docs/** text eol=lf` calling it "minimal risk". It measured the
+  324 tracked files under `docs/` first - 175 binary, 45 tool dumps, 9 `w/mixed`, 4 `w/crlf` - and showed my rule
+  would sweep 233 of them into text handling and make git rewrite the EVIDENCE artefacts' line endings. It used an
+  extension allowlist instead. I accepted, because it measured and I had not.
+  IT ALSO FIXED A REAL DEFECT I HAD ONLY FLAGGED: `%USERPROFILE%` is cmd.exe syntax and MSYS/Git-Bash does not
+  expand it, so `bash -n` passed while the paths no longer resolved. It proved this with a NEGATIVE CONTROL (the
+  old form -> MISSING) and then proved the new `${USERPROFILE:-$HOME}` form resolves end to end (16/16 across both
+  trees), including that my `:-$HOME` fallback actually fires when `USERPROFILE` is unset.
+  IT KEPT THE EVIDENCE FILES INTACT: the two `emu_list*.json` name artifact filenames and are PowerShell pipeline
+  products (BOM + 275 CRLF, mtimes matching the simulator-crash session), so altering them would have made the
+  artefacts no longer byte-faithful to the moment of capture. 28 occurrences retained, deliberately.
+  IT REPORTED A CROSS-WINDOW FACT WITHOUT BEING ASKED: its "the two AGENTS.md differ only at L6" held when it
+  checked, but a parallel window then changed them, so it re-checked and reported the new hashes rather than
+  letting a stale claim stand.
+  PUSH TIMING, HONESTLY: W28's `.sh` commit `eabbcab` reached the remote because W27's push of `c7cba93` carried it
+  (its parent IS `c7cba93`). W28 therefore could not "push" it and said so, then verified by CONTENT rather than by
+  operation record: same HEAD, same `HEAD^{tree}`, same blob size for `build_callaite.sh`. That is trap 46 applied
+  correctly - and trap 46 was independently re-confirmed this session, since the global HEAD moved from `23e288c`
+  to `eabbcab` while a window was working.
+*** AGENTS.md NOW CARRIES THIS SESSION'S INSTRUMENT KNOWLEDGE *** (553 lines, both copies, differing only at L6,
+  machine-proved by rebuilding the repo copy from the root original plus its own L6 and asserting diffs == [6]):
+  `uitest uiInput text` DOWNGRADED to "contested/undecided" - W27 got 3/3 deliveries to the focused element, but
+  the sample is three and all of one kind, so the old "drops whole lines" conclusion was NOT flipped to a check
+  mark; new rows for `inputText` coordinates not changing focus, `emulator -slide` producing `onHover(true)` where
+  `-click` does not (the only channel that can summon hover-only controls, e.g. the sidebar edit icon that is the
+  only reachable rename entry), `dumpLayout` being unable to read toasts, and injection degrading mid-session while
+  clicks keep working. Sec.4 corrected: `FileRepository` is in `core/persistence/`, and the previously omitted
+  `core/parser/` was added. NEW TRAP 53 registers the un-attributed observation that a page entered from the
+  `最近` list did not persist within 14 s while a lazily created page did within 8 s - explicitly marked as NOT a
+  defect until a controlled comparison holds the entry path as the only variable.
