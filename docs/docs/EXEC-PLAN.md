@@ -3319,3 +3319,62 @@ USER AUTHORISATION (verbatim): "allow Callaite-工作文档 to be merged into th
 HONEST BOUNDARY: nobody has yet reproduced N1 on a device. Codex supplied a STATIC analysis; W23's contribution is
   locating the code paths to the line - that is NOT a reproduction. `EXEC-PLAN` Sec.22.32 quoted only a summary, so
   what "reproduce" should mean for the original symptom remains TO BE LOCATED.
+
+### 22.36 SOURCE-OF-TRUTH RULING after the docs merge (important for every future window)
+THE NEW STRUCTURAL FACT: the project documents now exist in TWO places - the original `Callaite-工作文档/`
+  (outside the repo) and the committed copy `Callaite/docs/` (inside the repo, pushed). Both contain an
+  `EXEC-PLAN.md`. Without a ruling, the next window will update one and leave the other stale, and we will not know
+  which one is authoritative.
+RULING:
+  1. **`Callaite/docs/` IS NOW THE AUTHORITATIVE, VERSIONED COPY.** All future document updates go there and are
+     committed and pushed. This is the copy other agents and future sessions should read.
+  2. **`Callaite-工作文档/` IS RETAINED, and it is NOT dead**, for exactly one reason: it is the ONLY place that
+     still holds the **11 excluded items** (the 9 Obsidian items plus the 2 removed by W25). Those must never enter
+     the repo, so this directory remains their local home. Do not delete it.
+  3. Because of (1), the two copies WILL drift. That is accepted. Do not "sync" them by copying the repo copy over
+     the source copy or vice versa - record changes in the repo copy and leave the source copy alone.
+  4. NOTE FOR ANY WINDOW THAT EDITS `Callaite/docs/...`: `Callaite/docs/AGENTS.md` is auto-loaded by DSH as a
+     `docs`-scoped instruction file, so a second `AGENTS.md` is active whenever work happens under `docs/`. The two
+     files differ by exactly one line (L6, the identity sentence) and are otherwise byte-identical - keep it that way.
+
+### 22.37 W25 - CONSISTENCY FIXES DONE AND PUSHED (commit `3ddb962`, parent `15544b4`)
+4 files changed, +55 / -369. Pushed on the 5th attempt - the first 4 failed with
+  `fatal: unable to access ... Failed to connect to github.com:443 after ~21 s`, i.e. NETWORK, not credentials;
+  no password or token was ever requested, entered or stored. Remote verified:
+  `git ls-remote origin refs/heads/main` = `3ddb96279a2c009a5b602292679b0fb35a637d07` == local HEAD.
+  `git ls-files docs` went 325 -> 323.
+DONE: (1) root `AGENTS.md` fixed in exactly TWO places - the L6 identity sentence and Sec.0 item 2, which now reads
+  that the old "do not move docs/ into the repo" rule was overridden by the user on 2026-10-05, while explicitly
+  re-affirming that the LEGAL red line (reverse-engineering products must never be committed; only clean-room
+  behavioural specs) is UNAFFECTED by the repo being private. Machine-checked: that red-line line is byte-identical
+  to before, and the bare old rule appears 0 times in either new file.
+  (2) `docs/AGENTS.md` updated to match - the two files are 539 lines each and differ by TOTAL_DIFF_LINES = 1,
+  at L6 only (53,129 B vs 53,137 B, the 8 B being that line).
+  (3) `docs/README.md` - 12 spots fixed plus a new Sec.6 listing all 11 excluded items and why. It also fixed MORE
+  than asked: every `../` relative path in that README had become wrong when the file moved into `Callaite/docs/`,
+  so `../Callaite/README.md` -> `../README.md`, `../AGENTS.md` -> `AGENTS.md` (the committed copy) or
+  `../../AGENTS.md` (the original), and the Sec.5 relationship table was corrected. Machine-verified: of the 35 path
+  references that SHOULD exist, missing = 0; and all 11 excluded items are confirmed absent from the repo while still
+  present in `Callaite-工作文档/`.
+  (4) `git rm` of exactly two files: `docs/归档文件/VERIFICATION-NOTE.md` (23 lines) and
+  `docs/归档文件/review-notes.md` (326 lines) - evidence: the rm echo, two `D` status lines, two
+  `delete mode 100644` in `git show --stat`, and `ls-files docs` 325 -> 323.
+  HONEST STATEMENT: those two files REMAIN IN THE HISTORY of commit `15544b4` (`git cat-file -e 15544b4:<path>`
+  hits). This was a pure deletion commit; history was NOT rewritten (no rebase, no filter-branch, no force push).
+  That is the recommended posture for a private repo; a history rewrite would need the user's explicit approval.
+W25 SELF-CORRECTED ONE OF ITS OWN ERRORS: it initially wrote the artifact filenames (`worker.pretty.js`,
+  `api-exports.txt`) into Sec.6's rationale - which would have re-introduced into the repo exactly the names it was
+  excluding - and removed them, replacing the text with "names specific reverse-engineering artifact files and
+  describes the extraction/unpacking method (so those filenames are not repeated here either)".
+IT ALSO CORRECTED MY BRIEFING TWICE: `review-notes.md` has 64 Obsidian mentions (verified) while
+  `REVIEW-UI-Obsidian-Alignment(v1).md` has 41; and README's broken links pointed at **5** excluded files, not the
+  6 I said (three reports + the verification draft + REVIEW-UI-Alignment), which becomes 7 after this window's two.
+FIVE ITEMS IT IDENTIFIED BUT DID NOT FIX (correctly, because my constraint 1 limited its write surface):
+  (a) root `AGENTS.md` Sec.0 item 1 ("工作文档 lies outside the repo / must not be committed") is ALSO now false;
+  (b) `docs/docs/EXEC-PLAN.md:655,684` still references the deleted `VERIFICATION-NOTE.md`;
+  (c) `docs/归档文件/README-旧版-2026-09-30.md:150` lists three excluded files;
+  (d) `docs/验证与走查报告/核验-标签修复与UI评审.md` references `review-notes.md` in several places;
+  (e) `docs/README.md` L73 says "the three Obsidian dismantling reports above" when nothing above now lists them
+      (that line is red-line text and was deliberately left alone).
+  These are cosmetic/consistency leftovers, NOT correctness or legal issues - every legal exclusion is already in
+  force. They can be swept in any future documentation window.
