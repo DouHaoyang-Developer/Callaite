@@ -1,6 +1,7 @@
 import { TablerIcon } from '../common/Icons';
 import { t } from '../../utils/i18n';
 import { TabState, TabInfo } from '../../state/TabState';
+import { Font, Radius, Size, Space } from '../../utils/DesignTokens';
 
 /**
  * TabOverviewSheet — Obsidian iOS 标签页总览（Obsidian_iphone (4).jpg 复刻）：
@@ -47,7 +48,7 @@ export struct TabOverviewSheet {
       Scroll() {
         Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap }) {
           ForEach(this.tabsList, (tab: TabInfo) => {
-            Column({ space: 6 }) {
+            Column({ space: Space.SM }) {
               Stack({ alignContent: Alignment.TopEnd }) {
                 Column() {
                   TablerIcon(this.iconFor(tab), 40,
@@ -58,7 +59,7 @@ export struct TabOverviewSheet {
                 .height(160)
                 .justifyContent(FlexAlign.Center)
                 .backgroundColor($r('app.color.surface0'))
-                .borderRadius(16)
+                .borderRadius(Radius.XL)
                 .border({ width: tab.id === this.activeTabId ? 2 : 0.5,
                   color: tab.id === this.activeTabId ? $r('app.color.primary') : $r('app.color.border') })
                 .shadow({ radius: 10, color: 'rgba(0,0,0,0.08)', offsetY: 3 })
@@ -72,10 +73,10 @@ export struct TabOverviewSheet {
                 }
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
-                .width(28)
-                .height(28)
-                .borderRadius(8)
-                .margin(8)
+                .width(Size.ROW_SM)
+                .height(Size.ROW_SM)
+                .borderRadius(Radius.MD)
+                .margin(Space.SM)
                 .onClick(() => {
                   TabState.closeTab(tab.id);
                 })
@@ -83,17 +84,17 @@ export struct TabOverviewSheet {
               .width('100%')
 
               Text(TabState.tabTitle(tab.page))
-                .fontSize(13)
+                .fontSize(Font.BODY_SM)
                 .fontColor($r('app.color.text'))
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
             .width('46%')
-            .margin({ left: '2%', right: '2%', bottom: 12 })
+            .margin({ left: '2%', right: '2%', bottom: Space.MD })
           }, (tab: TabInfo) => tab.id)   // ⚠️ 键去激活态：与 TabBar 同源问题（键随激活态变化 = 删除+插入，浮层内会闪叠影）
         }
         .width('100%')
-        .padding({ top: 8 })
+        .padding({ top: Space.SM })
       }
       .width('100%')
       .layoutWeight(1)
@@ -107,8 +108,8 @@ export struct TabOverviewSheet {
         }
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .width(48)
-        .height(44)
+        .width(Size.BAR_SM)
+        .height(Size.BAR)
         .onClick(() => {
           // U1.7：新建标签 = 打开「新标签页」起始页（对齐 Obsidian 的 ＋）
           TabState.newTab(TabState.NEW_TAB_PAGE);
@@ -116,9 +117,9 @@ export struct TabOverviewSheet {
 
         Blank()
 
-        Row({ space: 4 }) {
+        Row({ space: Space.XS }) {
           Text(this.tabsList.length.toString() + ' ' + t('tabs_count'))
-            .fontSize(16)
+            .fontSize(Font.BODY)
             .fontColor($r('app.color.text'))
           TablerIcon('chevron-down', 14, $r('app.color.muted_text'))
         }
@@ -127,11 +128,11 @@ export struct TabOverviewSheet {
 
         Row() {
           Text(t('done'))
-            .fontSize(16)
+            .fontSize(Font.BODY)
             .fontColor($r('app.color.text'))
         }
-        .width(48)
-        .height(44)
+        .width(Size.BAR_SM)
+        .height(Size.BAR)
         .alignItems(VerticalAlign.Center)
         .justifyContent(FlexAlign.End)
         .onClick(() => {
@@ -139,13 +140,13 @@ export struct TabOverviewSheet {
         })
       }
       .width('100%')
-      .height(52)
-      .padding({ left: 12, right: 12 })
+      .height(Size.BAR_LG)
+      .padding({ left: Space.MD, right: Space.MD })
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .height('72%')
-    .padding({ left: 8, right: 8, top: 12, bottom: 20 })
+    .padding({ left: Space.SM, right: Space.SM, top: Space.MD, bottom: Space.XL })
     .backgroundColor($r('app.color.surface1'))
     .borderRadius({ topLeft: 24, topRight: 24 })
     .border({ width: { top: 0.5 }, color: $r('app.color.glass_border') })

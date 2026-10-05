@@ -348,7 +348,8 @@ export struct RightSidebar {
     .width(28)
     .height(24)
     .borderRadius(4)
-    .backgroundColor(active ? $r('app.color.surface2') : Color.Transparent)
+    // S4-W1 · U4.6 选中态统一：与 LeftSidebar.ViewChip / Ribbon / TabBar 同用 accent_soft
+    .backgroundColor(active ? $r('app.color.accent_soft') : Color.Transparent)
     .onClick(() => {
       onTap();
     })

@@ -4,6 +4,7 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { NamespaceUtils, NamespaceNode } from '../../utils/NamespaceUtils';
 import { PageContextMenu } from './PageContextMenu';
 import { promptAction } from '@kit.ArkUI';
+import { Font, Motion, Radius, Size, Space } from '../../utils/DesignTokens';
 
 /**
  * PageTree — 按命名空间层级展示页面树。
@@ -107,12 +108,12 @@ export struct PageTree {
   }
 
   build() {
-    Column({ space: 0 }) {
+    Column({ space: Space.NONE }) {
       if (this.treeNodes.length === 0) {
-        Column({ space: 8 }) {
+        Column({ space: Space.SM }) {
           TablerIcon('folder-off', 28, $r('app.color.muted_text'))
           Text('暂无页面')
-            .fontSize(12)
+            .fontSize(Font.LABEL)
             .fontColor($r('app.color.muted_text'))
         }
         .width('100%')
@@ -120,17 +121,17 @@ export struct PageTree {
         .justifyContent(FlexAlign.Center)
       } else {
         Scroll() {
-          Column({ space: 0 }) {
+          Column({ space: Space.NONE }) {
             ForEach(this.treeNodes, (node: NamespaceNode) => {
               this.RenderNode(node, 0)
             }, (node: NamespaceNode) => node.fullName)
 
             // 统计行（对齐 Obsidian 移动端文件列表计数）
             Text(this.treeStats())
-              .fontSize(10)
+              .fontSize(Font.MICRO)
               .fontColor($r('app.color.muted_text'))
               .width('100%')
-              .padding({ left: 14, top: 12, bottom: 12 })
+              .padding({ left: Space.LG, top: Space.MD, bottom: Space.MD })
               .textAlign(TextAlign.Start)
           }
           .width('100%')
@@ -152,9 +153,9 @@ export struct PageTree {
    */
   @Builder
   RenderNode(node: NamespaceNode, depth: number) {
-    Column({ space: 0 }) {
+    Column({ space: Space.NONE }) {
       // ─── 当前节点行 ───
-      Row({ space: 6 }) {
+      Row({ space: Space.SM }) {
         // 展开/折叠箭头
         if (this.hasChildren(node)) {
           Row() {
@@ -165,12 +166,12 @@ export struct PageTree {
             )
           }
           .alignItems(VerticalAlign.Center)
-          .width(16)
-          .height(16)
+          .width(Size.ICON_SM)
+          .height(Size.ICON_SM)
           .justifyContent(FlexAlign.Center)
           .onClick(() => { this.toggleExpand(node.fullName); })
         } else {
-          Row().width(16).height(16)
+          Row().width(Size.ICON_SM).height(Size.ICON_SM)
         }
 
         // 图标区分：文件夹 / 文件（对齐 Obsidian 移动端文件列表）
@@ -183,14 +184,14 @@ export struct PageTree {
         // 名称 / 行内重命名输入框
         if (this.renamingKey === node.fullName) {
           TextInput({ text: this.renameText })
-            .fontSize(13)
+            .fontSize(Font.BODY_SM)
             .layoutWeight(1)
-            .height(26)
+            .height(Size.MD)
             .onChange((value: string) => { this.renameText = value; })
             .onSubmit(() => { this.commitTreeRename(); })
         } else {
           Text(node.name)
-            .fontSize(13)
+            .fontSize(Font.BODY_SM)
             .fontColor(
               this.currentPageName === node.fullName
                 ? $r('app.color.primary')
@@ -219,9 +220,9 @@ export struct PageTree {
         Row() {
           TablerIcon('dots-vertical', 14, $r('app.color.muted_text'))
         }
-        .width(18)
-        .height(18)
-        .borderRadius(4)
+        .width(Size.ICON_SM)
+        .height(Size.ICON_SM)
+        .borderRadius(Radius.SM)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .onTouch((event: TouchEvent) => {
@@ -234,14 +235,14 @@ export struct PageTree {
         .bindMenu(this.CtxMenuForRow(node))
       }
       .width('100%')
-      .height(28)
-      .padding({ left: depth * 14 + 6, right: 8 })
-      .borderRadius(6)
+      .height(Size.ROW_SM)
+      .padding({ left: depth * 14 + 6, right: Space.SM })
+      .borderRadius(Radius.MD)
       .backgroundColor(
         (node.isPage && this.currentPageName === node.fullName) || this.hoveredKey === node.fullName
           ? $r('app.color.surface2') : Color.Transparent
       )
-      .animation({ duration: 120, curve: Curve.EaseOut })
+      .animation({ duration: Motion.FAST, curve: Curve.EaseOut })
       .onHover((isHover: boolean) => {
         this.hoveredKey = isHover ? node.fullName : (this.hoveredKey === node.fullName ? '' : this.hoveredKey);
       })

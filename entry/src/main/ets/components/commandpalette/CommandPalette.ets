@@ -5,6 +5,7 @@ import { PageData } from '../../core/models/Page';
 import { AppState } from '../../state/AppState';
 import { KeyCode } from '@kit.InputKit';
 import { OverlayKeyRouter, OverlayId, OverlayKeyBinding } from '../../utils/OverlayKeyRouter';
+import { Font, Radius, Size, Space } from '../../utils/DesignTokens';
 
 /**
  * CommandPalette — Obsidian 风格快速切换 / 命令面板。
@@ -102,15 +103,15 @@ export struct CommandPalette {
   build() {
     Column() {
       // 搜索输入框
-      Row({ space: 8 }) {
+      Row({ space: Space.SM }) {
         TablerIcon('search', 16, $r('app.color.muted_text'))
         TextInput({ placeholder: t('placeholder_search'), text: this.queryText })
           .id(CommandPalette.INPUT_FOCUS_ID)
-          .fontSize(16)
+          .fontSize(Font.BODY)
           .layoutWeight(1)
-          .height(48)
+          .height(Size.BAR_SM)
           .backgroundColor(Color.Transparent)
-          .borderRadius(0)
+          .borderRadius(Radius.SM)
           .caretColor($r('app.color.primary'))
           .onChange((value: string, previewText?: PreviewText) => {
             this.queryText = value;
@@ -144,7 +145,7 @@ export struct CommandPalette {
           })
       }
       .width('100%')
-      .padding({ left: 16, right: 16 })
+      .padding({ left: Space.LG, right: Space.LG })
       .border({ width: { bottom: 1 }, color: $r('app.color.border') })
 
       // 搜索结果
@@ -154,33 +155,33 @@ export struct CommandPalette {
       // **不含 Scroll**；Scroll 上只有 scrollTo/scrollBy（同文件 :538 的 NOTE 列出 Scroll）。
       // 因此「高亮行滚入视口」只能靠 List 宿主实现（列表本身的滚动能力与 Scroll 等价）。
       // 行高 48 + List space 2 = 原来的 Column space 2 间距，逐项渲染（≤15 行），视觉零变化。
-      List({ space: 2, scroller: this.listScroller }) {
+      List({ space: Space.HAIR, scroller: this.listScroller }) {
         if (this.visibleCount() === 0) {
           // 无命中：保留既有「创建页面」兜底行，并把它纳入键盘导航（它是唯一的第 0 行）
           ListItem() {
-            Row({ space: 8 }) {
+            Row({ space: Space.SM }) {
               Text(t('placeholder_search_no_match'))
-                .fontSize(15)
+                .fontSize(Font.BODY)
                 .fontColor($r('app.color.muted_text'))
             }
             .width('100%')
-            .height(40)
-            .padding({ left: 16, right: 16 })
+            .height(Size.TOUCH_MIN)
+            .padding({ left: Space.LG, right: Space.LG })
           }
 
           ListItem() {
-            Row({ space: 8 }) {
+            Row({ space: Space.SM }) {
               TablerIcon('plus', 16, $r('app.color.primary'))
               Text(t('create_page_prefix') + this.queryText)
-                .fontSize(15)
+                .fontSize(Font.BODY)
                 .fontColor($r('app.color.primary'))
                 .maxLines(1)
                 .layoutWeight(1)
             }
             .width('100%')
-            .height(48)
-            .padding({ left: 16, right: 16 })
-            .borderRadius(6)
+            .height(Size.BAR_SM)
+            .padding({ left: Space.LG, right: Space.LG })
+            .borderRadius(Radius.MD)
             .backgroundColor(this.rowBackground(0))
             .onHover((isHover: boolean) => {
               this.setHovered(0, isHover);
@@ -192,20 +193,20 @@ export struct CommandPalette {
         } else {
           ForEach(this.visiblePages(), (page: PageData, index: number) => {
             ListItem() {
-              Row({ space: 12 }) {
+              Row({ space: Space.MD }) {
                 if (page.journalDay !== '') {
                   TablerIcon('calendar', 16, $r('app.color.muted_text'))
                 } else {
                   TablerIcon('file', 16, $r('app.color.muted_text'))
                 }
 
-                Column({ space: 2 }) {
+                Column({ space: Space.HAIR }) {
                   Text(page.originalName)
-                    .fontSize(15)
+                    .fontSize(Font.BODY)
                     .fontColor($r('app.color.text'))
                   if (page.tags.length > 0) {
                     Text(page.tags.join(', '))
-                      .fontSize(12)
+                      .fontSize(Font.LABEL)
                       .fontColor($r('app.color.muted_text'))
                       .maxLines(1)
                   }
@@ -216,9 +217,9 @@ export struct CommandPalette {
               .justifyContent(FlexAlign.Center)
               .alignItems(VerticalAlign.Center)
               .width('100%')
-              .height(48)
-              .padding({ left: 16, right: 16 })
-              .borderRadius(6)
+              .height(Size.BAR_SM)
+              .padding({ left: Space.LG, right: Space.LG })
+              .borderRadius(Radius.MD)
               .backgroundColor(this.rowBackground(index))
               .onHover((isHover: boolean) => {
                 this.setHovered(index, isHover);
@@ -232,7 +233,7 @@ export struct CommandPalette {
       }
       .width('100%')
       .layoutWeight(1)
-      .padding({ top: 8, left: 8, right: 8 })
+      .padding({ top: Space.SM, left: Space.SM, right: Space.SM })
       .scrollBar(BarState.Auto)
 
       // 底部快捷键提示行
@@ -468,28 +469,28 @@ export struct CommandPalette {
    */
   @Builder
   KeyHintFooter() {
-    Row({ space: 10 }) {
+    Row({ space: Space.MD }) {
       this.HintPair('↑↓', t('hint_select'))
       this.HintPair('↵', t('hint_open'))
       this.HintPair('esc', t('hint_close'))
       Blank()
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+    .padding({ left: Space.LG, right: Space.LG, top: Space.SM, bottom: Space.SM })
     .border({ width: { top: 1 }, color: $r('app.color.border') })
   }
 
   @Builder
   HintPair(key: string, label: string) {
-    Row({ space: 4 }) {
+    Row({ space: Space.XS }) {
       Text(key)
-        .fontSize(10)
+        .fontSize(Font.MICRO)
         .fontColor($r('app.color.text'))
-        .padding({ left: 5, right: 5, top: 2, bottom: 2 })
-        .borderRadius(4)
+        .padding({ left: Space.XS, right: Space.XS, top: Space.HAIR, bottom: Space.HAIR })
+        .borderRadius(Radius.SM)
         .backgroundColor($r('app.color.surface2'))
       Text(label)
-        .fontSize(10)
+        .fontSize(Font.MICRO)
         .fontColor($r('app.color.muted_text'))
     }
     .alignItems(VerticalAlign.Center)

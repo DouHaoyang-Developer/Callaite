@@ -8,6 +8,7 @@ import { SubscriptionService } from '../../services/SubscriptionService';
 import { Breakpoints } from '../../state/Breakpoints';
 import { countBacklinks } from '../../utils/BacklinkWarning';
 import { promptAction } from '@kit.ArkUI';
+import { Font, Motion, Radius, Size, Space } from '../../utils/DesignTokens';
 
 interface NavItem {
   key: string;          // 唯一标识，对应 AppState.currentPage 值
@@ -122,30 +123,30 @@ export struct LeftSidebar {
   }
 
   build() {
-    Row({ space: 0 }) {
+    Row({ space: Space.NONE }) {
       // ─── 方案三（W1）：44vp 活动栏图标列已下线，面板独占侧栏宽度 ───
       //   原图标列入口去向：新建 → 顶部操作行；仓库 → 顶部操作行；
       //   收藏折叠 → 区段标题自带折叠；设置 → Ribbon 底部；
       //   Journal/AllPages/Pdf/图谱/白板/闪卡 → Ribbon（见 Ribbon.ets）。
       //   侧栏总宽仍为 SIDEBAR_DEFAULT(260vp)，去掉图标列后面板 216vp → 260vp
       //   （计划 §2.2 目标 240–260vp，落在区间上沿）。
-      Column({ space: 0 }) {
+      Column({ space: Space.NONE }) {
         this.ViewSwitcher()
 
         if (this.sidebarView !== 'tags') {
-        Row({ space: 8 }) {
+        Row({ space: Space.SM }) {
           TablerIcon('search', 14, $r('app.color.muted_text'))
           Text('搜索或开始搜索...')
-            .fontSize(12.5)
+            .fontSize(Font.LABEL)
             .fontColor($r('app.color.muted_text'))
             .layoutWeight(1)
             .maxLines(1)
         }
         .width('100%')
-        .height(30)
-        .padding({ left: 10, right: 10 })
-        .margin({ left: 8, right: 8, top: 8 })
-        .borderRadius(6)
+        .height(Size.ROW_SM)
+        .padding({ left: Space.MD, right: Space.MD })
+        .margin({ left: Space.SM, right: Space.SM, top: Space.SM })
+        .borderRadius(Radius.MD)
         .backgroundColor($r('app.color.surface2'))
         .onClick(() => {
           AppState.setSearchPanelOpen(true);
@@ -195,7 +196,7 @@ export struct LeftSidebar {
    */
   @Builder
   ViewSwitcher() {
-    Row({ space: 2 }) {
+    Row({ space: Space.HAIR }) {
       this.ViewChip('files', 'file-text', '文件')
       this.ViewChip('search', 'search', '搜索')
       this.ViewChip('star', 'bookmark', '书签')
@@ -209,31 +210,36 @@ export struct LeftSidebar {
       })
     }
     .width('100%')
-    .height(36)
-    .padding({ left: 6, right: 6 })
+    // S4-W1 热区规范：本行是**交互行**，行高取交互元素最小值 40vp
+    // （原 36vp；chip 视觉随之从 26vp 变为 40vp —— 这是本窗口的试点改动）。
+    .height(Size.TOUCH_MIN)
+    .padding({ left: Space.SM, right: Space.SM })
     .border({ width: { bottom: 1 }, color: $r('app.color.border') })
   }
 
   @Builder
   ViewChip(icon: string, key: string, label: string) {
-    Row({ space: 3 }) {
+    Row({ space: Space.XS }) {
       TablerIcon(icon, 12, this.sidebarView === key ? $r('app.color.primary') : $r('app.color.muted_text'))
       Text(label)
-        .fontSize(11.5)
+        .fontSize(Font.CAPTION)
         .fontColor(this.sidebarView === key ? $r('app.color.primary') : $r('app.color.muted_text'))
         .maxLines(1)
     }
-    .height(26)
+    // S4-W1 热区规范：视图 chip 的命中短边从 24vp 提到交互元素最小值 40vp。
+    // ⚠️ 只改**高度**、不动宽度 —— 本行是 260vp 侧栏里的 4 chip + 2 图标，
+    //    横向本来就没有余量（L228 注释：曾越界 14vp）⇒ 加宽会直接复现溢出。
+    .height(Size.TOUCH_MIN)
     // 内边距 6→4：4 chip + 2 操作图标在 260vp 面板内原本越界 14vp（实测右缘 639px vs 面板 612px）
-    .padding({ left: 4, right: 4 })
-    .borderRadius(6)
+    .padding({ left: Space.XS, right: Space.XS })
+    .borderRadius(Radius.MD)
     // ⚠️ 选中态配色：surface2（#F4F5F7 级近白灰）与面板底色几乎无差，实测 20×20 区域众数色
     //    为 #FEFFFF/#F4F5F7/#F6F7F9 —— 用户在文件视图看不出当前视图。改用与 Ribbon 选中底
     //    一致的紫色低透明（主色 8%），保证选中可辨且不喧宾夺主。
     //    ⚠️ 这里原来内联了浅色值 '#14705DCF'，暗色下主色是 #A88BFA、该值几乎不可见
     //    （选中态在暗色下等于没有）。改用 Ribbon.ets:38 / TabBar.ets:157 同一 token。
     .backgroundColor(this.sidebarView === key ? $r('app.color.accent_soft') : Color.Transparent)
-    .animation({ duration: 140, curve: Curve.EaseOut })
+    .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
     .onClick(() => {
       this.sidebarView = key;
       if (key === 'tags') {
@@ -247,11 +253,11 @@ export struct LeftSidebar {
     Row() {
       TablerIcon(icon, 15, $r('app.color.icon_color'))
     }
-    .width(28)
-    .height(28)
+    .width(Size.ROW_SM)
+    .height(Size.ROW_SM)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .borderRadius(6)
+    .borderRadius(Radius.MD)
     .onClick(() => {
       onTap();
     })
@@ -260,33 +266,33 @@ export struct LeftSidebar {
   /** 标签视图：列出全库标签（点击进入搜索面板） */
   @Builder
   TagListView() {
-    Column({ space: 0 }) {
+    Column({ space: Space.NONE }) {
       Row() {
         Text('标签')
-          .fontSize(12)
+          .fontSize(Font.LABEL)
           .fontColor($r('app.color.muted_text'))
           .layoutWeight(1)
       }
       .width('100%')
-      .padding({ left: 12, right: 12, top: 8, bottom: 4 })
+      .padding({ left: Space.MD, right: Space.MD, top: Space.SM, bottom: Space.XS })
 
       if (this.allTags.length === 0) {
         this.EmptyHint('本库暂无标签（在块中输入 #标签 即可创建）')
       } else {
         ForEach(this.allTags, (tag: string) => {
-          Row({ space: 6 }) {
+          Row({ space: Space.SM }) {
             // S3-W20 修：此处原为 'tag'（单数），而 TablerIconPaths 注册表（149 项）里只有 'tags'
             // ⇒ findIconPath() 返回 undefined ⇒ 该图标**静默不渲染**（全仓 123 处静态图标名中唯一一处未注册）。
             TablerIcon('tags', 13, $r('app.color.muted_text'))
             Text('#' + tag)
-              .fontSize(13)
+              .fontSize(Font.BODY_SM)
               .fontColor($r('app.color.text'))
               .maxLines(1)
               .layoutWeight(1)
           }
           .width('100%')
-          .height(30)
-          .padding({ left: 12, right: 10 })
+          .height(Size.ROW_SM)
+          .padding({ left: Space.MD, right: Space.MD })
           .onClick(() => {
             // U1.6：标签行此前只「打开面板」而不注入过滤词 —— SearchPanel 挂载后，
             // 面板打开就是一张空的最近访问列表（看起来像坏了）。
@@ -310,14 +316,16 @@ export struct LeftSidebar {
     Row() {
       TablerIcon(icon, 18, active ? $r('app.color.primary') : $r('app.color.icon_color'))
     }
-    .width(36)
-    .height(36)
+    .width(Size.ROW_LG)
+    .height(Size.ROW_LG)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .borderRadius(6)
-    .margin({ left: 4, right: 4 })
-    .backgroundColor(active || this.hoveredStrip === key ? $r('app.color.surface2') : Color.Transparent)
-    .animation({ duration: 140, curve: Curve.EaseOut })
+    .borderRadius(Radius.MD)
+    .margin({ left: Space.XS, right: Space.XS })
+    // S4-W1 · U4.6 选中态统一：本条原用 surface2（近白灰），与面板底色几乎无差 ——
+    // 与 ViewChip(L231-236) 的诊断逐字同源。全仓选中态收敛到 accent_soft 一套。
+    .backgroundColor(active || this.hoveredStrip === key ? $r('app.color.accent_soft') : Color.Transparent)
+    .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
     .onHover((isHover: boolean) => {
       this.hoveredStrip = isHover ? key : '';
     })
@@ -333,18 +341,18 @@ export struct LeftSidebar {
     }
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .width(40)
-    .height(40)
-    .borderRadius(6)
+    .width(Size.TOUCH_MIN)
+    .height(Size.TOUCH_MIN)
+    .borderRadius(Radius.MD)
     .stateStyles({
       normal: {
         .backgroundColor(active
-          ? $r('app.color.surface2')
+          ? $r('app.color.accent_soft')
           : (this.hoveredViewIcon === icon ? $r('app.color.surface1') : Color.Transparent))
       },
       pressed: { .backgroundColor($r('app.color.surface3')) }
     })
-    .animation({ duration: 140, curve: Curve.EaseOut })
+    .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
     .onHover((isHover: boolean) => {
       this.hoveredViewIcon = isHover ? icon : '';
     })
@@ -362,9 +370,9 @@ export struct LeftSidebar {
     Row() {
       TablerIcon(icon, 16, $r('app.color.icon_color'))
     }
-    .width(40)
-    .height(40)
-    .borderRadius(6)
+    .width(Size.TOUCH_MIN)
+    .height(Size.TOUCH_MIN)
+    .borderRadius(Radius.MD)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .stateStyles({
@@ -373,7 +381,7 @@ export struct LeftSidebar {
       },
       pressed: { .backgroundColor($r('app.color.surface3')) }
     })
-    .animation({ duration: 140, curve: Curve.EaseOut })
+    .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
     .onHover((isHover: boolean) => {
       this.hoveredTool = isHover ? key : '';
     })
@@ -459,10 +467,10 @@ export struct LeftSidebar {
    */
   @Builder
   SectionHeader(title: string, sectionKey: string, collapsed: boolean) {
-    Row({ space: 2 }) {
+    Row({ space: Space.HAIR }) {
       TablerIcon(collapsed ? 'chevron-right' : 'chevron-down', 12, $r('app.color.muted_text'))
       Text(title)
-        .fontSize(11)
+        .fontSize(Font.CAPTION)
         .fontColor($r('app.color.muted_text'))
         .textCase(TextCase.UpperCase)
         .letterSpacing(0.6)
@@ -470,8 +478,8 @@ export struct LeftSidebar {
     .width('100%')
     .constraintSize({ minHeight: 40 })
     // 与导航行同一左基准 16vp（原先 12vp，导致分组标题比导航行左移 4vp）
-    .padding({ left: 16, right: 16, top: 12, bottom: 4 })
-    .borderRadius(4)
+    .padding({ left: Space.LG, right: Space.LG, top: Space.MD, bottom: Space.XS })
+    .borderRadius(Radius.SM)
     .onClick(() => {
       this.toggleSection(sectionKey);
     })
@@ -479,18 +487,18 @@ export struct LeftSidebar {
 
   @Builder
   SectionSpacer() {
-    Column().width('100%').height(8)
+    Column().width('100%').height(Size.XS)
   }
 
   @Builder
   EmptyHint(text: string) {
     Text(text)
-      .fontSize(12)
+      .fontSize(Font.LABEL)
       .fontColor($r('app.color.muted_text'))
       // 必须显式占满宽度并左对齐：Column 默认 alignItems 为 Center，否则空态文案会被居中，与列表左对齐不一致
       .width('100%')
       .textAlign(TextAlign.Start)
-      .padding({ left: 22, right: 16, top: 4, bottom: 4 })
+      .padding({ left: 22, right: Space.LG, top: Space.XS, bottom: Space.XS })
       .opacity(0.7)
   }
 
@@ -512,13 +520,13 @@ export struct LeftSidebar {
    */
   @Builder
   NavRow(item: NavItem) {
-    Row({ space: 8 }) {
+    Row({ space: Space.SM }) {
       TablerIcon(item.iconName, 16,
         this.currentPage === item.key
           ? $r('app.color.primary')
           : $r('app.color.icon_color'))
       Text(item.label)
-        .fontSize(13.5)
+        .fontSize(Font.BODY_SM)
         .fontColor($r('app.color.text'))
         .fontWeight(this.currentPage === item.key ? FontWeight.Medium : FontWeight.Normal)
         .layoutWeight(1)
@@ -526,16 +534,16 @@ export struct LeftSidebar {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .width('100%')
-    .height(40)
+    .height(Size.TOUCH_MIN)
     // 4(margin) + 12 = 16vp 左基准，与分组标题/Vault 行对齐
-    .padding({ left: 12, right: 10 })
-    .margin({ left: 4, right: 4 })
-    .borderRadius(6)
+    .padding({ left: Space.MD, right: Space.MD })
+    .margin({ left: Space.XS, right: Space.XS })
+    .borderRadius(Radius.MD)
     .stateStyles({
       normal: { .backgroundColor(this.navRowBackground(item)) },
       pressed: { .backgroundColor($r('app.color.surface3')) }
     })
-    .animation({ duration: 140, curve: Curve.EaseOut })
+    .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
     .onHover((isHover: boolean) => {
       this.hoveredNavKey = isHover ? item.key : '';
     })
@@ -558,18 +566,18 @@ export struct LeftSidebar {
    */
   @Builder
   PageLink(name: string) {
-    Row({ space: 8 }) {
+    Row({ space: Space.SM }) {
       if (this.renamingPage === name) {
         TextInput({ text: this.renameText })
-          .fontSize(13)
+          .fontSize(Font.BODY_SM)
           .layoutWeight(1)
-          .height(26)
+          .height(Size.MD)
           .onChange((value: string) => { this.renameText = value; })
           .onSubmit(() => { this.commitRename(); })
       } else {
         TablerIcon('file', 14, $r('app.color.muted_text'))
         Text(name)
-          .fontSize(13.5)
+          .fontSize(Font.BODY_SM)
           .fontColor($r('app.color.text'))
           .fontWeight(this.currentPage === name ? FontWeight.Medium : FontWeight.Normal)
           .layoutWeight(1)
@@ -578,25 +586,25 @@ export struct LeftSidebar {
       }
       if (this.hoveredPage === name) {
         Row() { TablerIcon('edit', 14, $r('app.color.icon_color')) }
-          .width(24)
-          .height(24)
-          .borderRadius(4)
+          .width(Size.MD)
+          .height(Size.MD)
+          .borderRadius(Radius.SM)
           .opacity(0.7)
           .onClick(() => { this.startRename(name); })
         Row() { TablerIcon('trash', 14, $r('app.color.danger')) }
-          .width(24)
-          .height(24)
-          .borderRadius(4)
+          .width(Size.MD)
+          .height(Size.MD)
+          .borderRadius(Radius.SM)
           .opacity(0.7)
           .onClick(() => { this.deletePage(name); })
       }
     }
     .width('100%')
-    .height(40)
+    .height(Size.TOUCH_MIN)
     // 子级缩进一级：4(margin) + 18 = 22vp
-    .padding({ left: 18, right: 10 })
-    .margin({ left: 4, right: 4 })
-    .borderRadius(6)
+    .padding({ left: 18, right: Space.MD })
+    .margin({ left: Space.XS, right: Space.XS })
+    .borderRadius(Radius.MD)
     .stateStyles({
       normal: {
         .backgroundColor(this.currentPage === name
@@ -605,7 +613,7 @@ export struct LeftSidebar {
       },
       pressed: { .backgroundColor($r('app.color.surface3')) }
     })
-    .animation({ duration: 140, curve: Curve.EaseOut })
+    .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
     .onHover((isHover: boolean) => {
       this.hoveredPage = isHover ? name : '';
     })

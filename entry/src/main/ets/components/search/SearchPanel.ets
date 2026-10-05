@@ -11,6 +11,7 @@ import { OverlayKeyRouter, OverlayId, OverlayKeyBinding } from '../../utils/Over
 // 目的 = 让「FindInPage 的块内文本级高亮」与本面板的结果行高亮是**同一套切分语义**
 // （计划 §U2.4 原文：「匹配块内的文本级高亮**沿用 SearchPanel 的 splitHighlight 段渲染**」）。
 import { splitHighlight, HighlightSegment } from '../../utils/TextHighlighter';
+import { Font, Radius, Size, Space } from '../../utils/DesignTokens';
 
 /**
  * 搜索结果项。
@@ -447,16 +448,16 @@ export struct SearchPanel {
           .onClick(() => { this.closePanel(); })
 
         // ─── 搜索面板 ───
-        Column({ space: 0 }) {
+        Column({ space: Space.NONE }) {
           // 搜索框
-          Row({ space: 10 }) {
+          Row({ space: Space.MD }) {
             TablerIcon('search', 20, $r('app.color.muted_text'))
 
             TextInput({ text: this.searchQuery, controller: this.inputController, placeholder: '搜索页面或内容...' })
               .id(SearchPanel.INPUT_FOCUS_ID)
-              .fontSize(14)
+              .fontSize(Font.BODY)
               .layoutWeight(1)
-              .height(40)
+              .height(Size.TOUCH_MIN)
               .backgroundColor(Color.Transparent)
               .caretColor($r('app.color.primary'))
               .onChange((value: string, previewText?: PreviewText) => {
@@ -490,22 +491,22 @@ export struct SearchPanel {
               TablerIcon('x', 16, $r('app.color.muted_text'))
             }
             .alignItems(VerticalAlign.Center)
-            .width(28)
-            .height(28)
+            .width(Size.ROW_SM)
+            .height(Size.ROW_SM)
             .justifyContent(FlexAlign.Center)
-            .borderRadius(4)
+            .borderRadius(Radius.SM)
             .onClick(() => { this.closePanel(); })
           }
           .width('100%')
-          .padding({ left: 16, right: 12, top: 8, bottom: 8 })
+          .padding({ left: Space.LG, right: Space.MD, top: Space.SM, bottom: Space.SM })
           .border({ width: { bottom: 1 }, color: $r('app.color.border') })
 
           // 结果区域
           if (this.getDisplayResults().length === 0) {
-            Column({ space: 8 }) {
+            Column({ space: Space.SM }) {
               TablerIcon('search', 32, $r('app.color.muted_text'))
               Text(this.searchQuery === '' ? '开始搜索' : '未找到结果')
-                .fontSize(14)
+                .fontSize(Font.BODY)
                 .fontColor($r('app.color.muted_text'))
             }
             .width('100%')
@@ -515,20 +516,20 @@ export struct SearchPanel {
             // 结果区宿主必须是 List（不是 Scroll）：Scroller.scrollToIndex 的 NOTE 只对
             // ArcList/Grid/List/WaterFlow 生效（SDK scroll.d.ts:488），而键盘移动高亮时
             // 必须把高亮行滚入视口 —— 与 CommandPalette S1-F 补丁同一取舍。
-            List({ space: 0, scroller: this.listScroller }) {
+            List({ space: Space.NONE, scroller: this.listScroller }) {
               // 空搜索词时显示"最近访问"标题；它是第 0 个 ListItem，
               // 故 scrollToIndex 需要 listIndexOffset() 的 +1 偏移。
               if (this.searchQuery === '') {
                 ListItem() {
-                  Row({ space: 6 }) {
+                  Row({ space: Space.SM }) {
                     TablerIcon('refresh', 14, $r('app.color.muted_text'))
                     Text(t('recent').toUpperCase())
-                      .fontSize(11)
+                      .fontSize(Font.CAPTION)
                       .fontWeight(FontWeight.Bold)
                       .fontColor($r('app.color.muted_text'))
                   }
                   .width('100%')
-                  .padding({ left: 16, top: 10, bottom: 6 })
+                  .padding({ left: Space.LG, top: Space.MD, bottom: Space.SM })
                 }
               }
 
@@ -549,7 +550,7 @@ export struct SearchPanel {
         .width('80%')
         .constraintSize({ maxHeight: '70%' })
         .backgroundColor($r('app.color.surface1'))
-        .borderRadius(10)
+        .borderRadius(Radius.MD)
         .border({ width: 1, color: $r('app.color.border') })
         .shadow({ radius: 20, color: 'rgba(0,0,0,0.2)', offsetX: 0, offsetY: 8 })
         // 兜底落点：焦点若因故落到列表区域（而非输入框），这里仍能接管 ↑↓ / ↵ / esc；
@@ -566,13 +567,13 @@ export struct SearchPanel {
       // Stack 的默认对齐本就是 Center，这里用 alignContent 把「面板在遮罩上居中」写清楚。
       .alignContent(Alignment.Center)
     } else {
-      Column().width(0).height(0)
+      Column().width(Size.NONE).height(Size.NONE)
     }
   }
 
   @Builder
   ResultItem(result: SearchResultItem, index: number) {
-    Row({ space: 10 }) {
+    Row({ space: Space.MD }) {
       // 图标
       if (result.type === 'page') {
         TablerIcon('file', 16, $r('app.color.primary'))
@@ -581,13 +582,13 @@ export struct SearchPanel {
       }
 
       // 内容
-      Column({ space: 3 }) {
+      Column({ space: Space.XS }) {
         if (result.type === 'page') {
           // 页面结果：高亮页面名
           Text() {
             ForEach(this.splitHighlight(result.content, this.searchQuery), (seg: HighlightSegment, idx: number) => {
               Span(seg.text)
-                .fontSize(14)
+                .fontSize(Font.BODY)
                 .fontColor(seg.isMatch ? $r('app.color.primary') : $r('app.color.text'))
                 // ⚠️ W13 修：`Span` **没有** `backgroundColor`（`component/span.d.ts` 里
                 //    `SpanAttribute` 只从 `CommonMethod` 继承同名方法 ⇒ 能编译但**渲染层静默忽略**）。
@@ -607,7 +608,7 @@ export struct SearchPanel {
           Text() {
             ForEach(this.splitHighlight(result.content, this.searchQuery), (seg: HighlightSegment, idx: number) => {
               Span(seg.text)
-                .fontSize(13)
+                .fontSize(Font.BODY_SM)
                 .fontColor(seg.isMatch ? $r('app.color.primary') : $r('app.color.text'))
                 // 同上：Span 的底色必须走 textBackgroundStyle（见上方页面结果分支的说明）
                 .textBackgroundStyle({
@@ -619,10 +620,10 @@ export struct SearchPanel {
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-          Row({ space: 4 }) {
+          Row({ space: Space.XS }) {
             TablerIcon('file', 14, $r('app.color.muted_text'))
             Text(result.pageName)
-              .fontSize(11)
+              .fontSize(Font.CAPTION)
               .fontColor($r('app.color.muted_text'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -633,8 +634,8 @@ export struct SearchPanel {
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-    .borderRadius(6)
+    .padding({ left: Space.LG, right: Space.LG, top: Space.SM, bottom: Space.SM })
+    .borderRadius(Radius.MD)
     // 高亮：鼠标悬停 > 键盘选中 > 透明（见 rowBackground）
     .backgroundColor(this.rowBackground(index))
     .onHover((isHover: boolean) => {
@@ -649,28 +650,28 @@ export struct SearchPanel {
    */
   @Builder
   KeyHintFooter() {
-    Row({ space: 10 }) {
+    Row({ space: Space.MD }) {
       this.HintPair('↑↓', t('hint_select'))
       this.HintPair('↵', t('hint_open'))
       this.HintPair('esc', t('hint_close'))
       Blank()
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+    .padding({ left: Space.LG, right: Space.LG, top: Space.SM, bottom: Space.SM })
     .border({ width: { top: 1 }, color: $r('app.color.border') })
   }
 
   @Builder
   HintPair(key: string, label: string) {
-    Row({ space: 4 }) {
+    Row({ space: Space.XS }) {
       Text(key)
-        .fontSize(10)
+        .fontSize(Font.MICRO)
         .fontColor($r('app.color.text'))
-        .padding({ left: 5, right: 5, top: 2, bottom: 2 })
-        .borderRadius(4)
+        .padding({ left: Space.XS, right: Space.XS, top: Space.HAIR, bottom: Space.HAIR })
+        .borderRadius(Radius.SM)
         .backgroundColor($r('app.color.surface2'))
       Text(label)
-        .fontSize(10)
+        .fontSize(Font.MICRO)
         .fontColor($r('app.color.muted_text'))
     }
     .alignItems(VerticalAlign.Center)

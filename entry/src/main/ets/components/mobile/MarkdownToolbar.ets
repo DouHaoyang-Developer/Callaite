@@ -3,6 +3,7 @@ import { EditorService } from '../../services/EditorService';
 import { GlassSurface } from '../common/GlassSurface';
 import { GlassMode } from '../common/GlassSurface';
 import { MaterialRole } from '../../theme/MaterialTokens';
+import { Font, Motion, Radius, Size, Space } from '../../utils/DesignTokens';
 
 /**
  * MarkdownToolbar —— 键盘上方的 Markdown 格式化工具条。
@@ -66,19 +67,19 @@ export struct MarkdownToolbar {
     Row() {
       if (key === 'heading') {
         Text('H')
-          .fontSize(17).fontWeight(FontWeight.Medium)
+          .fontSize(Font.TITLE).fontWeight(FontWeight.Medium)
           .fontColor(enabled ? $r('app.color.text') : $r('app.color.muted_text'))
       } else if (key === 'bold') {
         Text('B')
-          .fontSize(17).fontWeight(FontWeight.Bold)
+          .fontSize(Font.TITLE).fontWeight(FontWeight.Bold)
           .fontColor(enabled ? $r('app.color.text') : $r('app.color.muted_text'))
       } else {
         TablerIcon(this.iconOf(key), 19, enabled ? $r('app.color.text') : $r('app.color.muted_text'))
       }
     }
-    .width(38)
-    .height(38)
-    .borderRadius(10)
+    .width(Size.TOUCH_MIN)
+    .height(Size.TOUCH_MIN)
+    .borderRadius(Radius.MD)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .stateStyles({
@@ -89,7 +90,7 @@ export struct MarkdownToolbar {
       },
       pressed: { .backgroundColor($r('app.color.surface3')) }
     })
-    .animation({ duration: 140, curve: Curve.EaseOut })
+    .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
     .opacity(enabled ? 1 : 0.35)
     .onHover((isHover: boolean) => {
       this.hoveredKey = isHover ? key : '';
@@ -133,7 +134,7 @@ export struct MarkdownToolbar {
         // 位于底部悬浮层之上，按官方规范取 THIN 档
         materialRole: MaterialRole.BOTTOM_FLOATING
       }) {
-        Row({ space: 2 }) {
+        Row({ space: Space.HAIR }) {
           this.ToolItem('undo', this.canUndo, () => {
             this.sendCommand('undo');
           })
@@ -163,14 +164,14 @@ export struct MarkdownToolbar {
           })
         }
         .width('100%')
-        .height(52)
-        .padding({ left: 8, right: 8 })
+        .height(Size.BAR_LG)
+        .padding({ left: Space.SM, right: Space.SM })
         .justifyContent(FlexAlign.SpaceBetween)
         .alignItems(VerticalAlign.Center)
       }
     }
     .width('96%')
     .constraintSize({ maxWidth: 420 })
-    .height(52)
+    .height(Size.BAR_LG)
   }
 }

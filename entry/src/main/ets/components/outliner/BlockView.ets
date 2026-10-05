@@ -10,6 +10,8 @@ import { CodeBlock } from '../extensions/CodeBlock';
 import { WebEditor } from './WebEditor';
 import { BlockEditor } from './BlockEditor';
 import { TablerIcon } from '../common/Icons';
+// S4-W1：全局热区规范（≥40vp 命中短边）+ 尺寸/字号/圆角台阶
+import { Font, Radius, Size, Space } from '../../utils/DesignTokens';
 import { AppState } from '../../state/AppState';
 import { InlineQueryBlock } from '../query/InlineQueryBlock';
 import {
@@ -329,12 +331,18 @@ export struct BlockView {
               // Marker（TODO/DOING/DONE）
               if (this.blockData.marker !== '') {
                 Text(this.blockData.marker)
-                  .fontSize(11)
+                  .fontSize(Font.CAPTION)
                   .fontWeight(FontWeight.Medium)
                   .fontColor(this.getMarkerColor(this.blockData.marker))
-                  .padding({ left: 4, right: 4, top: 2, bottom: 2 })
-                  .borderRadius(3)
+                  .padding({ left: Space.XS, right: Space.XS, top: Space.HAIR, bottom: Space.HAIR })
+                  .borderRadius(Radius.SM)
                   .backgroundColor(this.getMarkerBg(this.blockData.marker))
+                  // ─── S4-W1 热区规范（全局） ───
+                  // 实测命中区 38.4×15.8vp（`dumpLayout`，1vp=1.9px）⇒ 短边仅 15.8vp。
+                  // 用 responseRegion 扩到 **52×40vp**（短边 = 40 = Size.TOUCH_MIN）。
+                  // ⚠️ 向右只扩 1.5vp：右侧是正文块（**后绘制 ⇒ 命中优先**），扩过去会被它吃掉；
+                  //    向左的 6vp 落在与 slash entry 之间的 7.9vp 空隙里，不重叠。
+                  .responseRegion({ x: '-6vp', y: '-12vp', width: '52vp', height: '40vp' })
                   .onClick(() => {
                     EditorService.getInstance().setFocusedBlock(this.blockUuid);
                     EditorService.getInstance().cycleMarker();
@@ -494,8 +502,10 @@ export struct BlockView {
         }
         .width('100%')
         // U1.4 选中态视觉：2vp 主题色描边 + 一层弱底色（两层通道同时表达，
-        // 单靠描边在浅色页面上不够醒目；底色取 surface2，与 hover/锚点高亮同一档）。
-        .backgroundColor(this.isSelected ? $r('app.color.surface2') : Color.Transparent)
+        // 单靠描边在浅色页面上不够醒目）。
+        // S4-W1 · U4.6 选中态统一：底色由 surface2（= hover 档）改为 accent_soft
+        // —— 全仓「选中填充」收敛到一个令牌，hover 仍走 surface2，两者不再混用。
+        .backgroundColor(this.isSelected ? $r('app.color.accent_soft') : Color.Transparent)
         .border(this.isSelected ? { width: 2, color: $r('app.color.primary') } : { width: 0, color: Color.Transparent })
         .borderRadius(4)
       }.width('100%').padding({ left: 16, right: 16 })
@@ -572,12 +582,22 @@ export struct BlockView {
         Circle({ width: this.isHovered ? 7 : 6, height: this.isHovered ? 7 : 6 })
           .fill(this.bulletColor)
       }
-      .width(16).height(16)
+      .width(Size.ICON_SM).height(Size.ICON_SM)
       .justifyContent(FlexAlign.Center)
-      .borderRadius(8)
+      // S4-W1：语义档 —— 圆点无论尺寸怎么变都保持圆形（原来是 borderRadius(8) 靠 16/2 巧合成立）
+      .borderRadius(Radius.FULL)
       .border({ width: 1, color: this.isHovered ? this.bulletColor : Color.Transparent })
       .margin({ top: 3 })
       .animation({ duration: 150, curve: Curve.EaseOut })
+      // ─── S4-W1 热区规范（全局） ───
+      // 命中区从 16×16vp 扩到 **40×40vp**（= Size.TOUCH_MIN），**布局与视觉完全不变**
+      // —— 用 responseRegion 向外扩张，而不是改 .width/.height（后者会把每个块行撑高、
+      //    直接破坏大纲的行距节奏）。
+      // ⚠️ 已知边界（实测，见交付文档 §3）：① `.responseRegion()` **不改变布局几何** ⇒
+      //    `dumpLayout` 读不到扩张后的命中区（W1 探针页 D 组实测）；
+      //    ② 垂直方向与相邻块行的 bullet 存在约 9px 重叠（块行 pitch 67px < 2×38px），
+      //    按 ArkUI 层级由后绘制的行优先 —— 这是「密集行」的几何必然，见规范降级条款。
+      .responseRegion({ x: '-12vp', y: '-12vp', width: '40vp', height: '40vp' })
       .onClick(() => {
         // 有子 Block 时点击 bullet 切换折叠
         if (this.hasChildrenFlag) {

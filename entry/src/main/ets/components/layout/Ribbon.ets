@@ -4,6 +4,7 @@ import { AppState } from '../../state/AppState';
 import { t } from '../../utils/i18n';
 import { ThemeManager } from '../common/ThemeManager';
 import { SubscriptionService } from '../../services/SubscriptionService';
+import { Motion, Radius, Size, Space } from '../../utils/DesignTokens';
 
 interface RibbonItem {
   key: string;       // 激活态判定（对应 AppState.currentPage 或动作 key）
@@ -105,7 +106,7 @@ export struct Ribbon {
   build() {
     Column() {
       // ─── 上层功能图标 ───
-      Column({ space: 4 }) {
+      Column({ space: Space.XS }) {
         ForEach(this.topItems(), (item: RibbonItem) => {
           Row() {
             TablerIcon(item.icon, 20,
@@ -114,9 +115,9 @@ export struct Ribbon {
           }
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
-          .width(40)
-          .height(40)
-          .borderRadius(8)
+          .width(Size.TOUCH_MIN)
+          .height(Size.TOUCH_MIN)
+          .borderRadius(Radius.MD)
           .stateStyles({
             normal: {
               .backgroundColor(this.itemBackground(item.key,
@@ -124,7 +125,7 @@ export struct Ribbon {
             },
             pressed: { .backgroundColor($r('app.color.surface3')) }
           })
-          .animation({ duration: 140, curve: Curve.EaseOut })
+          .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
           .onHover((isHover: boolean) => {
             this.hoveredKey = isHover ? item.key : '';
           })
@@ -138,20 +139,20 @@ export struct Ribbon {
       Blank()
 
       // ─── 底部系统图标 ───
-      Column({ space: 4 }) {
+      Column({ space: Space.XS }) {
         Row() {
           TablerIcon(this.isDark() ? 'sun' : 'moon', 20, $r('app.color.icon_color'))
         }
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .width(40)
-        .height(40)
-        .borderRadius(8)
+        .width(Size.TOUCH_MIN)
+        .height(Size.TOUCH_MIN)
+        .borderRadius(Radius.MD)
         .stateStyles({
           normal: { .backgroundColor(this.itemBackground('theme', false)) },
           pressed: { .backgroundColor($r('app.color.surface3')) }
         })
-        .animation({ duration: 140, curve: Curve.EaseOut })
+        .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
         .onHover((isHover: boolean) => {
           this.hoveredKey = isHover ? 'theme' : '';
         })
@@ -164,14 +165,14 @@ export struct Ribbon {
         }
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .width(40)
-        .height(40)
-        .borderRadius(8)
+        .width(Size.TOUCH_MIN)
+        .height(Size.TOUCH_MIN)
+        .borderRadius(Radius.MD)
         .stateStyles({
           normal: { .backgroundColor(this.itemBackground('settings', this.currentPage === 'Settings')) },
           pressed: { .backgroundColor($r('app.color.surface3')) }
         })
-        .animation({ duration: 140, curve: Curve.EaseOut })
+        .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
         .onHover((isHover: boolean) => {
           this.hoveredKey = isHover ? 'settings' : '';
         })
@@ -181,9 +182,9 @@ export struct Ribbon {
       }
       .width('100%')
     }
-    .width(46)
+    .width(Size.BAR)
     .height('100%')
-    .padding({ top: 6, bottom: 6 })
+    .padding({ top: Space.SM, bottom: Space.SM })
     .justifyContent(FlexAlign.SpaceBetween)
     .backgroundColor($r('app.color.surface1'))
     .border({ width: { right: 0.5 }, color: $r('app.color.border') })

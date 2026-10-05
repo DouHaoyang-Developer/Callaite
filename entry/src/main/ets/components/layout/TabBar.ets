@@ -5,6 +5,7 @@ import { AppState } from '../../state/AppState';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { pageTitle } from '../../utils/PageTitle';
 import { PageData } from '../../core/models/Page';
+import { Font, Motion, Radius, Size, Space } from '../../utils/DesignTokens';
 
 /**
  * TabBar — Obsidian 桌面端编辑器标签页栏（复刻 Obsidian_Laptop.png 顶部标签组）。
@@ -118,24 +119,24 @@ export struct TabBar {
 
 
   build() {
-    Row({ space: 2 }) {
+    Row({ space: Space.HAIR }) {
       // ─── 标签列表下拉（Obsidian 桌面：位于最左）───
       Row() {
         TablerIcon('chevron-down', 18, $r('app.color.icon_color'))
       }
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .width(40)
-      .height(40)
-      .borderRadius(6)
-      .margin({ left: 2 })
+      .width(Size.TOUCH_MIN)
+      .height(Size.TOUCH_MIN)
+      .borderRadius(Radius.MD)
+      .margin({ left: Space.HAIR })
       .stateStyles({
         normal: {
           .backgroundColor(this.hoveredAction === 'menu' ? $r('app.color.surface2') : Color.Transparent)
         },
         pressed: { .backgroundColor($r('app.color.surface3')) }
       })
-      .animation({ duration: 140, curve: Curve.EaseOut })
+      .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
       .onHover((isHover: boolean) => {
         this.hoveredAction = isHover ? 'menu' : '';
       })
@@ -143,7 +144,7 @@ export struct TabBar {
 
       // ─── 标签滚动区 ───
       Scroll() {
-        Row({ space: 0 }) {
+        Row({ space: Space.NONE }) {
           // ⚠️ 不变式：ForEach 键 = 数据身份（tab.id），**不携带任何 UI 态**。
           //    原键含激活态（…_a / …_i）：每次切换标签时恰好两个条目的键同时变化，
           //    ArkUI 按「删除 + 插入」处理 → 新旧页签在同一渲染槽位短暂共存且位置重叠；
@@ -169,9 +170,9 @@ export struct TabBar {
       }
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .width(40)
-      .height(40)
-      .borderRadius(6)
+      .width(Size.TOUCH_MIN)
+      .height(Size.TOUCH_MIN)
+      .borderRadius(Radius.MD)
       .stateStyles({
         normal: {
           .backgroundColor(this.splitEnabled
@@ -180,7 +181,7 @@ export struct TabBar {
         },
         pressed: { .backgroundColor($r('app.color.surface3')) }
       })
-      .animation({ duration: 140, curve: Curve.EaseOut })
+      .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
       .onHover((isHover: boolean) => {
         this.hoveredAction = isHover ? 'split' : '';
       })
@@ -195,7 +196,7 @@ export struct TabBar {
             ? this.pageOptions[this.currentSplitIndex()].value
             : '')
           .font({ size: 12 })
-          .height(30)
+          .height(Size.ROW_SM)
           .constraintSize({ maxWidth: 150 })
           .onSelect((index: number) => {
             this.splitPage = this.routeOfOption(index);
@@ -204,7 +205,7 @@ export struct TabBar {
 
       Divider()
         .vertical(true)
-        .height(16)
+        .height(Size.ICON_SM)
         .color($r('app.color.border'))
 
       // 「新建」—— 原最右缘的加号，本次改造把最右缘让给右栏开关，本按钮功能不变、位置左移一位。
@@ -217,17 +218,17 @@ export struct TabBar {
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       // 热区 40vp：满足官方 7.1.1.3.3（原 30vp 不达标）
-      .width(40)
-      .height(40)
-      .borderRadius(6)
-      .margin({ left: 4 })
+      .width(Size.TOUCH_MIN)
+      .height(Size.TOUCH_MIN)
+      .borderRadius(Radius.MD)
+      .margin({ left: Space.XS })
       .stateStyles({
         normal: {
           .backgroundColor(this.hoveredAction === 'new' ? $r('app.color.surface2') : Color.Transparent)
         },
         pressed: { .backgroundColor($r('app.color.surface3')) }
       })
-      .animation({ duration: 140, curve: Curve.EaseOut })
+      .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
       .onHover((isHover: boolean) => {
         this.hoveredAction = isHover ? 'new' : '';
       })
@@ -246,10 +247,10 @@ export struct TabBar {
       }
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .width(40)
-      .height(40)
-      .borderRadius(6)
-      .margin({ left: 4 })
+      .width(Size.TOUCH_MIN)
+      .height(Size.TOUCH_MIN)
+      .borderRadius(Radius.MD)
+      .margin({ left: Space.XS })
       .stateStyles({
         normal: {
           .backgroundColor(this.rightSidebarOpen
@@ -258,7 +259,7 @@ export struct TabBar {
         },
         pressed: { .backgroundColor($r('app.color.surface3')) }
       })
-      .animation({ duration: 140, curve: Curve.EaseOut })
+      .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
       .onHover((isHover: boolean) => {
         this.hoveredAction = isHover ? 'rightSidebar' : '';
       })
@@ -271,8 +272,8 @@ export struct TabBar {
     // 标签栏容器高度 40vp：与页签 40vp 等高（页签才完整贴合栏底、不溢出栏外），
     // 同时满足官方 40vp 点击热区下限。
     // 这里是该高度的唯一定义处 —— MainContainer 的 TabBar() 调用点（约 L275）未加任何尺寸修饰符。
-    .height(40)
-    .padding({ left: 4, right: 0 })
+    .height(Size.TOUCH_MIN)
+    .padding({ left: Space.XS, right: Space.NONE })
     .backgroundColor($r('app.color.surface1'))
     .border({ width: { bottom: 0.5 }, color: $r('app.color.border') })
   }
@@ -340,12 +341,12 @@ struct TabItemView {
   }
 
   build() {
-    Row({ space: 6 }) {
+    Row({ space: Space.SM }) {
       TablerIcon(this.icon, 14,
         this.isActive() ? $r('app.color.primary') : $r('app.color.muted_text'))
 
       Text(TabState.tabTitle(this.tab.page))
-        .fontSize(13)
+        .fontSize(Font.BODY_SM)
         .fontColor(this.isActive() ? $r('app.color.text') : $r('app.color.muted_text'))
         .fontWeight(this.isActive() ? FontWeight.Medium : FontWeight.Normal)
         .maxLines(1)
@@ -363,12 +364,12 @@ struct TabItemView {
         }
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .width(22)
-        .height(22)
+        .width(Size.ICON_MD)
+        .height(Size.ICON_MD)
         .responseRegion({ x: -9, y: -9, width: 40, height: 40 })
-        .borderRadius(4)
+        .borderRadius(Radius.SM)
         .backgroundColor(this.hoveredClose ? $r('app.color.surface2') : Color.Transparent)
-        .animation({ duration: 120, curve: Curve.EaseOut })
+        .animation({ duration: Motion.FAST, curve: Curve.EaseOut })
         .onHover((isHover: boolean) => {
           this.hoveredClose = isHover;
         })
@@ -376,16 +377,16 @@ struct TabItemView {
           TabState.closeTab(this.tab.id);
         })
       } else {
-        Row().width(22).height(22)
+        Row().width(Size.ICON_MD).height(Size.ICON_MD)
       }
     }
     // 页签整体高度 40vp：满足官方点击热区下限（原 30vp 不达标）
-    .height(40)
+    .height(Size.TOUCH_MIN)
     // 宽度随标题自适应：minWidth 88vp（固定开销 64 + 24vp 文本）、maxWidth 220vp（超出交给省略号）
     .constraintSize({ minWidth: 88, maxWidth: 220 })
-    .padding({ left: 12, right: 4 })
-    .borderRadius(6)
-    .margin({ left: 2, right: 2 })
+    .padding({ left: Space.MD, right: Space.XS })
+    .borderRadius(Radius.MD)
+    .margin({ left: Space.HAIR, right: Space.HAIR })
     .stateStyles({
       normal: {
         .backgroundColor(this.isActive()
@@ -394,7 +395,7 @@ struct TabItemView {
       },
       pressed: { .backgroundColor($r('app.color.surface3')) }
     })
-    .animation({ duration: 140, curve: Curve.EaseOut })
+    .animation({ duration: Motion.BASE, curve: Curve.EaseOut })
     .border({ width: 0.5, color: this.isActive() ? $r('app.color.border') : Color.Transparent })
     .shadow(this.isActive() ? { radius: 4, color: 'rgba(0,0,0,0.06)', offsetY: 1 } :
       { radius: 0, color: Color.Transparent })
