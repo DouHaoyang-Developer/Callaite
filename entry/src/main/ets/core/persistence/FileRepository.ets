@@ -125,8 +125,17 @@ export class FileRepository {
   /**
    * 写入文本文件（同步，通过 fd，原子写入）。
    * 先写入临时文件并 fsync，再 rename 原子替换，异常退出不会破坏原文件。
+   *
+   * @returns 是否确实写入成功。
+   *
+   * ⚠️ S4-W0/N1-a：本方法**曾经返回 `void` 并把异常整个吞进 `catch`**，导致
+   *   「写失败」在整条落盘链上不可观测 ⇒ `DataStore.savePage` 无条件改 `updatedAt`
+   *   并重索引、`OutlinerEngine.persistNow` 恒返回 `true`、`DirtyPageTracker`
+   *   的「失败重新标脏」安全网一次都不触发 ⇒ **静默永久丢内容**。
+   *   现在失败必须以**返回值**上报（不重抛，因为调用方 `DataStore.savePage`
+   *   本身是「尽力落盘 + 上层重试」语义，重抛只会把同一信息换成异常通道）。
    */
-  writeTextSync(path: string, content: string): void {
+  writeTextSync(path: string, content: string): boolean {
     const tmpPath = path + '.tmp';
     try {
       const file = fs.openSync(tmpPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
@@ -134,6 +143,7 @@ export class FileRepository {
       fs.fsyncSync(file.fd);
       fs.closeSync(file);
       fs.renameSync(tmpPath, path);
+      return true;
     } catch (e) {
       try {
         if (fs.accessSync(tmpPath)) {
@@ -143,6 +153,7 @@ export class FileRepository {
         // 临时文件清理失败忽略
       }
       console.error('[FileRepository] Failed to write file: ' + path, e);
+      return false;
     }
   }
 

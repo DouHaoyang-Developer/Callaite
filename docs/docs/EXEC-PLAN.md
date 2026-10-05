@@ -3378,3 +3378,80 @@ FIVE ITEMS IT IDENTIFIED BUT DID NOT FIX (correctly, because my constraint 1 lim
       (that line is red-line text and was deliberately left alone).
   These are cosmetic/consistency leftovers, NOT correctness or legal issues - every legal exclusion is already in
   force. They can be swept in any future documentation window.
+
+### 22.38 W0 (N1) - DATA-INTEGRITY WINDOW: both defects REPRODUCED ON DEVICE, N1-a FIXED
+
+Baseline `7112b49` (clean tree). Emulator `MateBook Pro` (2in1 / API 26) started hot with
+`emulator.exe -hvd '"MateBook Pro"'`; no `coldboot` needed. Full report:
+`docs/S4-W0-N1数据完整性.md`.
+
+**H2 (rename name-collision) - REPRODUCED, all three criteria hold.** (A)
+`core/models/Page.ets:92 pageNameToFileName` is many-to-one - a faithful port enumerated
+`A/B` `A:B` `A?B` `A*B` `A|B` `A<B` `A>B` `A"B` `A\B` `A_B` ALL -> `A_B.md`; and BOTH
+`createPage` (`DataStore.ets:128-136`) and `renamePage` (`:203-229`) have ZERO collision check.
+(B) The three rename input boxes have NO character filtering (`LeftSidebar.ets:553-558`,
+`PageContextMenu.ets:370-378`, `PageTree.ets:184-189` are bare TextInput + onChange), so the
+route IS UI-reachable - this closes the task book's open item Sec.6-3. (C) On device: page P1
+(`PAGEA.md`, 30 B, content `- EST`) renamed to `Z`, which was page P2's filename
+(`Z.md`, 24 B, no blocks). Disk evidence, verbatim:
+  PRE : `PAGEA.md` 30 B md5 `27e98c4a1ebcf3a0638d261e705cb8b4` ; `Z.md` 24 B md5 `0b421b81...`
+  POST: `PAGEA.md` -> `No such file or directory` ; `Z.md` 30 B md5 `27e98c4a1ebcf3a0638d261e705cb8b4`
+  md count 7 -> 6 ; after `force-stop` + `start` the page list has 6 entries and `PAGEA` is GONE,
+  while `Z` now displays PAGEA's content.
+=> The POST md5 of `Z.md` EQUALS the PRE md5 of `PAGEA.md` - byte-exact content transfer - while
+P2's own 24 B is permanently destroyed. That is the "lost page".
+
+**N1-a (swallowed write failure) - REPRODUCED, `flushed 1/1` observed.** A first probe that threw
+BEFORE the funnel (`DataStore.savePage`, above `writeTextSync`) produced `persistNow failed` and
+`flushed 0/1` - i.e. the failure WAS reported, which proves ring 3 (`OutlinerEngine.persistNow`)
+was always fine and was merely never signalled. The correct probe therefore goes INSIDE
+`FileRepository.writeTextSync`'s `try`, before `openSync`, so its fate is identical to a real write
+failure (swallowed by the same catch). With it: `[FileRepository] Failed to write file: .../PAGEA.md
+Error: W0N1 simulated write failure (ENOSPC-like)` at 19:22:35 x2 and 19:22:51 x1, and
+`DirtyPageTracker: flushed 1/1 dirty pages` - while `Z.md` stayed byte-identical (30 B, same md5),
+and `[OutlinerEngine] persistNow failed` NEVER appeared (confirming that catch is dead code for
+write failures). UI reported success throughout. Probe removed; `git grep W0N1` empty.
+
+**FIX - only N1-a, 2 files.** `writeTextSync` now returns `boolean` (true after `renameSync`,
+false in the catch) instead of swallowing everything; `savePage` returns `boolean`, returns early
+when the write failed (so it no longer stamps `updatedAt` nor reindexes), and the comment at
+`:361-363` that asserted "a failed write throws" - a premise that was simply false - is corrected.
+Chosen form is the RETURN VALUE, not a rethrow, because the downstream contract is already boolean
+(`persistNow(): boolean`, `saver: (pageId) => boolean`) and `writeTextSync` has exactly ONE call
+site repo-wide (`DataStore.ets:347`). With this, `DirtyPageTracker` needs no change at all: its
+"re-mark dirty on failure" net becomes reachable for the first time, as does `persistNow`'s catch.
+NOT done, deliberately: the temp-file + fsync + rename design is kept (it is the documented last
+line of defence), and savePage's other 12 callers are untouched (they ignore the return value).
+
+**H1/H2 FIXES DELIBERATELY DEFERRED.** H1 (rename order: delete-old -> ... -> write-new last) needs
+sequencing + rollback and still has an open `待定位` on `fs.renameSync`-over-existing semantics. Now
+that N1-a is fixed, an (E)-step failure is at least DISCOVERABLE, which is exactly the split the
+task book asked for. H2 needs a COLLISION CHECK, and that CHANGES WHICH PAGE NAMES ARE LEGAL - a
+semantic change - so the fix is handed to the user for a ruling; this window delivers reproduction,
+options and evidence only.
+
+**REGRESSION.** E1 PASSES on the fixed build: disk 32 B -> 33 B -> 34 B monotonic, content
+`- GEONEXY` (both characters landed), `flushed 1/1` x2. W2 silent-block-loss offline criterion:
+PASS both cases - my faithful port reproduces the PRE-fix readings exactly (32x `- ` -> 0 blocks /
+0 B; 19 empty + `- X` -> 1 block / 3 B) and the POST-fix readings exactly (95 B; 60 B). NOT
+executed, therefore NOT claimed as passing: E3, E4, E13, E14, and the S3-W1 30/30 offline probe
+(only a code-level argument that its call site is byte-unchanged on the success path).
+
+**HONEST BOUNDARIES.** Simulator, not a real device. N1-a used an injected probe, not a genuine
+`ENOSPC` (the task book established no such channel exists; `graph/` remains unwritable from
+shell). After the fix only the SUCCESS path was re-tested on device - the fixed FAILURE path is a
+code-level argument. A ghost page still appears in the sidebar's 最近 list after a cold start while
+全部页面 is correct, which looks like `StatePersistence`'s recent list not reconciling with disk -
+logged only, NOT attributed, not fixed. Still open and now explicitly registered: the `AGENTS.md`
+correction (`FileRepository` lives in `core/persistence/`, not `core/db/`) was NOT made this
+window, because `AGENTS.md` exists as two copies and fixing one would create a fresh inconsistency.
+
+**TWO INSTRUMENT FACTS WORTH KEEPING.** (1) `uitest dumpLayout`'s `id=` and `emulator -uiLayout`'s
+`id:` are DISJOINT namespaces (intersection 0 over 116 vs 134 ids), so ids from one channel cannot
+be used with the other's click, and both renumber every enumeration - hence the atomic
+dump->decide->click driver. (2) `hdc shell cat` converts LF to CRLF, inflating byte counts (30 B
+read back as 34 B), so byte-level criteria must use `ls -l` plus `hdc file recv` + local md5.
+
+**VAULT LEFT WITH 3 TEST RESIDUES:** `Z.md` (30 B, H2 fixture), `未命名笔记.md` (34 B, E1 fixture),
+and `PAGEA.md` which no longer exists (consumed by the collision). `graph/` is not shell-writable,
+so cleanup can only be done in-app; not done this window.

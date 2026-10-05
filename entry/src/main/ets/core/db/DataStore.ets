@@ -335,16 +335,28 @@ export class DataStore {
    * 保存单个页面到 .md 文件。
    *
    * ⚠️ **S3-W1：本方法是「引用索引对账」的唯一挂点**，挂在写盘**之后**（见下）。
+   *
+   * @returns 是否确实写盘成功。**S4-W0/N1-a 新增**：此前返回 `void`，导致
+   *   写盘失败无法上抛给 `OutlinerEngine.persistNow`（其契约本就是 boolean）。
    */
-  savePage(pageUuid: string): void {
+  savePage(pageUuid: string): boolean {
     const page = this.indexStore.getPage(pageUuid);
     if (!page) {
-      return;
+      return false;
     }
     const blocks = this.blockTree.getPageBlocks(pageUuid);
     const markdown = MarkdownExporter.export(page, blocks);
     const fullPath = this.fileRepo.joinPath(this.fileRepo.getGraphRoot(), page.filePath);
-    this.fileRepo.writeTextSync(fullPath, markdown);
+    // ⚠️ S4-W0/N1-a：这里必须拿到**真实的**写盘结果。
+    //   修复前 `writeTextSync` 返回 void 且吞异常 ⇒ 本方法无条件改 updatedAt 并重索引，
+    //   而下方 :361-363 的注释却断言「写失败 ⇒ 抛异常 ⇒ 对账不执行」——该前提不成立。
+    //   现在：写盘未成功 ⇒ 不声称成功、不让索引先于磁盘说谎。
+    const wrote: boolean = this.fileRepo.writeTextSync(fullPath, markdown);
+    if (!wrote) {
+      // 不更新 updatedAt、不重索引：内存与索引都保持「上一次磁盘真实值」。
+      // 失败信号由 savePage 的返回值继续上抛给 OutlinerEngine.persistNow。
+      return false;
+    }
     page.updatedAt = Date.now();
 
     // ─── S3-W1：反链索引层的时效性（W12-3）───
@@ -358,9 +370,11 @@ export class DataStore {
     //         → 本方法；
     //       · 即时链：结构性操作 `persistForOp` → `persistNow` → 本方法。
     //     所以「正文变了」与「索引对账」在**同一次落盘事务**里完成，不存在只写盘不对账的缺口。
-    //  ② **时序正确**：必须在写盘之后。挂在这一步之前的话，一旦 `writeTextSync` 抛异常，
-    //     内存索引就已经被改成「磁盘上并不存在」的内容 —— 索引会先于磁盘说谎。
-    //     现在这个次序下，写失败 ⇒ 抛异常 ⇒ 对账不执行 ⇒ 索引保持上一次的真实值。
+    //  ② **时序正确**：必须在写盘**成功**之后。
+    //     ⚠️ S4-W0/N1-a 更正：本段注释原先断言「写失败 ⇒ 抛异常 ⇒ 对账不执行」，
+    //     而 `writeTextSync` 当时**从不抛异常**（catch 只打日志）⇒ 该安全性论证整段失效，
+    //     实际发生的正是它宣称要避免的「**索引先于磁盘说谎**」。
+    //     现在该不变量由 `:352-356` 的 `if (!wrote) return false;` **真正兑现**。
     //  ③ **不额外引入计时器**：`flushNow` 本身就是事件驱动 + 5s 硬截止的防抖器
     //     （`DirtyPageTracker.armTimer` 刻意**不顺延**，见其注释）。在它内部再套一层
     //     setTimeout 只会把索引的陈旧窗口从「写盘时刻」推迟到「写盘后 N ms」，
@@ -381,6 +395,7 @@ export class DataStore {
       console.error('[DataStore] reindexPageReferences failed for page ' + pageUuid
         + ': ' + JSON.stringify(e));
     }
+    return true;
   }
 
   /**
