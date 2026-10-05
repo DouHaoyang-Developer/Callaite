@@ -1,0 +1,55 @@
+=== 环境 ===
+NODE_HOME        = D:/Program Files/Huawei/DevEco Studio/tools/node
+JAVA_HOME        = D:/Program Files/Huawei/DevEco Studio/jbr
+DEVECO_SDK_HOME  = D:/Program Files/Huawei/DevEco Studio/sdk
+BUILD_MODE       = debug
+v18.20.1
+openjdk version "21.0.8" 2025-07-15
+
+=== 构建开始 2026-09-13 20:36:23 ===
+> hvigor [32mUP-TO-DATE :entry:default@PreBuild...  [39m
+> hvigor [32mFinished :entry:default@CreateModuleInfo... after 1 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@GenerateMetadata...  [39m
+> hvigor [32mFinished :entry:default@ConfigureCmake... after 1 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@MergeProfile...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@CreateBuildProfile...  [39m
+> hvigor [32mFinished :entry:default@PreCheckSyscap... after 1 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@GeneratePkgContextInfo...  [39m
+> hvigor [32mFinished :entry:default@GeneratePkgSdkInfo... after 5 ms [39m
+> hvigor [32mFinished :entry:default@ProcessIntegratedHsp... after 1 ms [39m
+> hvigor [32mFinished :entry:default@BuildNativeWithCmake... after 1 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@MakePackInfo...  [39m
+> hvigor [32mFinished :entry:default@SyscapTransform... after 12 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessProfile...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessRouterMap...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessShareConfig...  [39m
+> hvigor [32mFinished :entry:default@ProcessStartupConfig... after 3 ms [39m
+> hvigor [32mFinished :entry:default@BuildNativeWithNinja... after 1 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessResource...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@GenerateLoaderJson...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@ProcessLibs...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@CompileResource...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@DoNativeStrip...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@CompileArkTS...  [39m
+> hvigor [32mFinished :entry:default@BuildJS... after 5 ms [39m
+> hvigor [32mUP-TO-DATE :entry:default@CacheNativeLibs...  [39m
+> hvigor [32mUP-TO-DATE :entry:default@GeneratePkgModuleJson...  [39m
+> hvigor [32mFinished :entry:default@ProcessCompiledResources... after 1 ms [39m
+> hvigor [91mERROR: Failed :entry:default@PackageHap... [39m
+> hvigor [91mERROR: [31mError Code: 00308018 Unknown Error
+spawn java ENOENT
+
+* Try the following:
+  > This error is unknown, view the detailed error logs in the '.hvigor > outputs > build-logs' directory in the project directory for analysis, or contact the developer's official website for help.
+  > More info: https://developer.huawei.com/consumer/cn/doc/harmonyos-faqs/faqs-compiling-and-building
+
+
+[31m* Try:
+> Run with --debug option to get more log output.
+[39m
+> hvigor [91mERROR: Error: spawn java ENOENT
+    at ChildProcess._handle.onexit (node:internal/child_process:284:19)
+    at onErrorNT (node:internal/child_process:477:16)
+    at process.processTicksAndRejections (node:internal/process/task_queues:82:21)[39m
+> hvigor [91mERROR: BUILD FAILED in 4 s 797 ms [39m
+=== 构建结束 2026-09-13 20:36:30，退出码 127 ===

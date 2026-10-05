@@ -1,0 +1,46 @@
+=== 环境 ===
+NODE_HOME        = D:/Program Files/Huawei/DevEco Studio/tools/node
+JAVA_HOME        = D:/Program Files/Huawei/DevEco Studio/jbr
+DEVECO_SDK_HOME  = D:/Program Files/Huawei/DevEco Studio/sdk
+BUILD_MODE       = debug
+v18.20.1
+openjdk version "21.0.8" 2025-07-15
+
+=== 构建开始 2026-09-13 21:46:01 ===
+> hvigor [32mUP-TO-DATE :entry:default@PreBuild...  [39m
+> hvigor [32mFinished :entry:default@CreateModuleInfo... after 1 ms [39m
+> hvigor [32mFinished :entry:default@GenerateMetadata... after 7 ms [39m
+> hvigor [32mFinished :entry:default@ConfigureCmake... after 1 ms [39m
+> hvigor [32mFinished :entry:default@MergeProfile... after 6 ms [39m
+> hvigor [32mFinished :entry:default@CreateBuildProfile... after 6 ms [39m
+> hvigor [32mFinished :entry:default@PreCheckSyscap... after 1 ms [39m
+> hvigor [32mFinished :entry:default@GeneratePkgContextInfo... after 8 ms [39m
+> hvigor [32mFinished :entry:default@GeneratePkgSdkInfo... after 4 ms [39m
+> hvigor [32mFinished :entry:default@ProcessIntegratedHsp... after 1 ms [39m
+> hvigor [32mFinished :entry:default@BuildNativeWithCmake... after 1 ms [39m
+> hvigor [32mFinished :entry:default@MakePackInfo... after 8 ms [39m
+> hvigor [32mFinished :entry:default@SyscapTransform... after 11 ms [39m
+> hvigor [32mFinished :entry:default@ProcessProfile... after 483 ms [39m
+> hvigor [32mFinished :entry:default@ProcessRouterMap... after 69 ms [39m
+> hvigor [32mFinished :entry:default@ProcessShareConfig... after 28 ms [39m
+> hvigor [32mFinished :entry:default@ProcessStartupConfig... after 3 ms [39m
+> hvigor [32mFinished :entry:default@BuildNativeWithNinja... after 3 ms [39m
+> hvigor [32mFinished :entry:default@ProcessResource... after 25 ms [39m
+> hvigor [32mFinished :entry:default@GenerateLoaderJson... after 90 ms [39m
+> hvigor [32mFinished :entry:default@ProcessLibs... after 9 ms [39m
+> hvigor [32mFinished :entry:default@CompileResource... after 1 s 102 ms [39m
+> hvigor [32mFinished :entry:default@DoNativeStrip... after 25 ms [39m
+> hvigor [32mFinished :entry:default@BuildJS... after 4 ms [39m
+> hvigor [32mFinished :entry:default@CacheNativeLibs... after 31 ms [39m
+> hvigor [32mFinished :entry:default@CompileArkTS... after 19 s 66 ms [39m
+> hvigor [32mFinished :entry:default@GeneratePkgModuleJson... after 5 ms [39m
+> hvigor [32mFinished :entry:default@ProcessCompiledResources... after 1 ms [39m
+> hvigor [32mFinished :entry:default@PackageHap... after 869 ms [39m
+> hvigor [32mFinished :entry:default@PackingCheck... after 8 ms [39m
+> hvigor [33mWARN: Will skip sign 'hos_hap'. No signingConfigs profile is configured in current project.
+             If needed, configure the signingConfigs in F:\DevEcoStudioProjects\Callaite\build-profile.json5.[39m
+> hvigor [32mFinished :entry:default@SignHap... after 2 ms [39m
+> hvigor [32mFinished :entry:default@CollectDebugSymbol... after 2 ms [39m
+> hvigor [32mFinished :entry:assembleHap... after 1 ms [39m
+> hvigor [32mBUILD SUCCESSFUL in 28 s 928 ms [39m
+=== 构建结束 2026-09-13 21:46:33，退出码 0 ===

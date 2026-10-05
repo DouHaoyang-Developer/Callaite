@@ -1,0 +1,10 @@
+=== 环境 ===
+NODE_HOME        = D:/Program Files/Huawei/DevEco Studio/tools/node
+JAVA_HOME        = D:/Program Files/Huawei/DevEco Studio/jbr
+DEVECO_SDK_HOME  = D:/Program Files/Huawei/DevEco Studio/sdk
+BUILD_MODE       = clean
+v18.20.1
+openjdk version "21.0.8" 2025-07-15
+
+> hvigor [32mFinished :entry:clean... after 23 s 122 ms [39m
+> hvigor [32mBUILD SUCCESSFUL in 26 s 33 ms [39m

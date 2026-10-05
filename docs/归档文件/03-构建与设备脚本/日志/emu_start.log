@@ -1,0 +1,4 @@
+[WARNING]Hot boot is not enable, the bootmode "snapshot" invalid. now start with cold boot.
+dsound: Could not initialize DirectSoundCapture
+dsound: Reason: No sound driver is available for use, or the given GUID is not a valid DirectSound device ID
+Windows Hypervisor Platform accelerator is operational
