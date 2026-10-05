@@ -118,15 +118,18 @@ node 'D:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.js' --mode 
 - **输入通道现状（2026-09-30 W11 重大更正 ✗→✓）**：
   | 通道 | 结论 |
   |---|---|
-  | `uitest uiInput text` | ✗ 会整行丢失 |
+  | `uitest uiInput text` | ⚠️ **有争议（未定论）** ✗✓：早期结论是「**会整行丢失**」✗；但 **W27 实测 3/3 全部送达「当前聚焦元素」** ✓ ⇒ **通道可用性未定论** ✗✓（**样本仅 3 次，且全属「目标已聚焦」这一种情形** ✗）⇒ **用前必须先跑阳性对照**：先让目标控件拿到焦点 → 注入 → 回读 `dumpLayout` 的 `text` 确认送达 ✓ |
+  | `uitest uiInput inputText <x> <y> <text>` | ⚠️ **坐标不改变焦点** ✗✓：文本进的是**当时已聚焦的元素**，不是你点的那个坐标（W27 实测：点侧栏搜索框 ⇒ 文本落进了正文块编辑器 ✓）⇒ **不要用它「点哪儿写哪儿」** ✗ |
   | **`uitest uiInput keyEvent <code>`** | ✅ **可达 ArkUI 按键管线**；**是否过输入法取决于设备**（平板✗ / 2in1✓ —— 见陷阱 21 定论）（W11 用**阳性+阴性对照**证实：↓↑↵esc/Ctrl+K 全部驱动路由器；无浮层时同注入截图**逐字节 MD5 相同**）—— **此前「按键不达」的结论是错的** ✗ 很可能是早前几次在**没有任何组件挂键处理**时注入 ⇒ 无可观测现象 ⇒ 误判 ✗ |
   | `emulator.exe -instance … -fill "<id> <text>"` | ✅ 文本真送达（UI+落盘）／ ✗ **仅 ASCII**、**语义 = 追加、不能替换** ✗✓（W10 实测：想「删掉模板行」只能靠退格，`-fill` 做不到 ✓） · ✗ **静默截断到 ~2000 字符**（W1b 实测：送 8000 报 `Widget may not be input field` ✓ 实测只落 2000）⇒ **构造超长夹具不能靠它** ✗ |
   | `uitest uiInput keyEvent 2055`（退格） | ✅ 可达 ／ ⚠️ **偶发丢键**（W1b 实测 **15 次落 13–14** ✓）⇒ **不要用「按 N 次退格」当清空判据** ✗ |
-  | `emulator.exe -instance … -click <id>` / `-slide` | ✅ 点击等价坐标点击 ／ `-slide` **只能滚动、不能做「按住拖动」** ✗ |
+  | `emulator.exe -instance … -click <id>` / `-slide` | ✅ 点击等价坐标点击 ／ `-slide` **只能滚动、不能做「按住拖动」** ✗ —— ⚠️ **但 W27 新增实测：`-slide "<x1 y1 x2 y2>"` 会产生 `onHover(true)`，而 `-click` 不会** ✗✓ ⇒ **这是本机目前唯一能唤出「hover 才显形」控件的通道** ✓✓（W27 用它唤出侧栏页行的**编辑图标** —— 那是本机**唯一可达的改名入口** ✗）⇒ 配 `-fill` 时注意 **`-fill` 语义仍是「追加、不能替换」，须先退格清空** ✗ |
   | **`emulator.exe -instance … -click <widgetId>`** | ✅ **在 2in1 上比「原始坐标」可靠** ✗✓（W12 实测：同一「添加」行**两个坐标点都无反应** ✗，而按 **widgetId** 一次成功 ✓）⇒ **改用 widgetId 通道** ✓ |
   | `emulator.exe -instance … -uiLayout -i` | ✅ 产出 `<imageRoot>/<实例名>/uiLayout/analysis.md`，**带数字 id** ✓ ⇒ 可直接喂 `-fill`/`-click` ✓ **⚠️ 但 id 每轮枚举都会重新生成** ✗（W5 实测：用**上一轮**枚举的 `id:218` 在下一轮点击 ⇒ **点掉了应用窗口** ✓ 而 **W2「点『新建』落到设置」疑为同源** ✗✓）⇒ **必须「当轮枚举、当轮点击」** ✓ |（⚠️ 其**坐标系未证实**：同会话观测到**两套**（相对窗口内容 vs 绝对屏幕 ✓）⇒ **只信 widgetId，bounds 仅作判据量** ✗）|
   | **`uitest uiInput dircFling <dir> <velocity>`** | ✅ **可靠的滚动通道** ✗✓（W16 实测：`emulator -slide`（widgetId 与坐标两种形式）**逐像素 0 变化** ✗ 而 `dircFling` 有效 ✓ 滚动条出现、行推进、实例化行数保持在视口量 ✓） ⚠️ **但推进量仅 7–40 px/次（查看陷阱 49）** ✗|
+  | **`uitest dumpLayout` 读不到 toast 文本** | ✗✓ **toast 走独立系统窗口**（W27 实测：同一时刻 `snapshot_display` **截到了** toast 文案 ✓，而 `dumpLayout` 树里按文本检索 `同名`/`未创建`/`未重命名` **命中 0** ✗）⇒ **凡以 toast / 气泡文案为判据的验收，只能用截图** ✓（并**必须先跑截图阳性对照**，见陷阱 48）⚠️ 未逐窗口穷举 ⇒ 登记为**本机现象**，不是「必然读不到」✗ · 对照：**上下文菜单窗**（`hostWindowId 72`）的节点 **dump 是读得到的** ✓（与应用窗 71 并存 ✓）|
   ⇒ 按键类验收**先用 `uitest uiInput keyEvent` 试**，并**务必配阴性对照**（无浮层时注入应无变化）✓
+  ⇒ ⚠️ **按键/文本注入会在会话中途整体失效**（W27 复现：同一会话后段 `keyEvent`/`text` 全 0 效果，而 **`uitest uiInput click` 与 `emulator -click` 仍正常** ✓ —— 故**是通道问题，不是应用/设备问题** ✓）⇒ **每做几步就重跑一次阳性对照**，否则会把「通道死了」误判成「功能没生效」✗
   ⇒ **仍不可注入的**：真实**手势拖拽**（S1-H）✗
   ⇒ ⚠️ **「注入键是否过输入法」= 设备差异**（09-30 定论，见陷阱 21）：**平板 ✗ 不过 IME**（点屏上键组词 ✓ 但注入不组词 ✗）· **2in1 ✓ 过 IME** ✓
      ⇒ 做此类验收**必须在当台设备先跑阳性对照**（点屏上键是否出 `candidateWord`/`candidateView`）✓ **不要再归因于「IME 未授权」** ✗（已被证伪 ✓）
@@ -163,7 +166,9 @@ state/               AppState / TabState / StatePersistence / Breakpoints
 core/
   models/            BlockData 等数据模型
   engine/            OutlinerEngine / OutlinerOps / BlockTree / …（大纲引擎）
-  db/                DataStore / IndexStore / FileRepository（持久化与索引）
+  db/                DataStore / IndexStore（页面与块的索引 + CRUD）
+  persistence/       FileRepository（.md 读写；⚠️ **W27 实测：在 `core/persistence/`，不在 `core/db/` 下** ✗ —— 本条原先记错 ✓）
+  parser/            MarkdownParser / MarkdownExporter（行 ↔ 块；⚠️ **W27 补：原 §4 漏列** ✗）
 services/            WorkspaceService / EditorService / SaveQueue / DirtyPageTracker /
                      BlockAnchorService / ShortcutService / PluginManager / …
 components/
@@ -470,6 +475,15 @@ fs.closeSync(file);
     **三路都试了** ✗：默认 28 键**无 font\*** ✓；**`-a`（帮助自述 "include font attributes"）与不加 `-a` 逐节点 diff ⇒ 唯一差异是系统时钟文本** ✗；`-e fontSize` 报 `supported names are 'uniqueId'` ✗
     ⇒ **字号证据改走** ✓✓：**源码字面量普查 + 截图 ink 像素反推**（标定 CJK≈0.75em / 拉丁≈0.63–0.70em ✓）
     ⚠️ **本条已经开始让每个 UI 窗口重踩** ✗ ⇒ **先读本条再选通道** ✓
+53. **⚠️ 未归因观察（**未做受控对照 ⇒ 不得写成缺陷** ✗）：同一种注入编辑，**「经『最近』行进入的页」14 s 内未落盘**，而**「经命令面板导航 + 懒创建的新页」8 s 内落盘** ✗✓（W27 实测，2026-10-02）
+    **原始读数** ✓：页 `Z`（**点「最近」列表行**进入 ⇒ `AppState.setCurrentPage`）注入 `W27PROBE` ⇒
+      **编辑器显示已变** ✓ 而 **T+14 s 磁盘逐字节未变** ✗（30 B / `- EST`，md5 与基线相同 ✓，**mtime 仍是上一轮的时间** ✓）；
+      页 `W27E1`（**命令面板导航 + 点「添加」懒创建**）注入 `W27E1MARK` ⇒ **T+8 s 磁盘 = 11 B / `- W27E1MARK`** ✓。
+    ⚠️ **两者差异未做受控对照**（没有固定「进入方式」这一个变量重跑）⇒ **只登记现象，不主张因果** ✗✓
+      —— **与陷阱 47 同族**：**「在 A 上测到的现象」不能拿来论证「B 不行」** ✓
+    ⇒ **需要一次受控对照才能定性** ✓：**同一页、同一内容、只切换「进入方式」**（最近行 vs 命令面板），
+      各注入同一串，比对 T+8 s / T+20 s 的**磁盘字节与 mtime** ✓（**不要拿编辑器显示当判据** ✗）
+    ⇒ 若成立，**这属于「静默不落盘」**（与陷阱 28 同族）⇒ **优先级高** ✗
 
 
 ## 7b. 一条对抗性验证方法（值得复用）
