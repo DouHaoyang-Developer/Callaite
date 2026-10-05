@@ -16,7 +16,7 @@ set -u
 
 export MSYSTEM=MINGW64
 # 基础工具链（coreutils/sed/dirname 等，shim 默认未注入）
-export PATH="/c/Users/DouHaoyang/.workbuddy/binaries/PortableGit/versions/1.2.0/usr/bin:/c/Users/DouHaoyang/.workbuddy/binaries/PortableGit/versions/1.2.0/bin:/usr/bin:/bin:$PATH"
+export PATH="%USERPROFILE%/.workbuddy/binaries/PortableGit/versions/1.2.0/usr/bin:%USERPROFILE%/.workbuddy/binaries/PortableGit/versions/1.2.0/bin:/usr/bin:/bin:$PATH"
 # 关键：node 的 child_process.spawn 走 Windows 原生 PATH 解析，
 # 这里必须用 POSIX 风格（/d/...）条目，MSYS 才会转换为 D:\...; 形式；
 # 写成 D:/... 不会被转换，导致 PackageHap 阶段 spawn java ENOENT。
