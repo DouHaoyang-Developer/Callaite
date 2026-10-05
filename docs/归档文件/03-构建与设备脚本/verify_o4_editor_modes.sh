@@ -14,7 +14,7 @@ export MSYS2_ARG_CONV_EXCL='*'
 export PYTHONIOENCODING=utf-8
 
 HDC="D:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe"
-PY="%USERPROFILE%/.workbuddy/binaries/python/envs/default/Scripts/python.exe"
+PY="${USERPROFILE:-$HOME}/.workbuddy/binaries/python/envs/default/Scripts/python.exe"
 T="${1:-127.0.0.1:5555}"
 WORK=/f/DevEcoStudioProjects/uiwalk/tablet
 GRAPH_DIR="/data/app/el2/100/base/com.example.callaite/haps/entry/files/graph"

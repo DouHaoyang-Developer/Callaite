@@ -12,7 +12,7 @@
 set -u
 
 export MSYSTEM=MINGW64
-export PATH="%USERPROFILE%/.workbuddy/binaries/PortableGit/versions/1.2.0/usr/bin:%USERPROFILE%/.workbuddy/binaries/PortableGit/versions/1.2.0/bin:/usr/bin:/bin:$PATH"
+export PATH="${USERPROFILE:-$HOME}/.workbuddy/binaries/PortableGit/versions/1.2.0/usr/bin:${USERPROFILE:-$HOME}/.workbuddy/binaries/PortableGit/versions/1.2.0/bin:/usr/bin:/bin:$PATH"
 
 HDC="D:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe"
 HAP_DIR="F:/DevEcoStudioProjects/Callaite/entry/build/default/outputs/default"

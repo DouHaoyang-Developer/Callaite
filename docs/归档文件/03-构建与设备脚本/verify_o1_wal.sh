@@ -19,7 +19,7 @@ export MSYS2_ARG_CONV_EXCL='*'
 export PYTHONIOENCODING=utf-8
 
 HDC="D:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe"
-PY="%USERPROFILE%/.workbuddy/binaries/python/envs/default/Scripts/python.exe"
+PY="${USERPROFILE:-$HOME}/.workbuddy/binaries/python/envs/default/Scripts/python.exe"
 T="${1:-127.0.0.1:5555}"
 WORK=/f/DevEcoStudioProjects/uiwalk/tablet
 # 每轮唯一 marker：固定文本会被上一轮遗留页面"满足"，导致假通过（v2 首版即有此缺陷）
