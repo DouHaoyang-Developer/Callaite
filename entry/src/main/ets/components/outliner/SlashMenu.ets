@@ -5,6 +5,7 @@ import { AppState } from '../../state/AppState';
 import { TablerIcon } from '../common/Icons';
 import { OverlayKeyRouter, OverlayId, OverlayKeyBinding } from '../../utils/OverlayKeyRouter';
 import { KeyCode } from '@kit.InputKit';
+import { promptAction } from '@kit.ArkUI';
 
 /**
  * SlashCommand — 斜杠菜单命令定义。
@@ -653,11 +654,21 @@ export struct SlashMenu {
     // ─── 新建页面 ───
     if (cmd.id === 'new-page') {
       const pageName = '新页面 ' + this.getTodayString();
-      ws.executeOp({
+      // S4-W27（H2）：原先**丢弃** OpResult ⇒ 名字碰撞被拒时仍会把当前页切到
+      // 一个并不存在的页面上。现在必须判成败：失败则不动当前页、给出可见反馈。
+      // 提示机制沿用本仓既有的 promptAction.openToast（全仓 30 处在用）。
+      const r = ws.executeOp({
         type: 'new-page',
         name: pageName,
         originalName: pageName
       });
+      if (!r.success) {
+        promptAction.openToast({
+          message: '已存在同名文件，未创建：「' + pageName + '」'
+        }).catch(() => {});
+        this.dismissMenu();
+        return;
+      }
       AppState.setCurrentPage(pageName);
       this.dismissMenu();
       return;

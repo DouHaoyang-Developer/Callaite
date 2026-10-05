@@ -12,6 +12,7 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { AppState } from '../../state/AppState';
 import { t } from '../../utils/i18n';
 import { display } from '@kit.ArkUI';
+import { promptAction } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
 /**
@@ -358,6 +359,15 @@ export struct JournalFeed {
     let page = ws.getPageByName(day);
     if (!page) {
       page = ws.createPage(day);
+    }
+    // S4-W27（H2）：同 BlockList.addTopLevelBlock —— 被拒则页面不存在，
+    // 继续取 page.uuid 会崩，且落块会写进别人的文件。
+    // 提示机制沿用本仓既有的 promptAction.openToast（全仓 30 处在用）。
+    if (!page) {
+      promptAction.openToast({
+        message: '已存在同名文件，未创建：「' + day + '」'
+      }).catch(() => {});
+      return;
     }
     const blocks: BlockData[] = ws.getPageBlocks(page.uuid);
     ws.executeOp({

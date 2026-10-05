@@ -4,6 +4,7 @@ import { AppState } from '../../state/AppState';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { countBacklinks } from '../../utils/BacklinkWarning';
 import { pasteboard } from '@kit.BasicServicesKit';
+import { promptAction } from '@kit.ArkUI';
 
 /**
  * 页面上下文菜单项。
@@ -245,7 +246,14 @@ export struct PageContextMenu {
       const ws = WorkspaceService.getInstance();
       const page = ws.getPageByName(from);
       if (page) {
-        ws.getDataStore().renamePage(page.uuid, this.renameText);
+        // S4-W27（H2）：改名可能被拒（新名与**别的页**映射到同一个文件）。
+        // 本仓既有提示机制 = promptAction.openToast（全仓 30 处在用），不新造。
+        // 必须在下方的 `onClose()` **之前**取出结果 —— 关掉菜单不影响提示条。
+        if (!ws.getDataStore().renamePage(page.uuid, this.renameText)) {
+          promptAction.openToast({
+            message: '已存在同名文件，未重命名：「' + this.renameText + '」'
+          }).catch(() => {});
+        }
       }
     }
     this.showRenameDialog = false;

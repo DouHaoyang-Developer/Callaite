@@ -123,13 +123,75 @@ export class DataStore {
   }
 
   /**
-   * 创建新页面。
+   * S4-W27（H2 命名碰撞）：「拒绝」判据的**唯一实现**。
+   *
+   * 判据：`pageNameToFileName(newName)` 的结果，是否已被**除目标页自身之外**的
+   * 任一已有页占用 ⇒ 是则拒绝，且**不得产生任何副作用**。
+   *
+   * 为什么占用集合取 `p.filePath`（而不是 `pageNameToFileName(p.name)`）：
+   *   写盘那一步是 `joinPath(graphRoot, page.filePath)`（见 `savePage`）—— 也就是
+   *   **会被写坏的路径就是 `filePath` 本身**，于是「判据」与「伤害」定义在同一个项上。
+   *   而 `filePath ≡ pageNameToFileName(name)` 由构造保证：全仓 `filePath` 只有四个写点，
+   *   逐个核对均取自同一个 `pageNameToFileName`：
+   *     · `createPage`（本文件）→ `pageNameToFileName(name)`
+   *     · `renamePage`（本文件）→ `pageNameToFileName(newName)`
+   *     · `Page.ets` 的 `createPageData` → `pageNameToFileName(name)`
+   *     · `replacePageBlocks` → 原样保留旧 `filePath`（页面名未变）
+   *   ⇒ **不存在第二套 sanitize 映射**（避免「一个概念两套判据迟早分叉」）。
+   *
+   * ⚠️ 比较是**逐字节、大小写敏感**的全等 —— 不得 `toLowerCase()`：
+   *   设备实测 `/data` 是 `ext4`（大小写敏感），`ZzCase.md` 与 `zzcase.md` 在
+   *   同一目录并存且内容各异 ⇒ `A_B.md` 与 `a_b.md` 是**两个文件、不构成碰撞**。
+   *   注意 `IndexStore.getPageByName` 走 `name.toLowerCase()`（页索引不敏感），
+   *   那是**索引层**的同一性，与**文件层**的占用不是一回事，不可复用。
+   *
+   * ⚠️ Unicode 不做 NFC/NFD 归一化（`pageNameToFileName` 只特判 9 个非法 ASCII 与
+   *   控制字符，其余码元原样透传）⇒ 视觉同形的 NFC/NFD 两名各占一个文件、不碰撞；
+   *   而 `中文/页` 与 `中文:页` 都映射到 `中文_页.md` ⇒ 碰撞。
+   *
+   * @param fileName 候选文件名（必须是 pageNameToFileName 的输出）
+   * @param excludeUuid 需要自我排除的页面 uuid；`createPage` 传空串（无目标页），
+   *   `renamePage` 传目标页 uuid（改回自己当前的名字/文件不得被判碰撞）。
+   * @returns 占用了该文件名的**其他**页面；无则 undefined。
    */
-  createPage(name: string, originalName: string): PageData {
+  private findFileNameOwner(fileName: string, excludeUuid: string): PageData | undefined {
+    const pages = this.indexStore.getAllPages();
+    for (let i = 0; i < pages.length; i++) {
+      const candidate = pages[i];
+      if (candidate.uuid === excludeUuid) {
+        continue;
+      }
+      if (candidate.filePath === fileName) {
+        return candidate;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * 创建新页面。
+   *
+   * @returns 新建的页面；**名字碰撞被拒时返回 `undefined`**（S4-W27/H2）。
+   *   调用方必须判空 —— 拒绝后页面不存在，继续取 `page.uuid` 会拿到 undefined。
+   */
+  createPage(name: string, originalName: string): PageData | undefined {
+    // 使用安全文件名转换，防止页面名包含 / .. 等造成路径穿越
+    const fileName = pageNameToFileName(name);
+
+    // S4-W27（H2）：碰撞即拒绝，且在任何副作用之前 —— 拒绝后不留任何痕迹。
+    // 新建路径没有「目标页」，故排除集为空（不存在「与自己碰撞」）。
+    const owner = this.findFileNameOwner(fileName, '');
+    if (owner) {
+      console.error('[DataStore] createPage refused: name "' + name + '" maps to "'
+        + fileName + '", already occupied by page "' + owner.originalName
+        + '" (' + owner.uuid + ')');
+      return undefined;
+    }
+
     const uuid = UUID.generate();
     const page = createPageData(uuid, name, originalName);
-    // 使用安全文件名转换，防止页面名包含 / .. 等造成路径穿越
-    page.filePath = pageNameToFileName(name);
+    // 复用上面算出的结果：同一个 pageNameToFileName，只调用一次 ⇒ 两处不可能分叉。
+    page.filePath = fileName;
     this.indexStore.addPage(page);
     this.savePage(uuid);
     return page;
@@ -199,11 +261,30 @@ export class DataStore {
 
   /**
    * 重命名页面。
+   *
+   * @returns 是否确实改名成功。**S4-W27/H2**：原先返回 `void`，
+   *   名字碰撞被拒时调用方无从得知 ⇒ 改为 `boolean`，沿用 W0 给 `savePage`
+   *   建立的 `void → boolean` 上报模式（不重抛：本仓的失败通道是返回值）。
    */
-  renamePage(pageUuid: string, newName: string): void {
+  renamePage(pageUuid: string, newName: string): boolean {
     const page = this.indexStore.getPage(pageUuid);
     if (!page) {
-      return;
+      return false;
+    }
+
+    // ⚠️ S4-W27（H2）：碰撞判定必须**先于任何副作用**。
+    //   本方法原实现是「先 deleteFile(oldPath)（见下），再算新路径」—— 若把守卫
+    //   放在删除之后，一次拒绝会把该页变成**盘上无文件**，比碰撞本身更糟。
+    //
+    //   自我排除按 **uuid**（不是按名字）：把 `A_B` 改名为 `A:B` 时新旧文件名相同，
+    //   但只要没有**别的页**占着它，就没有任何数据受损 ⇒ 放行。
+    const newFilePath = pageNameToFileName(newName);
+    const owner = this.findFileNameOwner(newFilePath, pageUuid);
+    if (owner) {
+      console.error('[DataStore] renamePage refused: "' + page.name + '" -> "' + newName
+        + '" maps to "' + newFilePath + '", already occupied by page "'
+        + owner.originalName + '" (' + owner.uuid + ')');
+      return false;
     }
 
     // 删除旧文件
@@ -214,7 +295,7 @@ export class DataStore {
     const oldName = page.name;
     page.name = newName;
     page.originalName = newName;
-    page.filePath = pageNameToFileName(newName);
+    page.filePath = newFilePath;
     page.updatedAt = Date.now();
 
     // 重新索引
@@ -224,8 +305,8 @@ export class DataStore {
     // 引用传导更新：将所有页面的 [[oldName]] 更新为 [[newName]]
     this.propagateReferenceRename(oldName, newName);
 
-    // 写新文件
-    this.savePage(pageUuid);
+    // 写新文件 —— 把写盘结果一并上抛（W27：改名「有没有成」必须可观测）
+    return this.savePage(pageUuid);
   }
 
   /**

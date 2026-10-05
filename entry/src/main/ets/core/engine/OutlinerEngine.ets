@@ -347,11 +347,27 @@ export class OutlinerEngine {
 
   private doNewPage(op: NewPageOp): OpResult {
     const page = this.dataStore.createPage(op.name, op.originalName);
+    // S4-W27（H2）：名字碰撞被拒 ⇒ 走既有 OpResult.success 通道上抛。
+    // ImportService 已经在判 `!r.success`，天然接住。
+    if (!page) {
+      return {
+        success: false,
+        message: 'Page name collides with an existing page file: ' + op.name,
+        affectedUuids: []
+      };
+    }
     return { success: true, message: 'Page created', affectedUuids: [page.uuid] };
   }
 
   private doRenamePage(op: RenamePageOp): OpResult {
-    this.dataStore.renamePage(op.pageId, op.newName);
+    // S4-W27（H2）：同上，拒绝时不得报 success。
+    if (!this.dataStore.renamePage(op.pageId, op.newName)) {
+      return {
+        success: false,
+        message: 'Page rename refused (name collides with an existing page file): ' + op.newName,
+        affectedUuids: []
+      };
+    }
     return { success: true, message: 'Page renamed', affectedUuids: [op.pageId] };
   }
 

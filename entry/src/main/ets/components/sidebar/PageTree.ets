@@ -3,6 +3,7 @@ import { AppState } from '../../state/AppState';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { NamespaceUtils, NamespaceNode } from '../../utils/NamespaceUtils';
 import { PageContextMenu } from './PageContextMenu';
+import { promptAction } from '@kit.ArkUI';
 
 /**
  * PageTree — 按命名空间层级展示页面树。
@@ -394,7 +395,13 @@ export struct PageTree {
     const ws = WorkspaceService.getInstance();
     const page = ws.getPageByName(this.renamingKey);
     if (page && this.renameText !== '' && this.renameText !== this.renamingKey) {
-      ws.getDataStore().renamePage(page.uuid, this.renameText);
+      // S4-W27（H2）：改名可能被拒（新名与**别的页**映射到同一个文件）。
+      // 本仓既有提示机制 = promptAction.openToast（全仓 30 处在用），不新造。
+      if (!ws.getDataStore().renamePage(page.uuid, this.renameText)) {
+        promptAction.openToast({
+          message: '已存在同名文件，未重命名：「' + this.renameText + '」'
+        }).catch(() => {});
+      }
     }
     this.renamingKey = '';
     this.renameText = '';

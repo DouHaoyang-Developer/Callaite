@@ -7,6 +7,7 @@ import { PageData } from '../../core/models/Page';
 import { SubscriptionService } from '../../services/SubscriptionService';
 import { Breakpoints } from '../../state/Breakpoints';
 import { countBacklinks } from '../../utils/BacklinkWarning';
+import { promptAction } from '@kit.ArkUI';
 
 interface NavItem {
   key: string;          // 唯一标识，对应 AppState.currentPage 值
@@ -400,7 +401,12 @@ export struct LeftSidebar {
   private createNewNote(): void {
     const ws = WorkspaceService.getInstance();
     const name = this.uniquePageName('未命名');
-    ws.createPage(name);
+    // S4-W27（H2）：名字碰撞被拒时页面并不存在 —— 必须就此收手，
+    // 否则会进入一个不存在的页面的重命名态并把当前页切过去。
+    if (!ws.createPage(name)) {
+      this.notifyNameCollision('未创建', name);
+      return;
+    }
     this.allPages = ws.getAllPages();
     this.startRename(name);
     AppState.setCurrentPage(name);
@@ -420,7 +426,11 @@ export struct LeftSidebar {
       i++;
     }
     const full = ns + '/未命名';
-    ws.createPage(full);
+    // S4-W27（H2）：同 createNewNote —— 被拒则不进重命名态、不切页。
+    if (!ws.createPage(full)) {
+      this.notifyNameCollision('未创建', full);
+      return;
+    }
     this.allPages = ws.getAllPages();
     this.startRename(full);
     AppState.setCurrentPage(full);
@@ -610,11 +620,29 @@ export struct LeftSidebar {
     this.renameText = oldName;
   }
 
+  /**
+   * S4-W27（H2 命名碰撞）：把「被拒绝」变成用户可见的反馈。
+   *
+   * 用本仓既有的提示机制 `promptAction.openToast`（全仓 30 处在用，
+   * 如 IntegralEditor / PdfViewer / PluginAPI），不新造提示条。
+   * 文案必须说清**为什么**失败 —— 名字本身看起来完全合法，
+   * 只说「失败」会让用户以为应用坏了。
+   */
+  private notifyNameCollision(action: string, name: string): void {
+    promptAction.openToast({
+      message: '已存在同名文件，' + action +'：「' + name + '」'
+    }).catch(() => {});
+  }
+
   commitRename(): void {
     const ws = WorkspaceService.getInstance();
     const page = ws.getPageByName(this.renamingPage);
     if (page && this.renameText !== '' && this.renameText !== this.renamingPage) {
-      ws.getDataStore().renamePage(page.uuid, this.renameText);
+      // S4-W27（H2）：改名可能被拒（新名与**别的页**映射到同一个文件）。
+      // 修复前这里无从知道成败，失败会静默 —— 现在上抛并给出可见反馈。
+      if (!ws.getDataStore().renamePage(page.uuid, this.renameText)) {
+        this.notifyNameCollision('未重命名', this.renameText);
+      }
     }
     this.renamingPage = '';
     this.renameText = '';

@@ -78,12 +78,25 @@ export class WorkspaceService {
     return this.dataStore.getPageByName(dateStr);
   }
 
-  createPage(name: string): PageData {
+  /**
+   * 创建页面。
+   *
+   * @returns 新建的页面；**名字碰撞被拒时返回 `undefined`**（S4-W27/H2）。
+   */
+  createPage(name: string): PageData | undefined {
     return this.dataStore.createPage(name, name);
   }
 
-  createJournalPage(dateStr: string): PageData {
+  /**
+   * 创建日志页。
+   *
+   * @returns 新建的日志页；**名字碰撞被拒时返回 `undefined`**（S4-W27/H2）。
+   */
+  createJournalPage(dateStr: string): PageData | undefined {
     const page = this.dataStore.createPage(dateStr, dateStr);
+    if (!page) {
+      return undefined;
+    }
     page.journalDay = dateStr;
     this.dataStore.savePage(page.uuid);
     return page;

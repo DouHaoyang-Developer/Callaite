@@ -12,6 +12,7 @@ import { BlockAnchorService } from '../../services/BlockAnchorService';
 import { EditorService } from '../../services/EditorService';
 import { SlashMenu } from './SlashMenu';
 import { TablerIcon } from '../common/Icons';
+import { promptAction } from '@kit.ArkUI';
 import { AppState } from '../../state/AppState';
 import { t } from '../../utils/i18n';
 
@@ -529,6 +530,15 @@ export struct BlockList {
     let page = ws.getPageByName(this.pageName);
     if (!page) {
       page = ws.createPage(this.pageName);
+    }
+    // S4-W27（H2）：名字映射到**已被别的页占用**的文件 ⇒ createPage 拒绝。
+    // 此时页面并不存在，继续取 page.uuid 会崩，且落块会写进别人的文件。
+    // 提示机制沿用本仓既有的 promptAction.openToast（全仓 30 处在用）。
+    if (!page) {
+      promptAction.openToast({
+        message: '已存在同名文件，未创建：「' + this.pageName + '」'
+      }).catch(() => {});
+      return;
     }
 
     const result = ws.executeOp({

@@ -6,6 +6,7 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { WhiteboardFileService } from '../../services/WhiteboardFileService';
 import { FileService } from '../../services/FileService';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { promptAction } from '@kit.ArkUI';
 
 /**
  * NewFileDialog —— 新建文件三选项对话框（对齐 Obsidian 的新建入口）。
@@ -44,7 +45,14 @@ export struct NewFileDialog {
   private createMarkdownNote(): void {
     const ws = WorkspaceService.getInstance();
     const name = this.uniquePageName('未命名笔记');
-    ws.createPage(name);
+    // S4-W27（H2）：名字碰撞被拒 ⇒ 页面并不存在，不得切页、不得关对话框假装成功。
+    // 提示机制沿用本仓既有的 promptAction.openToast（全仓 30 处在用）。
+    if (!ws.createPage(name)) {
+      promptAction.openToast({
+        message: '已存在同名文件，未创建：「' + name + '」'
+      }).catch(() => {});
+      return;
+    }
     // 页面属性 type:: markdown（文档式渲染约定）
     const page = ws.getPageByName(name);
     if (page !== undefined) {
@@ -80,7 +88,13 @@ export struct NewFileDialog {
   private createOutlineNote(): void {
     const ws = WorkspaceService.getInstance();
     const name = this.uniquePageName('未命名');
-    ws.createPage(name);
+    // S4-W27（H2）：同 createMarkdownNote —— 被拒则不切页、不关框。
+    if (!ws.createPage(name)) {
+      promptAction.openToast({
+        message: '已存在同名文件，未创建：「' + name + '」'
+      }).catch(() => {});
+      return;
+    }
     AppState.setCurrentPage(name);
     this.close();
   }
