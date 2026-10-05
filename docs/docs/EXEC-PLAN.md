@@ -3622,3 +3622,22 @@ WHO COMMITTED WHAT (asked and answered): `c7cba93` was committed and pushed by M
   `core/parser/` was added. NEW TRAP 53 registers the un-attributed observation that a page entered from the
   `最近` list did not persist within 14 s while a lazily created page did within 8 s - explicitly marked as NOT a
   defect until a controlled comparison holds the entry path as the only variable.
+
+### 22.42 W27 SELF-CORRECTION: the handover claim "the emulator is running" had become FALSE, and it fixed it
+W27 had launched the emulator as a CHILD OF A BACKGROUND JOB (`pwsh ... -hvd '"MateBook Pro"'`). When the job ended,
+  the process tree was reclaimed and THE EMULATOR WENT WITH IT. So the line "emulator instance MateBook Pro is
+  running" in its handover was TRUE WHEN WRITTEN and FALSE BY HANDOVER. It caught this itself on a closing
+  re-check (`Get-CimInstance Emulator.exe` empty, `hdc list targets` = `[Empty]`) and named the family correctly:
+  the same mistake as writing "unverifiable" as "passing" - it carried a stale state forward as if it were current.
+IT FIXED IT RATHER THAN MERELY REPORTING IT: relaunched with a DETACHED process
+  (`Start-Process Emulator.exe -ArgumentList @('-hvd','"MateBook Pro"')`), then measured: the process is present,
+  `hdc list targets` = `127.0.0.1:5555`, the package survived (`bm dump -a` -> `com.example.callaite`, no uninstall),
+  a cold start succeeded with pid 2770, and the vault is 12 files matching the Sec.6.5 registration LINE BY LINE
+  with identical byte sizes (`A_B.md` 11, `W27E1.md` 11, `W27W2.md` 96, `W27W3.md` 116, `W27W4.md` 116,
+  `W27W5.md` 2). It explicitly made NO claim about crash logs, because the emulator had been restarted.
+BACKFILLED INTO `AGENTS.md` Sec.3 (both copies, difference still exactly L6, machine-proved): never launch the
+  emulator as a background-job child; use `Start-Process` (or the IDE); and before handover MEASURE
+  `hdc list targets` rather than restating an earlier reading - "I looked a moment ago" is not "it still holds".
+ALSO SETTLED, WITH MEASUREMENT: both `AGENTS.md` copies are `ends_with_LF = True`, so `split('\n')` gives 554 (one
+  extra trailing element) while `splitlines()` gives 553, which is what my `ReadAllLines` reported. Both are right;
+  both agree the only difference is L6.

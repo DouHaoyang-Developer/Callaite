@@ -112,6 +112,16 @@ node 'D:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.js' --mode 
   - ⚠️ **实例名含空格时，必须是一个带引号的实参** ✗✓（W10 实测：`emulator.exe -hvd '"MateBook Pro"'` ✓ —— shell 会把不加引号的名字拆成两个参数 ✓ 与 `-start` 报 `Invalid command` 同源 ✓）（W7 实测：**`-start '名字带空格'` 过不了参** ✗ 报 `Invalid command: please attach - or --`；`-hvd` 是 `-start` 的别名 ✓）；约 25–30 s 后 `hdc` 可见 ✓
   - ⚠️ **`hdc` 报 `Offline` / 无进程 ⇒ 先确认模拟器到底在不在跑** ✗（W7：以为设备坏了，其实**根本没在跑** ✓）
   - **每步设备操作前先断言 `hdc list targets`**（该模拟器会反复掉线）。
+- ⚠️ **不要用「后台作业的子进程」方式拉起模拟器** ✗（W27 实测，2026-10-05）：
+  若用 `pwsh … -hvd '"实例名"'` 把它作为**后台作业**拉起 ⇒ **作业结束时进程树被回收，模拟器被一并带走** ✗
+  ⇒ 此时**交还清单里的「实例在跑」会在无声中变成假话** ✗✓ —— 同日 W27 的答复里就发生了一次（当时为真 ✓ 收尾时已不成立 ✗）
+  ⇒ **正确做法** ✓：**用分离进程启动** ✓✓
+    ```powershell
+    Start-Process Emulator.exe -ArgumentList @('-hvd','"实例名"')
+    ```
+    （或由 IDE 拉起 ✓）；它**不挂在任何作业上 ⇒ 不会被回收** ✓
+  ⇒ ⚠️ **并且：交还前必须「实测」`hdc list targets`，而不是复述之前的读数** ✗✓
+    （“我刚才看过”≠“现在仍成立” ✗ —— 与验证纪律 4「先验证动作是否真的被送达」同族 ✓）
 - **安装**：`hdc install -r <hap>`（未签名可装）；`hdc shell aa force-stop com.example.callaite` + `aa start -a EntryAbility -b com.example.callaite` 做冷启动。
   > `aa force-stop` **不触发 `onBackground`** ⇒ 用它验证「持久化是否真的落盘」比正常退出更严格 ✓
 - **UI 取证**：`hdc shell uitest dumpLayout -p /data/local/tmp/x.json` + `hdc file recv`；截图 `hdc shell snapshot_display -f /data/local/tmp/x.jpeg` + `hdc file recv`。
