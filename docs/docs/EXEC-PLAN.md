@@ -3641,3 +3641,82 @@ BACKFILLED INTO `AGENTS.md` Sec.3 (both copies, difference still exactly L6, mac
 ALSO SETTLED, WITH MEASUREMENT: both `AGENTS.md` copies are `ends_with_LF = True`, so `split('\n')` gives 554 (one
   extra trailing element) while `splitlines()` gives 553, which is what my `ReadAllLines` reported. Both are right;
   both agree the only difference is L6.
+
+### 22.43 W1 (T1 FOUNDATION) - DONE, AND IT CORRECTED FOUR THINGS THAT CHANGE EVERY LATER WINDOW
+COMMIT `63377bb` (12 files, +1233/-243) plus `4a5df0c`; docs `docs/docs/S4-W1-系统地基.md` (687 lines).
+  PUSH FAILED - no network route to github.com:443 - so `origin/main` is still `c59d651` and the local tree is two
+  commits ahead. The opening `git fetch` also failed silently, so it could not check whether the remote had moved.
+*** CORRECTION 1 (the biggest): W20's px->vp DIVISOR WAS WRONG BY 5.26% ***
+  Calibrated on device with probe boxes of known vp: **1vp = 1.900px**, not 2.0 - consistent across five sizes
+  (20vp->38px, 40vp->76px, 160x60vp->304x114px, 32x40vp->61x76px). W20 divided by density 2.0.
+  => ANY W20 GEOMETRY READING MUST BE MULTIPLIED BY 1.0526. Consequences already known: W20's "Ribbon button
+  38x38vp" is actually 40.0x40.0vp, i.e. ALREADY COMPLIANT; and W20 MISIDENTIFIED the "marker chip" node - what it
+  recorded as 42x42px was `callaite_slashEntry_*` (the slash entry) at 22x22vp.
+  W20's STRING/COUNT conclusions (1466 literals etc.) are UNAFFECTED; its GEOMETRY readings need recomputation.
+*** CORRECTION 2: `dumpLayout` CANNOT READ `responseRegion` ***
+  Three probe nodes (expanded / unexpanded / using `hitTestBehavior`) came back GEOMETRICALLY IDENTICAL in
+  `dumpLayout`. So "score hit targets with dumpLayout" - which I had put in the task book - DOES NOT WORK.
+  W1 replaced it with a BEHAVIOURAL criterion judged on DISK, with a three-way control: A click inside the old hit
+  area => state changed (proves the criterion works); B click outside the new area => unchanged (no false
+  positive); C click inside-new/outside-old => changed (the region really did expand). The true hit rectangle still
+  cannot be read directly, so the behavioural criterion only proves "at least expanded to that line".
+*** CORRECTION 3: `$r('app.float.*')` DOES work, and a wrong name fails the BUILD ***
+  Four paths verified (.padding / .fontSize / .width / .height / `space:`) with GEOMETRY PIXEL-IDENTICAL to the
+  ArkTS-constant leg (123x77px), and a misspelled resource name yields `Unknown resource name` -> BUILD FAILED,
+  i.e. a compile-time check rather than a silent failure. This FALSIFIES the "resources may not take effect"
+  assumption I wrote into W1's task book.
+  THE TOKEN MECHANISM WAS STILL RULED TO BE AN ArkTS CONSTANTS MODULE (`utils/DesignTokens.ets`), with colour
+  continuing to use resources - decided on COVERAGE, NOT CAPABILITY: `space:` has 314 call sites and taking a
+  Resource there needs `ColumnOptionsV2` (SDK `column.d.ts:103`, @since 18) whereas the existing 314 sites use
+  `ColumnOptions.space: string|number` (`:68`, @since 7) - two different interfaces, so it would mean either a
+  second idiom (trap 29) or an orthogonal API migration first. And for ICON SIZES the resource leg is simply
+  absent: `Icons.ets:128 TablerIcon(name, size: number, ...)` has 156 numeric-literal call sites and `IconRenderer`
+  does ARITHMETIC on `size` (`/12` line width, `x densityScale`, `x 0.18`), so a Resource cannot go in and cannot
+  be arithmetic'd. Result: two legs, one job each, zero overlap.
+*** CORRECTION 4: W20 misidentified a node (see Correction 1) ***
+CONVERGENCE AND MAPPING TABLES (the construction basis for W2-W6): font 19->7; spacing 14->8 (4-base grid with
+  `HAIR 2` as the single half-grid exception); radius 14->4+1 (with `FULL` as a semantic tier); size 31->16 with
+  one-off sizes deliberately NOT tokenised; motion 9->4; line-height 1->2. Parameterisation check passed: body
+  15vp is in the 15-16 range; H1/BODY = 1.667x, dead centre of the 1.6-1.8 band (was 1.87x, above the ceiling);
+  line-height 23/15 = 1.533.
+HIT-TARGET SPEC v1: hit short side >=40vp, plus a DENSE-ROW DEGRADATION CLAUSE (when adjacent controls are closer
+  than 40vp apart, "both >=40" is geometrically impossible, so expand until tangent, with NON-OVERLAP as the hard
+  upper bound and any remaining gap registered). Measured: Ribbon button already compliant (see Correction 1);
+  view chip 25.8 -> 40.0vp STRUCTURAL and dumpLayout-judgeable; marker chip 15.8vp -> `responseRegion` 52x40vp
+  proven by the behavioural triple control; projection dot 15.8vp -> `responseRegion` 40x40vp CODE READY but NOT
+  EVIDENCED.
+U4.6 SELECTION STATE: three sets found, collapsed to one. `accent_soft` (12), `surface2` (>=7, and the SAME colour
+  as hover), and filled `primary` (3, semantically different, kept). The lesion: the SAME `LeftSidebar.ets` held
+  two sets - `ViewChip` had been fixed during W20 (surface2 -> accent_soft) while `StripIcon`/`ViewSwitchIcon` in
+  the same file were still surface2, i.e. the diagnosis was never propagated. Four places changed.
+PILOT (as promised - not just a constants file): the left-sidebar view chip row. `dumpLayout` `Row [613,360]
+  87x49px` -> `[704,351] 87x76px` (25.8 -> 40.0vp). Screenshots: four states, four md5s, four byte counts, so the
+  SCREENSHOT POSITIVE CONTROL HOLDS and `snapshot_display` is currently usable. Honest boundary it flagged itself:
+  the before/after screenshots are of DIFFERENT PAGES, so the comparison is only valid within the sidebar crop
+  region (596,336)-(1110,440); no full-screen pixel diff was done.
+FOUR-SCREEN LITERAL BASELINE (W7's comparison baseline): 317 -> 44, i.e. -86.1%. MarkdownToolbar 12->1,
+  TabBar 47->6, TabOverviewSheet 27->5, LeftSidebar 102->15, PageTree 29->5, CommandPalette 49->7,
+  SearchPanel 51->5, Ribbon 18->1, BlockView 130->121 (not-touch list, style only). It also corrected its own
+  metric: `padding/margin` must count VALUES INSIDE OBJECTS, not call sites.
+THE "NO LOGIC CHANGED" PROOF IS MECHANICAL: it reverse-solved every diff line's token back to a number and ran a
+  LINE MULTISET comparison => zero logic lines, with every remaining difference falling inside the mapping table
+  (e.g. `borderRadius(6)->(8)` 17 times) plus one intentional selection-colour change. Script `%TEMP%\s4w1\style_check.py`.
+*** THE ONE SUBSTANTIVE GAP: THE E GROUP WAS NOT RUN *** E1/E3/E4/E13/E14 are all unrun - the device budget went to
+  the mechanism probes and the hit-target triple control. `BlockView` IS on the editor main path, so this matters.
+  W1 recommends W2 runs them first. Sec.7b was also not used: it argued the module is compiled and executed from
+  the device geometry being exactly `Size.TOUCH_MIN x 1.9 = 76px`, registered that as INFERENTIAL, and recommends
+  W2 do the injection.
+NOT CLAIMED: projection-dot hit target not evidenced; the true `responseRegion` rectangle not directly read; E group
+  unrun; no real-device / dark-contrast / full-screen diff; "four screens cleared" NOT achieved (44 remain); W20's
+  other vp values only converted by x1.0526 and not re-measured.
+PROBE RESIDUE = 0: `TokensProbe.ets` deleted, `float.json`'s six probe tokens byte-reverted, `main_pages.json` and
+  `EntryAbility.ets` restored. No `uninstall`. No `git add -A/-u/.`.
+*** ONE VAULT RESIDUE, DISCLOSED HONESTLY *** To get the hit-target behavioural criterion it clicked the marker
+  chip, which changed `2026-09-30.md`'s first-line marker from `TODO` to EMPTY (3953 -> 3948 B). Restoration FAILED:
+  the vault is shell-read-only (it ran a write positive control), and the only viable path (SlashMenu -> TODO, which
+  WORKED ONCE on `2026-10-02.md` and fully restored it) hit the mid-session injection failure. That block is a
+  W10-era debug placeholder (trap 38), so there is no content or page loss. The restoration recipe is in the doc's
+  Sec.11.3. The other 11 `.md` files are unchanged.
+HANDOVER MEASURED, NOT RESTATED: `hdc list targets` = `127.0.0.1:5555` online; `Emulator` PID 23028; the installed
+  package is this window's third build (`9,042,918 B @ 21:42:30`, `updateTime` ~21:42:37 LATER than the HAP mtime,
+  not MD5 - trap 27 applied correctly).
