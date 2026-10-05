@@ -1,0 +1,23 @@
+# W28 (2026-10-05) —— 行尾保护：把 docs/ 的文本类文件钉成 LF
+#
+# 起因：本仓 core.autocrlf=true 且此前没有 .gitattributes ⇒ clone / checkout / restore
+#   都会把工作区文本文件写成 CRLF（实测：docs/ 下已有 4 个 w/crlf、9 个 w/mixed，全仓 32 个 w/crlf），
+#   而 docs/ 的 67 个 .md 依赖「LF + 行号稳定」这条不变式（本会话已因 CRLF 污染损坏过 5 次文件）。
+#
+# 口径：只声明**文本类扩展名**。故意不写 `docs/** text` —— docs/ 下还有 175 个二进制
+#   （.jpeg/.jpg/.png）与 45 个工具生成的 dump（.json 多为 i/none），给它们套 text 属无谓风险；
+#   也故意不含 *.json / *.log / *.csv：它们是原始产物（如 04-模拟器闪退诊断/环境快照/emu_list*.json
+#   是模拟器实例枚举的原始输出，属于证据文件，不应被 git 改写工作区字节）。
+#
+# 预判（已实测复核）：本规则**不产生任何归一化 diff** —— 全仓文本在索引侧本来就是 LF
+#   （git ls-files --eol 全仓无一个 i/crlf）。它只改变「未来 checkout 是写 LF 还是 CRLF」这一件事。
+#
+# 未纳入（需另行裁决，见 W28 报告）：entry/src/main/ets/** 的 *.ets 与 *.json5。
+#   现状：128 个 i/lf w/lf、27 个 i/lf w/crlf、3 个 i/lf w/mixed ⇒ 索引侧同样是 LF，
+#   加规则也不会产生 diff，但会改变 27 个 .ets 的 checkout 行为，且那批文件正被并行窗口改动。
+
+*.md           text eol=lf
+docs/**/*.sh   text eol=lf
+docs/**/*.ps1  text eol=lf
+docs/**/*.py   text eol=lf
+docs/**/*.txt  text eol=lf
