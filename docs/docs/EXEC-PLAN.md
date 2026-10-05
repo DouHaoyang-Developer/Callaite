@@ -3455,3 +3455,78 @@ read back as 34 B), so byte-level criteria must use `ls -l` plus `hdc file recv`
 **VAULT LEFT WITH 3 TEST RESIDUES:** `Z.md` (30 B, H2 fixture), `未命名笔记.md` (34 B, E1 fixture),
 and `PAGEA.md` which no longer exists (consumed by the collision). `graph/` is not shell-writable,
 so cleanup can only be done in-app; not done this window.
+
+### 22.39 W0 VERDICT - N1 data-integrity window: BOTH defects reproduced on device, N1-a FIXED
+COMMIT `0756097` (parent `7112b49`), 4 files, +544/-7, clean tree at both ends. New report
+  `docs/docs/S4-W0-N1数据完整性.md` (27,013 B). This is the FIRST device-level reproduction of either defect -
+  Codex supplied static analysis and W23 located the code paths to the line, but neither had reproduced it.
+EMULATOR: `MateBook Pro` (2in1 / API 26), hot start via `emulator.exe -hvd '"MateBook Pro"'`, NO coldboot needed,
+  25 s to `127.0.0.1:5555`. App was already installed; no `uninstall`. Vault baseline was 4 .md files.
+*** N1-b / H2 (the name-collision route) - REPRODUCED, ALL THREE CRITERIA HOLD ***
+  (A) A faithful port of `Page.ets:92` enumerated TEN variants - `A/B A:B A?B A*B A|B A<B A>B A"B A\B A_B` -
+      and ALL map to `A_B.md`. BOTH `createPage` (`DataStore:128-136`) and `renamePage` (`:203-229`) have ZERO
+      collision checks: **`createPage` is a SECOND, previously unlisted entry point.**
+  (B) All three rename inputs have NO character filtering (`LeftSidebar:553-558` / `PageContextMenu:370-378` /
+      `PageTree:184-189`), which CLOSES the task book's `待定位` item: **H2 IS UI-REACHABLE.**
+  (C) Device evidence, verbatim:
+        PRE : PAGEA.md 30 B md5 27e98c4a1ebcf3a0638d261e705cb8b4 ; Z.md 24 B md5 0b421b81...
+        POST: PAGEA.md -> "No such file or directory"          ; Z.md 30 B md5 27e98c4a1ebcf3a0638d261e705cb8b4
+        .md count 7 -> 6 ; after force-stop + start: 6 pages, PAGEA GONE, Z displays PAGEA's content
+      => POST `Z.md` md5 == PRE `PAGEA.md` md5 - a BYTE-EXACT TRANSFER - while Z's own 24 B is permanently
+      destroyed. That is the lost page, demonstrated end to end.
+*** N1-a (swallowed write failure) - REPRODUCED, and its FIRST PROBE WAS WRONG, which itself was informative ***
+  Throwing BEFORE the funnel (inside `savePage`, above `writeTextSync`) produced `persistNow failed` plus
+  **`flushed 0/1`** => proving ring 3 (`persistNow`) was ALWAYS fine and merely never signalled; THE LESION IS
+  STRICTLY INSIDE `writeTextSync`'s catch. The corrected probe sits in that same `try` block before `openSync`, so
+  its fate is identical to a real write failure. Result: `[FileRepository] Failed to write file: .../PAGEA.md
+  Error: W0N1 simulated write failure (ENOSPC-like)` x3, **`DirtyPageTracker: flushed 1/1 dirty pages`**, disk
+  byte-identical (30 B, same md5), and **`persistNow failed` NEVER appeared** - confirming that catch is dead code
+  for write failures. Probe reverted, source residue = 0, clean rebuild performed.
+*** FIX - N1-a ONLY, 2 files *** `writeTextSync`: `void` -> `boolean` (true after `renameSync`, false in catch).
+  `savePage`: `void` -> `boolean`, early-returns on failure => it no longer stamps `updatedAt` nor reindexes; and the
+  `:361-363` comment whose stated premise ("a failed write throws") was simply FALSE has been corrected.
+  CHOSE A RETURN VALUE, NOT A RETHROW, for a good reason: the downstream contract is ALREADY boolean
+  (`persistNow(): boolean`, `saver:(pageId)=>boolean`) and `writeTextSync` has exactly ONE call site repo-wide
+  => **`DirtyPageTracker` needs ZERO changes**, and its "re-mark dirty on failure" net plus `persistNow`'s catch
+  become REACHABLE FOR THE FIRST TIME. Temp-file + fsync + rename was kept (documented last line of defence).
+  H1 and H2 DELIBERATELY DEFERRED: H1 needs sequencing plus rollback (and whether `fs.renameSync` over an existing
+  file is atomic here is still unlocated), but it is now at least DISCOVERABLE - exactly the split the task book
+  asked for. H2 needs a collision policy and that CHANGES WHICH PAGE NAMES ARE LEGAL = a semantic change. See 22.40.
+*** REGRESSION *** E1 **PASS** on the fixed build (disk 32->33->34 B monotonic, content `- GEONEXY`, both characters
+  landed). W2's silent-block-loss offline criteria **PASS both**: its port reproduces the PRE-fix readings exactly
+  (32 x `- ` -> 0 blocks / 0 B; 19 empty + `- X` -> 1 block / 3 B) AND the POST-fix readings exactly (95 B; 60 B).
+  **NOT EXECUTED, THEREFORE NOT CLAIMED AS PASSING: E3, E4, E13, E14, and the S3-W1 30/30 probe** - for S3-W1 it has
+  only a code-level argument that the call site is byte-unchanged on the success path, which it itself labels
+  "an argument, not a criterion".
+*** HONEST BOUNDARIES *** Simulator is not a real device. N1-a used an INJECTED probe, not genuine ENOSPC.
+  **After the fix only the SUCCESS path was re-tested on device; the fixed FAILURE path is a CODE-LEVEL ARGUMENT.**
+  NEW FINDING, LOGGED BUT NOT ATTRIBUTED: after a cold start the sidebar `最近` list still shows a GHOST page for a
+  file that no longer exists on disk (while `全部页面` is correct) - it looks like `StatePersistence`'s recent list
+  failing to reconcile with disk. It did NOT make the `AGENTS.md` correction (`FileRepository` is in
+  `core/persistence/`, not `core/db/`) because `AGENTS.md` exists as two copies and fixing one would create a fresh
+  inconsistency - registered as a follow-up.
+*** TWO INSTRUMENT FACTS WORTH REUSING ***
+  (1) `uitest dumpLayout`'s `id=` and `emulator -uiLayout`'s `id:` are **DISJOINT NAMESPACES** (intersection 0 over
+      116 vs 134 ids) and BOTH renumber on every enumeration => mixing them WILL misclick (it cost this window two
+      wrong-row actions). Fix: atomic dump -> decide -> click, all in one process.
+  (2) **`hdc shell cat` CONVERTS LF TO CRLF**, inflating byte counts (a 30 B file reads back as 34 B)
+      => byte/md5 criteria must use `ls -l` + `hdc file recv` + a LOCAL md5, never `cat`.
+HANDOVER: emulator still UP (`127.0.0.1:5555`); the FIXED build is installed (HAP mtime 19:23:55, clean-build
+  product, probe residue 0). Vault = **6 .md**, of which the 4 original fixtures are untouched and THREE test
+  residues remain: `Z.md` (30 B, the H2 fixture), `未命名笔记.md` (34 B, the E1 fixture, content `- GEONEXY`), and
+  `PAGEA.md` which no longer exists (consumed by the collision). `graph/` is not shell-writable, so cleanup is
+  in-app only and was NOT done this window.
+
+### 22.40 RULING NEEDED: H2's collision policy (semantic change - the user must decide)
+  H2 is now proven, UI-reachable, and has TWO entry points (`createPage` and `renamePage`). Any fix changes which
+  page names are legal, so it is a product decision, not a bug fix. Options:
+    (a) REJECT - refuse a name whose filename would collide with an existing different page, and tell the user.
+        Safest and most predictable; costs a visible error the user must resolve.
+    (b) AUTO-DISAMBIGUATE - silently append a suffix. Never blocks the user, but silently changes the name they
+        typed, and the same rule must then be applied in `createPage` too.
+    (c) WARN AND ALLOW - show the collision but proceed. Cheapest to build and the least protective; it does not
+        actually prevent the data loss we just reproduced.
+  MY RECOMMENDATION: (a) reject, because the failure mode we demonstrated is silent irreversible data loss, and
+  because a page name is a user-authored identifier - quietly rewriting it creates a second class of surprise.
+  Whatever is chosen must be implemented in BOTH `createPage` and `renamePage`, and the check must use the SAME
+  `pageNameToFileName` mapping that writes the file (trap 29: two criteria for one concept will diverge).
